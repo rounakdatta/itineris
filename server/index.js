@@ -5,7 +5,7 @@ import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Store, token, TOKEN_RE } from "./store.js";
-import { ingestPhoto } from "./ingest.js";
+import { ingestPhoto, backfillMedium, MEDIUM } from "./ingest.js";
 import { isLocalIso } from "./time.js";
 
 const env = (k, d) => process.env[k] ?? d;
@@ -245,3 +245,7 @@ const how = await store.init(SEED_DIR);
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(`itineris admin on :${PORT}  data=${DATA_DIR} (${how})  ui=${UI_DIR}  allowlist=${ALLOWED.length ? ALLOWED.join(",") : "(tinyauth only)"}`);
 });
+// Photos uploaded before the phone-sized tier existed get one now, in the background.
+backfillMedium(store, DATA_DIR)
+  .then((n) => { if (n) console.log(`backfilled ${MEDIUM}px copies for ${n} photo${n === 1 ? "" : "s"}`); })
+  .catch((e) => console.error("backfill failed:", e));

@@ -12,6 +12,9 @@
   const rejected = $derived(items.filter((i) => i.state === "rejected"));
   const waiting = $derived(items.filter((i) => i.state === "waiting"));
   const total = $derived(items.length);
+  // The file had no GPS -- phones strip it from photos picked in a browser --
+  // so the server will not be able to place it either. Say so up front.
+  const noLoc = $derived(items.filter((i) => !Number.isFinite(i.meta?.lat) || !Number.isFinite(i.meta?.lng)).length);
 
   const status = $derived.by(() => {
     if (!total) return null;
@@ -84,12 +87,14 @@
               {:else}
                 <span class="flag wait" title="waiting">⏳</span>
               {/if}
+              {#if !Number.isFinite(it.meta?.lat) || !Number.isFinite(it.meta?.lng)}<span class="flag loc" title="No location in this photo's metadata">⌖</span>{/if}
               {#if it.meta?.tags?.length}<span class="tags">{it.meta.tags.join(" · ")}</span>{/if}
             </button>
             <button class="remove" onclick={() => outbox.remove(it.id)} aria-label={`Remove ${it.name} from the queue`}>✕</button>
           </div>
         {/each}
       </div>
+      {#if noLoc}<p class="muted small">⌖ {noLoc === total ? (total === 1 ? "This photo has" : "These photos have") : `${noLoc} of these have`} no location in the file — phones remove GPS from photos picked in a browser. Tap a photo to set it, now or after upload.</p>{/if}
       {#if rejected.length}<p class="muted small">Refused files stay here so you can see why (tap one); remove them when done.</p>{/if}
     </div>
   {/if}
@@ -119,6 +124,7 @@
   .noimg { display: grid; place-items: center; width: 100%; height: 100%; font-size: 24px; }
   .flag { position: absolute; left: 5px; top: 5px; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 6px; background: rgba(0, 0, 0, 0.65); color: #fff; font-style: normal; }
   .flag.err { background: var(--danger); font-weight: 700; }
+  .flag.loc { left: auto; right: 5px; font-size: 12px; color: #ffb347; }
   .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255, 255, 255, 0.15); }
   .fill { display: block; height: 100%; background: var(--accent); transition: width 160ms linear; }
   .tags { position: absolute; left: 0; right: 0; bottom: 0; font-size: 9px; padding: 10px 5px 4px; color: #fff; background: linear-gradient(to top, rgba(0,0,0,.75), transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -93,10 +93,14 @@ for a sign-in; the queue survives reloads, closed tabs and sleeping phones. The
 server dedups by content hash, so a retry after a lost response is harmless.
 (`admin/lib/outbox.js`)
 
-**Viewer.** A service worker (`src/sw/`) precaches the shell, serves gallery
-data network-first with the last copy as fallback — marked
-`X-Itineris-Cache: fallback` and shown as *Saved copy* — and caches photos and
-map tiles as you browse. **⤓ Save for offline** fetches every photo of a gallery
+**Viewer.** A service worker (`src/sw/`) precaches the small shell (MapLibre,
+a megabyte, is loaded lazily and cached on first use so an update never has to
+re-download it to take over), serves pages from that cache, serves gallery data
+network-first with the last copy as fallback — marked `X-Itineris-Cache:
+fallback` and shown as *Saved copy* — and caches photos and map tiles as you
+browse. A new version installs in the background and, if it takes over while
+a page is open, the page offers **Updated · Reload**. Photos have 400/960/1600 px
+copies; phones get the 960 (older photos are backfilled on server start). **⤓ Save for offline** fetches every photo of a gallery
 plus its map area (to zoom 14; Carto's round-robin tile hosts are normalized to
 one cache key). The viewer is installable (`manifest.webmanifest`).
 

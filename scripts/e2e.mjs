@@ -91,6 +91,25 @@ try {
   await swipe(page, [200, 380], [205, 640]); await sleep(500);
   ok("swipe down closes", (await page.$(".story")) === null && (await hash(page)) === "");
 
+  console.log("--- viewer: a story on a 2 KB/s link ---");
+  // The photo's full copy takes ages; the thumbnail (already on screen in the
+  // strip) must stand in at once, the spinner must show, and the 5 s timer must
+  // not run until the photo has actually arrived. Never a dark screen.
+  const cdp = await page.createCDPSession(); await cdp.send("Network.enable");
+  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 300, downloadThroughput: 1500, uploadThroughput: 1500 });
+  const slowTick = (await page.$$(".tick"))[12];   // m013: the seed's one real raster photo (400/960/1600 copies)
+  ok("slow: the photo under test is a real photo, not a placeholder", (await slowTick.evaluate((el) => el.dataset.id)) === "m013" && (await slowTick.$eval("img", (i) => i.getAttribute("src"))) === "/media/m013-400.webp", await slowTick.$eval("img", (i) => i.getAttribute("src")));
+  await slowTick.tap(); await sleep(250); await (await page.$(".tick.on")).tap(); await page.waitForSelector(".story");
+  await sleep(1500);
+  ok("slow: the sharp thumbnail is on screen immediately", await page.$eval(".story img.placeholder", (i) => i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity === "1"));
+  ok("slow: the photo itself is still loading, and says so", (await page.$(".story img.media.loaded")) === null && (await page.$('.story .loading[role="status"]')) !== null);
+  ok("slow: the story timer waits for the photo", (await page.$$eval(".story .fill", (fs) => fs.map((f) => f.style.width))).filter((w) => w !== "0%" && w !== "100%").length === 0, JSON.stringify(await page.$$eval(".story .fill", (fs) => fs.map((f) => f.style.width))));
+  ok("slow: nothing on screen is the blurred backdrop alone", await page.evaluate(() => { const b = document.querySelector(".story img.backdrop"); const p = document.querySelector(".story img.placeholder"); return !b || (p && p.getBoundingClientRect().width > 0); }));
+  await settle(page); await shot(page, `${SHOTS}/03-story-slow-link.png`);
+  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }); await cdp.detach();
+  ok("slow: the photo fades in once it arrives", await page.waitForSelector(".story img.media.loaded", { timeout: 20000 }).then(() => true).catch(() => false));
+  await page.keyboard.press("Escape"); await sleep(300);
+
   console.log("--- viewer: deep link, wall, facet ---");
   await page.goto(`${V}/#m/m010`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".story");
@@ -246,6 +265,25 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");   // now controlled by the worker
   await settle(page, { map: true });
+
+  console.log("--- viewer: a new version arrives while the page is open ---");
+  // This is the path that failed on a real phone: the worker precached the
+  // megabyte of MapLibre, never finished installing on a slow link, and the old
+  // shell kept being served. Now: MapLibre is cached on use, a new worker only
+  // downloads the small shell, and the page offers a reload when it takes over.
+  const cachedAssets = async () => page.evaluate(async () => (await (await caches.open("itineris-viewer-assets")).keys()).map((r) => new URL(r.url).pathname));
+  ok("MapLibre was cached on first use, outside the versioned shell", (await cachedAssets()).some((u) => /maplibre-/.test(u)), JSON.stringify(await cachedAssets()));
+  ok("...and the versioned shell is small", await page.evaluate(async () => { const k = (await caches.keys()).find((n) => n.startsWith("itineris-viewer-shell-")); return !(await (await caches.open(k)).keys()).some((r) => /maplibre-/.test(r.url)); }));
+  const swFile = path.join(nd, "docroot", "sw.js");
+  rmSync(swFile); writeFileSync(swFile, readFileSync(path.join(ROOT, "dist", "sw.js"), "utf8").replace(/version:"[0-9a-f]{12}"/, 'version:"e2eupdated001"'));
+  await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
+  ok("the page offers a reload once the new worker has taken over", await waitFor(page, () => !!document.getElementById("itineris-update"), 20000));
+  ok("the new version's shell is in place, the old one gone", await page.evaluate(async () => { const ks = await caches.keys(); return ks.includes("itineris-viewer-shell-e2eupdated001") && ks.filter((n) => n.startsWith("itineris-viewer-shell-")).length === 1; }), JSON.stringify(await page.evaluate(() => caches.keys())));
+  ok("the photo the story shows on a phone is the 960px copy", await page.evaluate(async () => (await (await caches.open("itineris-media")).keys()).some((r) => /m013-960\.webp$/.test(r.url))), JSON.stringify(await page.evaluate(async () => (await (await caches.open("itineris-media")).keys()).map((r) => new URL(r.url).pathname))));
+  ok("MapLibre did not have to be downloaded again", (await cachedAssets()).some((u) => /maplibre-/.test(u)));
+  await settle(page); await shot(page, `${SHOTS}/20-viewer-update-toast.png`);
+  await tap(page, "#itineris-update"); await page.waitForSelector(".tick"); await settle(page, { map: true });
+  ok("reloaded onto the new version, no toast on a plain load", (await page.$("#itineris-update")) === null && (await count(page, ".tick")) === 2);
   await tap(page, '[aria-label="Save for offline"]'); await page.waitForSelector(".sheet");
   ok("sheet knows what it will fetch", /2 images/.test(await text(page, ".sheet")), await text(page, ".sheet"));
   await clickText(page, ".sheet button", "Save for offline");

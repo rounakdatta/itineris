@@ -1,7 +1,5 @@
 <script>
   import { onMount, untrack } from "svelte";
-  import maplibregl from "maplibre-gl";
-  import "maplibre-gl/dist/maplibre-gl.css";
   import { trip } from "../lib/trip.svelte.js";
   import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression } from "../lib/data.js";
   import { setTileTemplate } from "../lib/offline.js";
@@ -12,105 +10,113 @@
 
   const EMPTY = { type: "FeatureCollection", features: [] };
 
+  // MapLibre is ~1 MB; it is loaded here, not at startup, so the strip, wall and
+  // stories render while it is still on its way over a slow link.
   onMount(() => {
-    map = new maplibregl.Map({
-      container,
-      style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-      // A neutral start; the first fitBounds takes it to the photos. Never a
-      // particular city: a gallery with no locations must not look like one.
-      center: [20, 15],
-      zoom: 1.2,
-      attributionControl: { compact: true },
-    });
-
-    // Zoom buttons only where there is a mouse; on a phone they cost space and
-    // pinch does the job.
-    if (globalThis.matchMedia?.("(pointer: fine)")?.matches) {
-      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
-    }
-
-    map.on("load", () => {
-      map.addSource("tracks", { type: "geojson", data: EMPTY });
-      map.addLayer({
-        id: "tracks-line",
-        type: "line",
-        source: "tracks",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2, 16, 5],
-          "line-opacity": 0.85,
-        },
+    let cancelled = false;
+    (async () => {
+      const [{ default: maplibregl }] = await Promise.all([import("maplibre-gl"), import("maplibre-gl/dist/maplibre-gl.css")]);
+      if (cancelled) return;
+      map = new maplibregl.Map({
+        container,
+        style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+        // A neutral start; the first fitBounds takes it to the photos. Never a
+        // particular city: a gallery with no locations must not look like one.
+        center: [20, 15],
+        zoom: 1.2,
+        attributionControl: { compact: true },
       });
 
-      map.addSource("moments", { type: "geojson", data: EMPTY });
-      map.addLayer({
-        id: "moments-halo",
-        type: "circle",
-        source: "moments",
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 8, 16, 16],
-          "circle-color": tagColorExpression(),
-          "circle-opacity": 0.22,
-        },
+      // Zoom buttons only where there is a mouse; on a phone they cost space and
+      // pinch does the job.
+      if (globalThis.matchMedia?.("(pointer: fine)")?.matches) {
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+      }
+
+      map.on("load", () => {
+        map.addSource("tracks", { type: "geojson", data: EMPTY });
+        map.addLayer({
+          id: "tracks-line",
+          type: "line",
+          source: "tracks",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2, 16, 5],
+            "line-opacity": 0.85,
+          },
+        });
+
+        map.addSource("moments", { type: "geojson", data: EMPTY });
+        map.addLayer({
+          id: "moments-halo",
+          type: "circle",
+          source: "moments",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 8, 16, 16],
+            "circle-color": tagColorExpression(),
+            "circle-opacity": 0.22,
+          },
+        });
+        map.addLayer({
+          id: "moments-dot",
+          type: "circle",
+          source: "moments",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 4, 16, 7],
+            "circle-color": tagColorExpression(),
+            "circle-stroke-color": "#0b0d10",
+            "circle-stroke-width": 1.5,
+          },
+        });
+        map.addLayer({
+          id: "moments-active",
+          type: "circle",
+          source: "moments",
+          filter: ["==", ["get", "id"], "__none__"],
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 9, 16, 14],
+            "circle-color": "#ffffff",
+            "circle-stroke-color": tagColorExpression(),
+            "circle-stroke-width": 3,
+          },
+        });
+
+        // A dot is a few pixels; a thumb is not. Look for one in a generous box
+        // around the tap instead of requiring a direct hit.
+        map.on("click", (e) => {
+          const pad = 18;
+          const hits = map.queryRenderedFeatures(
+            [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]],
+            { layers: ["moments-dot"] }
+          );
+          const id = hits?.[0]?.properties?.id;
+          if (id) trip.openStory(id);
+        });
+        // Test hook: tiles loaded and nothing pending. Screenshots wait for it.
+        map.on("idle", () => { container.dataset.idle = "1"; });
+        map.on("movestart", () => { container.dataset.idle = "0"; });
+        map.on("dataloading", () => { container.dataset.idle = "0"; });
+
+        map.on("mouseenter", "moments-dot", () => (map.getCanvas().style.cursor = "pointer"));
+        map.on("mouseleave", "moments-dot", () => (map.getCanvas().style.cursor = ""));
+
+        ready = true;
+
+        // Where the tiles come from, so "Save for offline" can fetch the same URLs
+        // the map will ask for. The style names a TileJSON; resolve it once.
+        (async () => {
+          try {
+            const src = map.getStyle()?.sources?.carto;
+            const tiles = src?.tiles ?? (src?.url ? (await (await fetch(src.url)).json()).tiles : null);
+            setTileTemplate(tiles?.[0] ?? null);
+          } catch { setTileTemplate(null); }
+        })();
       });
-      map.addLayer({
-        id: "moments-dot",
-        type: "circle",
-        source: "moments",
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 4, 16, 7],
-          "circle-color": tagColorExpression(),
-          "circle-stroke-color": "#0b0d10",
-          "circle-stroke-width": 1.5,
-        },
-      });
-      map.addLayer({
-        id: "moments-active",
-        type: "circle",
-        source: "moments",
-        filter: ["==", ["get", "id"], "__none__"],
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 9, 16, 14],
-          "circle-color": "#ffffff",
-          "circle-stroke-color": tagColorExpression(),
-          "circle-stroke-width": 3,
-        },
-      });
 
-      // A dot is a few pixels; a thumb is not. Look for one in a generous box
-      // around the tap instead of requiring a direct hit.
-      map.on("click", (e) => {
-        const pad = 18;
-        const hits = map.queryRenderedFeatures(
-          [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]],
-          { layers: ["moments-dot"] }
-        );
-        const id = hits?.[0]?.properties?.id;
-        if (id) trip.openStory(id);
-      });
-      // Test hook: tiles loaded and nothing pending. Screenshots wait for it.
-      map.on("idle", () => { container.dataset.idle = "1"; });
-      map.on("movestart", () => { container.dataset.idle = "0"; });
-      map.on("dataloading", () => { container.dataset.idle = "0"; });
-
-      map.on("mouseenter", "moments-dot", () => (map.getCanvas().style.cursor = "pointer"));
-      map.on("mouseleave", "moments-dot", () => (map.getCanvas().style.cursor = ""));
-
-      ready = true;
-
-      // Where the tiles come from, so "Save for offline" can fetch the same URLs
-      // the map will ask for. The style names a TileJSON; resolve it once.
-      (async () => {
-        try {
-          const src = map.getStyle()?.sources?.carto;
-          const tiles = src?.tiles ?? (src?.url ? (await (await fetch(src.url)).json()).tiles : null);
-          setTileTemplate(tiles?.[0] ?? null);
-        } catch { setTileTemplate(null); }
-      })();
-    });
-
+    })();
     return () => {
+      cancelled = true;
       map?.remove();
       map = null;
     };

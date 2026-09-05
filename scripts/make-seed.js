@@ -3,6 +3,7 @@
 import { writeFileSync, mkdirSync, rmSync, cpSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { materializeGallery } from "../server/store.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -209,7 +210,32 @@ const GALLERY = {
 };
 rmSync(out("seed"), { recursive: true, force: true });
 for (const d of ["seed/library", "seed/data/galleries", "seed/media"]) mkdirSync(out(d), { recursive: true });
-moments.forEach((m, i) => writeFileSync(out(`seed/media/${m.id}.svg`), placeholder(m, i)));
+
+// One moment is a real raster photo with the three copies the server makes
+// (400/960/1600), so tests exercise the thumbnail -> medium -> large path and
+// slow-network behaviour against bytes that actually take time to arrive.
+// Deterministic (LCG noise over a gradient), a few hundred KB at 960 px.
+async function rasterPhoto(m, w = 1200, h = 1600) {
+  const px = Buffer.alloc(w * h * 3);
+  let seed = 20260314;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 3, n = (rnd() - 0.5) * 90;
+    px[i] = Math.max(0, Math.min(255, 40 + (x / w) * 120 + n));
+    px[i + 1] = Math.max(0, Math.min(255, 90 + (y / h) * 90 + n));
+    px[i + 2] = Math.max(0, Math.min(255, 160 - (y / h) * 60 + n));
+  }
+  const base = sharp(px, { raw: { width: w, height: h, channels: 3 } });
+  const sizes = { 1600: 82, 960: 80, 400: 74 };
+  const info = {};
+  for (const [size, quality] of Object.entries(sizes)) {
+    const r = await base.clone().resize({ width: +size, height: +size, fit: "inside", withoutEnlargement: true }).webp({ quality }).toFile(out(`seed/media/${m.id}-${size}.webp`));
+    info[size] = r;
+  }
+  m.media = { type: "photo", src: `media/${m.id}-1600.webp`, w: info[1600].width, h: info[1600].height, medium: `media/${m.id}-960.webp`, thumb: `media/${m.id}-400.webp` };
+}
+await rasterPhoto(moments[12]);
+moments.forEach((m, i) => { if (m.media.src.endsWith(".svg")) writeFileSync(out(`seed/media/${m.id}.svg`), placeholder(m, i)); });
 writeFileSync(out("seed/library/moments.json"), JSON.stringify(moments, null, 2) + "\n");
 writeFileSync(out("seed/library/tracks.json"), JSON.stringify(tracks, null, 2) + "\n");
 writeFileSync(out("seed/library/galleries.json"), JSON.stringify([GALLERY], null, 2) + "\n");

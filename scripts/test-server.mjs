@@ -173,6 +173,28 @@ try {
     ok("stale public gallery file removed on boot", !(await exists(path.join(d1, "data", "galleries", "stale.json"))));
     ok("library intact: 20 seed + a + b + d", (await s3.api("GET", "/admin/api/moments")).body.length === 23);
   } finally { s3.server.kill(); }
+
+  // =========================================================================
+  console.log("--- 0.4 volume: photos without a 960px copy get one on boot ---");
+  // (the seed's SVG placeholders are not photos to resize and must be left alone)
+  const lib = await readJson(path.join(d1, "library", "moments.json"));
+  await writeFile(path.join(d1, "library", "moments.json"), JSON.stringify(lib.map((m) => ({ ...m, media: Object.fromEntries(Object.entries(m.media).filter(([k]) => k !== "medium")) }))));
+  for (const f of await readdir(path.join(d1, "media"))) if (f.endsWith("-960.webp")) await rm(path.join(d1, "media", f));
+  const s4 = await startServer({ port: 4325, dataDir: d1 });
+  try {
+    const photos = (ms) => ms.filter((m) => /\.webp$/.test(m.media.src));
+    let ms = [];
+    for (let i = 0; i < 300; i++) { ms = (await s4.api("GET", "/admin/api/moments")).body; if (photos(ms).length && photos(ms).every((m) => m.media.medium)) break; await new Promise((r) => setTimeout(r, 100)); }
+    ok("every real photo has a medium copy again", photos(ms).length === 3 && photos(ms).every((m) => m.media.medium), `${photos(ms).filter((m) => m.media.medium).length}/${photos(ms).length}`);
+    ok("the SVG placeholders were left alone", ms.filter((m) => !/\.webp$/.test(m.media.src)).every((m) => !m.media.medium) && (await readdir(path.join(d1, "media"))).filter((f) => f.endsWith("-960.webp")).length === 3);
+    const files = await Promise.all(photos(ms).map((m) => exists(path.join(d1, m.media.medium))));
+    ok("...and the files exist", files.length === 3 && files.every(Boolean));
+    const meta = await sharp(path.join(d1, photos(ms)[0].media.medium)).metadata();
+    ok("...at most 960px on the long side", Math.max(meta.width, meta.height) <= 960 && Math.max(meta.width, meta.height) >= 600, `${meta.width}x${meta.height}`);
+    const pubs = await Promise.all((await readdir(path.join(d1, "data", "galleries"))).map((f) => readJson(path.join(d1, "data", "galleries", f))));
+    ok("...visible in the public galleries", pubs.flatMap((g) => g.moments).filter((m) => /\.webp$/.test(m.media.src)).every((m) => m.media.medium));
+    ok("server said so", s4.log().includes("backfilled 960px copies for 3 photos"), s4.log().trim().split("\n").pop());
+  } finally { s4.server.kill(); }
 } finally {
   await rm(root, { recursive: true, force: true });
 }
