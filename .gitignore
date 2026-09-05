@@ -2,3 +2,7 @@ node_modules/
 dist/
 .DS_Store
 *.local
+
+# admin server: local data dir and UI build
+.data/
+dist-admin/

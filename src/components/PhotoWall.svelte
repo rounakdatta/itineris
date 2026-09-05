@@ -21,7 +21,7 @@
     <div class="grid">
       {#each items as m (m.id)}
         <button class="cell" onclick={() => trip.openStory(m.id)} title={m.caption}>
-          <img src={m.media.src} alt={m.caption} loading="lazy" />
+          <img src={m.media.thumb ?? m.media.src} alt={m.caption} loading="lazy" />
           <span class="t">{clockOf(m.t)}</span>
         </button>
       {/each}

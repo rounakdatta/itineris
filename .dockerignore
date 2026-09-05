@@ -5,3 +5,5 @@ dist
 .claude
 charts
 *.md
+dist-admin
+.data

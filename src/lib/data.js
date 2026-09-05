@@ -43,9 +43,13 @@ export function trackMatches(track, facetIds) {
   return FACETS.some((f) => facetIds.includes(f.id) && f.modes.includes(track.mode));
 }
 
+// Uploaded photos may carry no GPS; they still belong in the timeline, wall and
+// story, just not on the map.
+export const hasCoords = (m) => Number.isFinite(m.lat) && Number.isFinite(m.lng);
+
 export function bboxOf(moments, tracks) {
   const pts = [
-    ...moments.map((m) => [m.lng, m.lat]),
+    ...moments.filter(hasCoords).map((m) => [m.lng, m.lat]),
     ...tracks.flatMap((t) => t.geometry),
   ];
   if (pts.length === 0) return null;
@@ -57,7 +61,7 @@ export function bboxOf(moments, tracks) {
 
 export const momentsFC = (moments) => ({
   type: "FeatureCollection",
-  features: moments.map((m) => ({
+  features: moments.filter(hasCoords).map((m) => ({
     type: "Feature",
     id: m.id,
     geometry: { type: "Point", coordinates: [m.lng, m.lat] },

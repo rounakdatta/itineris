@@ -1,0 +1,32 @@
+# Stage 1: build the admin UI.
+FROM node:24-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY . .
+RUN npm run build:admin
+
+# Stage 2: runtime with production deps only. sharp pulls its prebuilt musl
+# binary here, so this stage must be the same base as the one it runs on.
+FROM node:24-alpine
+LABEL org.opencontainers.image.source="https://github.com/rounakdatta/itineris"
+ENV NODE_ENV=production
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+COPY server ./server
+COPY --from=builder /app/dist-admin ./dist-admin
+# The same demo trip the public image carries, so a fresh volume is seeded
+# identically whichever pod gets there first.
+COPY public/data ./seed/data
+COPY public/media ./seed/media
+# uid 101 = the nginx-unprivileged user. Both containers share one volume, and
+# matching uids means each can read what the other wrote without games.
+RUN addgroup -g 101 -S itineris && adduser -S -u 101 -G itineris -h /app itineris
+USER 101
+ENV ITINERIS_PORT=8080 \
+    ITINERIS_DATA_DIR=/srv/itineris \
+    ITINERIS_SEED_DIR=/app/seed \
+    ITINERIS_ADMIN_UI_DIR=/app/dist-admin
+EXPOSE 8080
+CMD ["node", "server/index.js"]

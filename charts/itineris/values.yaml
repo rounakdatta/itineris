@@ -6,8 +6,8 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
-# Stateless: the image IS the site. Scaling is safe, though one nginx serving
-# a few megabytes of static files is plenty.
+# The public site is stateless -- the image IS the shell. Scaling is safe;
+# one nginx serving a few megabytes of static files is plenty.
 replicaCount: 1
 
 service:
@@ -24,7 +24,51 @@ probes:
   enabled: true
   path: /healthz
 
-# Pod-level. nginx-unprivileged runs as 101:101.
+# The journal itself: data/moments.json, data/tracks.json, media/ (public
+# derivatives) and originals/ (never served). nginx mounts data/ and media/
+# read-only; the admin writes everything. ReadWriteOnce is node-scoped, so two
+# pods on the same node can share it -- fine on a single-node cluster, and the
+# reason this pins both pods to one node on a multi-node one.
+#
+# Without persistence the site serves the seed baked into the image and the
+# admin has nowhere to write, so admin.enabled requires this.
+persistence:
+  enabled: true
+  # local-path is the homelab's only storage class, and it is node-local.
+  storageClass: ""
+  size: 20Gi
+  accessMode: ReadWriteOnce
+  # Reuse a pre-existing PVC instead of letting the chart create one.
+  existingClaim: ""
+
+# Upload + tagging UI and API, served under /admin on the same host. The chart
+# ships no Ingress: the deployment repo puts THIS service behind tinyauth and
+# leaves the public service open.
+admin:
+  enabled: true
+  image:
+    repository: ghcr.io/rounakdatta/itineris-admin
+    # Same rule as image.tag: empty = Chart.appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  containerPort: 8080
+  # Comma-separated e-mail allowlist checked AFTER tinyauth. Empty trusts
+  # tinyauth's own whitelist entirely, which is the usual choice.
+  allowedEmails: ""
+  # Uploads are decoded in memory and re-encoded by sharp; a burst of large
+  # phone photos wants headroom, so the limit sits well above the request.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# Pod-level. nginx-unprivileged runs as 101:101, and the admin image deliberately
+# uses the same uid so both own what the other writes on the shared volume.
 securityContext:
   runAsNonRoot: true
   runAsUser: 101
@@ -33,7 +77,7 @@ securityContext:
   seccompProfile:
     type: RuntimeDefault
 
-# Container-level securityContext, applied per-container in the Deployment.
+# Container-level securityContext, applied per-container in both Deployments.
 # Distinct from the pod securityContext above: capabilities and privilege
 # escalation are container properties, not pod ones.
 containerSecurityContext:
@@ -42,7 +86,7 @@ containerSecurityContext:
     drop:
       - ALL
   # Holds because nginx-unprivileged keeps its pid file and temp paths under
-  # /tmp, which the Deployment mounts as an emptyDir.
+  # /tmp (mounted as an emptyDir), and the admin writes only to the volume.
   readOnlyRootFilesystem: true
 
 resources:

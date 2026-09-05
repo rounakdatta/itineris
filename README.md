@@ -76,6 +76,30 @@ timezone never enters the picture.
 | hold / `space` | pause |
 | swipe down / `esc` | close |
 
+## Admin (uploads and tagging)
+
+`server/` is a small Node service (Hono + sharp) that lives at `/admin/` on the
+same host, behind tinyauth. It never runs in the public nginx pod: Traefik routes
+`/admin` to it and everything else to nginx, and it trusts the `Remote-Email`
+header tinyauth injects — a request without one did not come through the proxy
+and gets a 401.
+
+Upload a photo and it reads EXIF as raw strings (never as a `Date`), keeps the
+capture time in the photo's own zone — from `OffsetTimeOriginal`, else from the
+GPS position, else flagged `tz: "unknown"` — writes content-hashed WebP
+derivatives (EXIF-free by construction) plus the untouched original, and appends
+an **untagged** moment to `moments.json` atomically. Tagging is yours, in the UI.
+Deleting a moment removes its public derivatives and keeps the original.
+
+Everything lands under one directory (`ITINERIS_DATA_DIR`): `data/`, `media/`,
+`originals/`. The public nginx mounts `data/` and `media/` from the same volume
+read-only; `originals/` is never served.
+
+```sh
+npm run build:admin && npm run server   # http://localhost:8080/admin/  (set Remote-Email yourself locally)
+npm run test:server                      # forges JPEGs with EXIF/GPS and exercises every route
+```
+
 ## Build and deploy
 
 The image is a two-stage Dockerfile: `node:24-alpine` runs `npm run build`,

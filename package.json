@@ -1,20 +1,30 @@
 {
   "name": "itineris",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "seed": "node scripts/make-seed.js"
+    "seed": "node scripts/make-seed.js",
+    "build:admin": "vite build -c vite.admin.config.js",
+    "dev:admin": "vite -c vite.admin.config.js",
+    "server": "node server/index.js",
+    "test:server": "node scripts/test-server.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "piexifjs": "^1.0.6",
     "svelte": "^5.0.0",
     "vite": "^6.0.0"
   },
   "dependencies": {
-    "maplibre-gl": "^5.0.0"
+    "@hono/node-server": "^2.1.1",
+    "exifr": "^7.1.3",
+    "hono": "^4.13.7",
+    "maplibre-gl": "^5.0.0",
+    "sharp": "^0.35.4",
+    "tz-lookup": "^6.1.25"
   }
 }

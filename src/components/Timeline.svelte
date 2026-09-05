@@ -37,7 +37,7 @@
         ondblclick={() => trip.openStory(m.id)}
         title={`${m.place} — ${m.caption}`}
       >
-        <img src={m.media.src} alt="" loading="lazy" />
+        <img src={m.media.thumb ?? m.media.src} alt="" loading="lazy" />
         <span class="t">{clockOf(m.t)}</span>
       </button>
     {/each}

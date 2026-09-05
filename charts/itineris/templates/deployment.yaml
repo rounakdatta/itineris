@@ -6,7 +6,7 @@ metadata:
     {{- include "itineris.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  # The default RollingUpdate is correct here: nothing is mounted read-write,
+  # The default RollingUpdate is correct here: the volume is mounted read-only,
   # so two pods overlapping during a rollout is harmless.
   selector:
     matchLabels:
@@ -18,6 +18,34 @@ spec:
     spec:
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- if .Values.persistence.enabled }}
+      initContainers:
+        # First run on an empty volume: copy the demo trip baked into this
+        # image so the site is never blank. The check is a single sentinel
+        # file, NOT cp -u/-n (busybox cp lacks -n, and -u would overwrite
+        # older user data with newer seed files on the next image bump).
+        - name: seed
+          image: {{ include "itineris.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -f /pvc/data/moments.json ]; then
+                echo "volume already has data; leaving it alone"
+              else
+                mkdir -p /pvc/data /pvc/media /pvc/originals \
+                && cp -r /usr/share/nginx/html/data/. /pvc/data/ \
+                && cp -r /usr/share/nginx/html/media/. /pvc/media/ \
+                && echo "seeded volume from image"
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /pvc
+      {{- end }}
       containers:
         - name: itineris
           image: {{ include "itineris.image" . | quote }}
@@ -49,11 +77,28 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.persistence.enabled }}
+            # Shadow the image's seed copies with the live volume. Read-only:
+            # nginx must never be able to write what the admin owns.
+            - name: data
+              mountPath: /usr/share/nginx/html/data
+              subPath: data
+              readOnly: true
+            - name: data
+              mountPath: /usr/share/nginx/html/media
+              subPath: media
+              readOnly: true
+            {{- end }}
       volumes:
         # The one writable path a read-only rootfs needs: nginx-unprivileged
         # puts its pid file and every *_temp_path here.
         - name: tmp
           emptyDir: {}
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "itineris.claimName" . }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

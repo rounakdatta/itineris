@@ -3,7 +3,7 @@
   import maplibregl from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import { trip } from "../lib/trip.svelte.js";
-  import { momentsFC, tracksFC, bboxOf, tagColorExpression } from "../lib/data.js";
+  import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression } from "../lib/data.js";
 
   let container;
   let map = null;
@@ -101,7 +101,8 @@
   $effect(() => {
     const f = trip.focused;
     if (!ready || !map || !f) return;
-    map.setFilter("moments-active", ["==", ["get", "id"], f.id]);
+    map.setFilter("moments-active", ["==", ["get", "id"], hasCoords(f) ? f.id : "__none__"]);
+    if (!hasCoords(f)) return;
     map.flyTo({
       center: [f.lng, f.lat],
       zoom: Math.max(map.getZoom(), 14.5),

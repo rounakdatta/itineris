@@ -38,7 +38,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      # Two images from one context: the public nginx site and the admin
+      # service. Same tags for both, so a release is one version everywhere.
+      - name: Extract metadata (public)
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -50,15 +52,37 @@ jobs:
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
 
-      # On a pull request this builds without pushing -- the only way to learn
-      # the Dockerfile still works before merge.
-      - name: Build and push Docker image
+      - name: Extract metadata (admin)
+        id: meta-admin
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-admin
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # On a pull request these build without pushing -- the only way to learn
+      # the Dockerfiles still work before merge.
+      - name: Build and push public image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push admin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.admin
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-admin.outputs.tags }}
+          labels: ${{ steps.meta-admin.outputs.labels }}
 
       - name: Push Helm chart to GHCR
         if: github.event_name != 'pull_request'
