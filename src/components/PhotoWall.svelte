@@ -40,7 +40,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     background: var(--bg);
-    padding: calc(max(10px, env(safe-area-inset-top)) + 54px) 12px 190px;
+    padding: calc(max(8px, env(safe-area-inset-top)) + 96px) 12px calc(72px + env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
   }
   h2 {

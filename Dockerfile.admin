@@ -1,4 +1,4 @@
-# Stage 1: build the admin UI.
+# Stage 1: build the admin UI (and regenerate the seed via the pre-hook).
 FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -16,10 +16,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY server ./server
 COPY --from=builder /app/dist-admin ./dist-admin
-# The same demo trip the public image carries, so a fresh volume is seeded
-# identically whichever pod gets there first.
-COPY public/data ./seed/data
-COPY public/media ./seed/media
+# The same seed the public image carries (library + demo gallery + media), so
+# a fresh volume is brought up identically whichever pod gets there first.
+COPY --from=builder /app/seed ./seed
 # uid 101 = the nginx-unprivileged user. Both containers share one volume, and
 # matching uids means each can read what the other wrote without games.
 RUN addgroup -g 101 -S itineris && adduser -S -u 101 -G itineris -h /app itineris

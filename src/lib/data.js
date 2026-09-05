@@ -19,6 +19,9 @@ export const MODE_COLOR = {
 // the host timezone -- which is the entire bug class we want to avoid here.
 export const dayKey = (iso) => iso.slice(0, 10);
 export const clockOf = (iso) => iso.slice(11, 16);
+// "2026-03-14" -> "14 Mar". Parsed as UTC midnight and formatted in UTC, so the
+// host zone can never shift the date.
+export const dateLabel = (key) => new Date(`${key}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 
 export function daysOf(moments) {
   const seen = new Map();

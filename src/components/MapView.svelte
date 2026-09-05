@@ -20,7 +20,11 @@
       attributionControl: { compact: true },
     });
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    // Zoom buttons only where there is a mouse; on a phone they cost space and
+    // pinch does the job.
+    if (globalThis.matchMedia?.("(pointer: fine)")?.matches) {
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+    }
 
     map.on("load", () => {
       map.addSource("tracks", { type: "geojson", data: EMPTY });
@@ -71,8 +75,15 @@
         },
       });
 
-      map.on("click", "moments-dot", (e) => {
-        const id = e.features?.[0]?.properties?.id;
+      // A dot is a few pixels; a thumb is not. Look for one in a generous box
+      // around the tap instead of requiring a direct hit.
+      map.on("click", (e) => {
+        const pad = 18;
+        const hits = map.queryRenderedFeatures(
+          [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]],
+          { layers: ["moments-dot"] }
+        );
+        const id = hits?.[0]?.properties?.id;
         if (id) trip.openStory(id);
       });
       map.on("mouseenter", "moments-dot", () => (map.getCanvas().style.cursor = "pointer"));
@@ -147,6 +158,9 @@
     font-size: 10px;
     background: rgba(11, 13, 16, 0.7);
   }
+  /* Keep Traefik-free chrome clear of the dock: the attribution sits above the timeline. */
+  .map :global(.maplibregl-ctrl-bottom-right) { bottom: 150px; }
+  .map :global(.maplibregl-ctrl-bottom-left) { bottom: 150px; }
   .map :global(.maplibregl-ctrl-attrib a) { color: #8b9dc3; }
   .map :global(.maplibregl-ctrl-group) {
     background: rgba(20, 24, 30, 0.9);

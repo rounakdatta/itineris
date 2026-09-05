@@ -21,9 +21,12 @@ spec:
       {{- if .Values.persistence.enabled }}
       initContainers:
         # First run on an empty volume: copy the demo trip baked into this
-        # image so the site is never blank. The check is a single sentinel
-        # file, NOT cp -u/-n (busybox cp lacks -n, and -u would overwrite
-        # older user data with newer seed files on the next image bump).
+        # image so the site is never blank -- the private library from
+        # /seed/library and the public gallery + media from the served root.
+        # The check is a sentinel file, NOT cp -u/-n (busybox cp lacks -n, and
+        # -u would overwrite older user data with newer seed files on the next
+        # image bump). Either layout counts as "has data": the 0.3 library, or
+        # the 0.2 public moments.json that the admin migrates on its own boot.
         - name: seed
           image: {{ include "itineris.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -34,10 +37,11 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              if [ -f /pvc/data/moments.json ]; then
+              if [ -f /pvc/library/moments.json ] || [ -f /pvc/data/moments.json ]; then
                 echo "volume already has data; leaving it alone"
               else
-                mkdir -p /pvc/data /pvc/media /pvc/originals \
+                mkdir -p /pvc/library /pvc/data /pvc/media /pvc/originals \
+                && cp -r /seed/library/. /pvc/library/ \
                 && cp -r /usr/share/nginx/html/data/. /pvc/data/ \
                 && cp -r /usr/share/nginx/html/media/. /pvc/media/ \
                 && echo "seeded volume from image"

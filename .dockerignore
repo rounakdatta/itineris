@@ -7,3 +7,6 @@ charts
 *.md
 dist-admin
 .data
+seed
+public/data
+public/media

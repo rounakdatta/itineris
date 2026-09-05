@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
-// Relative base so the built site works at a domain root or under a subpath.
+// Absolute base: gallery URLs live at /g/<token>, so assets and data must not
+// resolve relative to that path.
 export default defineConfig({
   plugins: [svelte()],
-  base: "./",
+  base: "/",
   build: {
     rollupOptions: {
       output: {

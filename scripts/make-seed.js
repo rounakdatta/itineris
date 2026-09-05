@@ -1,8 +1,9 @@
 // Generates a seed trip so the UI is buildable before any real ingest exists.
 // The shapes written here are the contract: swap the files, keep the schema.
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, rmSync, cpSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { materializeGallery } from "../server/store.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const out = (p) => resolve(root, p);
@@ -47,7 +48,11 @@ const M = [
   ["2026-03-18T11:00+08:00", "jewel",       ["experience"],           "The Rain Vortex, on the way out"],
 ];
 
-const jitter = (n, amt) => n + (Math.random() - 0.5) * amt;
+// Deterministic jitter (mulberry32) so every build and both images produce
+// byte-identical seed data.
+let rngState = 0x17153415 >>> 0;
+const rand = () => { rngState = (rngState + 0x6d2b79f5) >>> 0; let t = rngState; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const jitter = (n, amt) => n + (rand() - 0.5) * amt;
 
 function leg(from, to, n) {
   const pts = [];
@@ -194,10 +199,24 @@ function placeholder(m, i) {
 </svg>`;
 }
 
-mkdirSync(out("public/media"), { recursive: true });
-moments.forEach((m, i) => writeFileSync(out(`public/media/${m.id}.svg`), placeholder(m, i)));
+// Everything lands under seed/ -- the single source both images copy from --
+// and the PUBLIC parts are mirrored into public/ so `vite dev` serves them.
+const GALLERY = {
+  id: "sg2026demo", title: "Singapore, March 2026",
+  description: "Five days: hawker centres, a bay run, an East Coast ride.",
+  home: true, momentIds: moments.map((m) => m.id), trackIds: tracks.map((t) => t.id),
+  createdAt: "2026-03-18T12:00:00+08:00", updatedAt: "2026-03-18T12:00:00+08:00",
+};
+rmSync(out("seed"), { recursive: true, force: true });
+for (const d of ["seed/library", "seed/data/galleries", "seed/media"]) mkdirSync(out(d), { recursive: true });
+moments.forEach((m, i) => writeFileSync(out(`seed/media/${m.id}.svg`), placeholder(m, i)));
+writeFileSync(out("seed/library/moments.json"), JSON.stringify(moments, null, 2) + "\n");
+writeFileSync(out("seed/library/tracks.json"), JSON.stringify(tracks, null, 2) + "\n");
+writeFileSync(out("seed/library/galleries.json"), JSON.stringify([GALLERY], null, 2) + "\n");
+writeFileSync(out("seed/data/home.json"), JSON.stringify({ gallery: GALLERY.id }, null, 2) + "\n");
+writeFileSync(out(`seed/data/galleries/${GALLERY.id}.json`), JSON.stringify(materializeGallery(GALLERY, moments, tracks), null, 2) + "\n");
 
-mkdirSync(out("public/data"), { recursive: true });
-writeFileSync(out("public/data/moments.json"), JSON.stringify(moments, null, 2));
-writeFileSync(out("public/data/tracks.json"), JSON.stringify(tracks, null, 2));
-console.log(`seeded ${moments.length} moments, ${tracks.length} tracks, ${moments.length} placeholder media`);
+for (const d of ["public/data", "public/media"]) rmSync(out(d), { recursive: true, force: true });
+cpSync(out("seed/data"), out("public/data"), { recursive: true });
+cpSync(out("seed/media"), out("public/media"), { recursive: true });
+console.log(`seeded ${moments.length} moments, ${tracks.length} tracks, 1 gallery (${GALLERY.id}, home) -> seed/ and public/`);

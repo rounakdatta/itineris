@@ -1,6 +1,7 @@
 <script>
   import { onMount } from "svelte";
   import { trip } from "./lib/trip.svelte.js";
+  import { applyHash, syncHash } from "./lib/router.js";
   import MapView from "./components/MapView.svelte";
   import PhotoWall from "./components/PhotoWall.svelte";
   import FacetBar from "./components/FacetBar.svelte";
@@ -8,7 +9,17 @@
   import Story from "./components/Story.svelte";
 
   onMount(() => {
-    trip.load();
+    trip.load().then(() => { if (trip.loaded) applyHash(trip, location.hash); });
+    const onPop = () => applyHash(trip, location.hash);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  });
+
+  // Keep the URL honest about what is on screen (see router.js).
+  $effect(() => { if (trip.loaded) syncHash(trip); });
+
+  $effect(() => {
+    document.title = trip.title ? `${trip.title} · itineris` : "itineris";
   });
 </script>
 
@@ -20,59 +31,79 @@
   -->
   <MapView />
 
-  {#if trip.view === "wall"}
+  {#if trip.view === "wall" && trip.loaded}
     <PhotoWall />
   {/if}
 
   {#if trip.loaded}
-    <FacetBar />
+    <div class="chrome" class:hidden={trip.storyOpen} class:wall={trip.view === "wall"}>
+      <div class="top">
+        <h1 class="brand"><span class="word">itineris</span>{#if trip.title}<span class="sep" aria-hidden="true">·</span><span class="title">{trip.title}</span>{/if}</h1>
+        <button
+          class="toggle"
+          onclick={() => (trip.view = trip.view === "map" ? "wall" : "map")}
+          aria-pressed={trip.view === "wall"}
+          aria-label={trip.view === "map" ? "Show photo wall" : "Show map"}
+        >{trip.view === "map" ? "Wall" : "Map"}</button>
+      </div>
+      <FacetBar />
+    </div>
     <Timeline />
-
-    <button
-      class="toggle"
-      onclick={() => (trip.view = trip.view === "map" ? "wall" : "map")}
-      aria-label={trip.view === "map" ? "Show photo wall" : "Show map"}
-    >
-      {trip.view === "map" ? "Wall" : "Map"}
-    </button>
   {/if}
 
-  {#if trip.error}
-    <p class="status error">Could not load trip data: {trip.error}</p>
-  {:else if !trip.loaded}
-    <p class="status">Loading trip…</p>
+  {#if trip.status === "loading"}
+    <p class="status" role="status">Loading…</p>
+  {:else if trip.status === "landing"}
+    <section class="card">
+      <h1 class="word big">itineris</h1>
+      <p>A travel journal, shared by link. Ask for one.</p>
+    </section>
+  {:else if trip.status === "notfound"}
+    <section class="card">
+      <h1 class="word big">itineris</h1>
+      <p>This link doesn't point to a gallery any more.</p>
+    </section>
+  {:else if trip.status === "error"}
+    <section class="card">
+      <h1 class="word big">itineris</h1>
+      <p class="error">Could not load: {trip.error}</p>
+      <button class="toggle" onclick={() => trip.load()}>Try again</button>
+    </section>
   {/if}
 
   <Story />
 </main>
 
 <style>
-  main {
-    position: fixed;
-    inset: 0;
-    overflow: hidden;
+  main { position: fixed; inset: 0; overflow: hidden; }
+
+  .chrome {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+    padding-top: max(8px, env(safe-area-inset-top));
+    background: linear-gradient(to bottom, rgba(11, 13, 16, 0.92), rgba(11, 13, 16, 0.55) 65%, transparent);
+    pointer-events: none;
   }
+  .chrome > * { pointer-events: auto; }
+  .chrome.hidden { visibility: hidden; }
+  .chrome.wall { background: var(--bg); border-bottom: 1px solid var(--line); }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 12px 2px 14px; }
+  .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .word { color: #fff; }
+  .sep { color: var(--muted); font-weight: 400; }
+  .title { color: var(--muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .toggle {
-    position: absolute;
-    right: 12px;
-    top: calc(max(10px, env(safe-area-inset-top)) + 58px);
-    z-index: 21;
-    padding: 8px 14px;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--panel);
-    backdrop-filter: blur(12px);
-    color: var(--text);
-    cursor: pointer;
+    flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel); backdrop-filter: blur(12px); color: var(--text); cursor: pointer;
   }
-  .status {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    translate: -50% -50%;
-    z-index: 30;
-    color: var(--muted);
-    font-size: 13px;
+  .toggle[aria-pressed="true"] { background: rgba(255, 255, 255, 0.16); color: #fff; }
+
+  .status { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 30; color: var(--muted); font-size: 13px; }
+  .card {
+    position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 30;
+    width: min(360px, 86vw); padding: 26px 24px; border-radius: 16px; text-align: center;
+    background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px); color: var(--muted);
   }
-  .error { color: #ff8080; max-width: 80vw; text-align: center; }
+  .card p { margin: 8px 0 14px; }
+  .big { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  .error { color: #ff8080; }
 </style>

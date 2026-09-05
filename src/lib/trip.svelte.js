@@ -1,11 +1,17 @@
 import { daysOf, dayKey, momentMatches, trackMatches } from "./data.js";
 
+const GALLERY_PATH = /^\/g\/([a-z0-9-]{4,40})\/?$/;
+
 // Single source of truth. Map, timeline, wall and story are all just
 // different renderers over `visibleMoments` / `visibleTracks`.
 class Trip {
   moments = $state([]);
   tracks = $state([]);
-  loaded = $state(false);
+  galleryId = $state(null);
+  title = $state("");
+  description = $state("");
+  // loading | ready | landing (no gallery at /) | notfound (bad token) | error
+  status = $state("loading");
   error = $state(null);
 
   // --- selection ---
@@ -15,6 +21,7 @@ class Trip {
   focusId = $state(null);   // moment the map is centred on
   storyIndex = $state(-1);  // -1 means the story viewer is closed
 
+  loaded = $derived(this.status === "ready");
   days = $derived(daysOf(this.moments));
 
   visibleMoments = $derived(
@@ -34,25 +41,39 @@ class Trip {
   storyMoment = $derived(this.visibleMoments[this.storyIndex] ?? null);
   storyOpen = $derived(this.storyIndex >= 0 && this.storyIndex < this.visibleMoments.length);
 
-  async load() {
+  // Which gallery to show comes from the URL: /g/<token>, or whatever
+  // data/home.json nominates for "/". The full library is never fetched --
+  // the public site only ever sees per-gallery projections.
+  async load(loc = globalThis.location) {
+    this.status = "loading";
+    this.error = null;
     try {
-      const [m, t] = await Promise.all([
-        fetch("data/moments.json").then((r) => r.json()),
-        fetch("data/tracks.json").then((r) => r.json()),
-      ]);
-      this.moments = m;
-      this.tracks = t;
-      this.loaded = true;
+      let id = loc?.pathname?.match(GALLERY_PATH)?.[1] ?? null;
+      if (!id) {
+        const r = await fetch("/data/home.json");
+        if (r.status === 404) { this.status = "landing"; return; }
+        if (!r.ok) throw new Error(`home.json: HTTP ${r.status}`);
+        id = (await r.json()).gallery;
+      }
+      const r = await fetch(`/data/galleries/${id}.json`);
+      if (r.status === 404) { this.status = "notfound"; return; }
+      if (!r.ok) throw new Error(`gallery: HTTP ${r.status}`);
+      const g = await r.json();
+      this.galleryId = g.id;
+      this.title = g.title ?? "";
+      this.description = g.description ?? "";
+      this.moments = g.moments ?? [];
+      this.tracks = g.tracks ?? [];
+      this.status = "ready";
     } catch (e) {
-      this.error = String(e);
+      this.error = e.message ?? String(e);
+      this.status = "error";
     }
   }
 
   toggleFacet(id) {
     const anchor = this.storyMoment?.id;
-    this.facets = this.facets.includes(id)
-      ? this.facets.filter((f) => f !== id)
-      : [...this.facets, id];
+    this.facets = this.facets.includes(id) ? this.facets.filter((f) => f !== id) : [...this.facets, id];
     this.restoreStory(anchor);
   }
 

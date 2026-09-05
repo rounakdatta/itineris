@@ -1,24 +1,36 @@
 <script>
-  import { api, mediaUrl } from "./lib/api.js";
+  import { api, mediaUrl, splitIso, joinIso, OFFSETS, storyUrl } from "./lib/api.js";
+  import MapPicker from "./MapPicker.svelte";
 
-  let { moment, suggestions = [], onSaved, onDeleted, onClose } = $props();
+  let { moment, galleries = [], suggestions = [], neighbours = { prev: null, next: null }, onSaved, onDeleted, onClose } = $props();
 
   let caption = $state(moment.caption ?? "");
   let place = $state(moment.place ?? "");
   let tags = $state([...moment.tags]);
   let lat = $state(moment.lat ?? "");
   let lng = $state(moment.lng ?? "");
-  let t = $state(moment.t);
+  const t0 = splitIso(moment.t);
+  let local = $state(t0.local);
+  let offset = $state(t0.offset);
+  let inGalleries = $state([...(moment.galleries ?? [])]);
   let tagDraft = $state("");
   let saving = $state(false);
   let error = $state(null);
   let confirmDelete = $state(false);
+  let showMap = $state(false);
 
+  const t = $derived(local && offset ? joinIso({ local, seconds: local === t0.local ? t0.seconds : ":00", offset }) : moment.t);
+  const offsets = $derived(OFFSETS.includes(offset) ? OFFSETS : [...OFFSETS, offset].sort());
+  const numLat = $derived(lat === "" || lat === null ? null : +lat);
+  const numLng = $derived(lng === "" || lng === null ? null : +lng);
   const dirty = $derived(
     caption !== (moment.caption ?? "") || place !== (moment.place ?? "") || tags.join() !== moment.tags.join() ||
-    String(lat) !== String(moment.lat ?? "") || String(lng) !== String(moment.lng ?? "") || t !== moment.t
+    String(lat) !== String(moment.lat ?? "") || String(lng) !== String(moment.lng ?? "") || t !== moment.t ||
+    inGalleries.slice().sort().join() !== (moment.galleries ?? []).slice().sort().join()
   );
   const offered = $derived(suggestions.filter((s) => !tags.includes(s) && (!tagDraft || s.includes(tagDraft.toLowerCase()))).slice(0, 12));
+  const homeGallery = $derived(galleries.find((g) => g.home));
+  const viewerLink = $derived(inGalleries.length ? storyUrl(homeGallery && inGalleries.includes(homeGallery.id) ? null : inGalleries[0], moment.id) : null);
 
   function addTag(raw) {
     const v = raw.trim().toLowerCase().replace(/[,#]/g, "");
@@ -29,15 +41,21 @@
     if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagDraft); }
     else if (e.key === "Backspace" && !tagDraft && tags.length) tags = tags.slice(0, -1);
   }
+  function useLocation(m) { lat = m.lat; lng = m.lng; }
+  function toggleGallery(id) { inGalleries = inGalleries.includes(id) ? inGalleries.filter((x) => x !== id) : [...inGalleries, id]; }
 
   async function save() {
     saving = true; error = null;
     try {
-      const body = { caption, place, tags, t };
       const hasLat = lat !== "" && lat !== null, hasLng = lng !== "" && lng !== null;
       if (hasLat !== hasLng) throw new Error("Give both latitude and longitude, or neither.");
-      body.lat = hasLat ? +lat : null; body.lng = hasLng ? +lng : null;
-      onSaved?.(await api.patch(moment.id, body));
+      const body = { caption, place, tags, t, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null };
+      let saved = await api.patch(moment.id, body);
+      const before = new Set(moment.galleries ?? []), after = new Set(inGalleries);
+      for (const gid of after) if (!before.has(gid)) await api.patchGallery(gid, { add: [moment.id] });
+      for (const gid of before) if (!after.has(gid)) await api.patchGallery(gid, { remove: [moment.id] });
+      saved = { ...saved, galleries: inGalleries };
+      onSaved?.(saved);
       onClose?.();
     } catch (e) { error = e.message; } finally { saving = false; }
   }
@@ -49,15 +67,16 @@
 </script>
 
 <div class="scrim" onclick={onClose} role="presentation"></div>
-<aside class="sheet" role="dialog" aria-label="Edit moment">
-  <div class="grab"></div>
+<aside class="sheet" role="dialog" aria-modal="true" aria-label="Edit moment">
+  <div class="grab" aria-hidden="true"></div>
   <div class="top">
     <img src={mediaUrl(moment.media.src)} alt="" />
     <div class="meta">
       <div class="muted small">{moment.filename ?? moment.id}{#if moment.camera} · {moment.camera}{/if}</div>
       <div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy} · by {moment.uploadedBy}{/if}</div>
       {#if moment.tz === "unknown"}<span class="badge warn">time zone unknown — check the time</span>{/if}
-      {#if moment.lat === null}<span class="badge warn">no GPS — add a location</span>{/if}
+      {#if moment.lat === null}<span class="badge warn">no GPS — set a location</span>{/if}
+      {#if viewerLink}<a class="small" href={viewerLink} target="_blank" rel="noopener">open in viewer ↗</a>{/if}
     </div>
   </div>
 
@@ -67,24 +86,47 @@
   <label>Tags
     <div class="chips" onclick={(e) => e.currentTarget.querySelector("input")?.focus()} role="presentation">
       {#each tags as tag (tag)}
-        <button type="button" class="chip" onclick={() => (tags = tags.filter((x) => x !== tag))} title="remove">{tag} ✕</button>
+        <button type="button" class="chip" onclick={() => (tags = tags.filter((x) => x !== tag))} title="remove" aria-label={`remove ${tag}`}>{tag} ✕</button>
       {/each}
-      <input class="chipin" bind:value={tagDraft} onkeydown={onTagKey} onblur={() => tagDraft && addTag(tagDraft)} placeholder={tags.length ? "" : "food, run, night…"} />
+      <input class="chipin" bind:value={tagDraft} onkeydown={onTagKey} onblur={() => tagDraft && addTag(tagDraft)} placeholder={tags.length ? "" : "food, run, night…"} aria-label="Add a tag" />
     </div>
   </label>
   {#if offered.length}
-    <div class="offer">
-      {#each offered as s (s)}<button type="button" class="chip ghost" onclick={() => addTag(s)}>+ {s}</button>{/each}
-    </div>
+    <div class="offer">{#each offered as s (s)}<button type="button" class="chip ghost" onclick={() => addTag(s)}>+ {s}</button>{/each}</div>
   {/if}
 
+  <fieldset class="galleries">
+    <legend>Galleries <span class="muted small">{inGalleries.length ? "" : "— not shared anywhere yet"}</span></legend>
+    {#if galleries.length === 0}<p class="muted small">No galleries yet. Create one in the Galleries tab.</p>{/if}
+    {#each galleries as g (g.id)}
+      <label class="gal"><input type="checkbox" checked={inGalleries.includes(g.id)} onchange={() => toggleGallery(g.id)} /> {g.title}{#if g.home}<span class="muted small"> · home</span>{/if}</label>
+    {/each}
+  </fieldset>
+
+  <div class="loc-head">
+    <span class="lbl">Location</span>
+    <span class="spacer"></span>
+    {#if neighbours.prev}<button type="button" class="btn tiny" onclick={() => useLocation(neighbours.prev)} title={neighbours.prev.place || neighbours.prev.id}>← use previous photo's</button>{/if}
+    {#if neighbours.next}<button type="button" class="btn tiny" onclick={() => useLocation(neighbours.next)} title={neighbours.next.place || neighbours.next.id}>use next photo's →</button>{/if}
+    <button type="button" class="btn tiny" aria-pressed={showMap} onclick={() => (showMap = !showMap)}>{showMap ? "Hide map" : "Pick on map"}</button>
+  </div>
+  {#if showMap}
+    <MapPicker lat={numLat} lng={numLng} hint={neighbours.prev ?? neighbours.next} onChange={(a, b) => { lat = a; lng = b; }} />
+  {/if}
   <div class="row">
     <label>Latitude<input inputmode="decimal" bind:value={lat} placeholder="1.2829" /></label>
     <label>Longitude<input inputmode="decimal" bind:value={lng} placeholder="103.8443" /></label>
   </div>
-  <label>Time <span class="muted small">(local, with offset)</span><input bind:value={t} spellcheck="false" /></label>
 
-  {#if error}<p class="err">{error}</p>{/if}
+  <div class="row">
+    <label>Time <span class="muted small">(the photo's local time)</span><input type="datetime-local" bind:value={local} /></label>
+    <label>Zone offset
+      <select bind:value={offset}>{#each offsets as o (o)}<option value={o}>{o}</option>{/each}</select>
+    </label>
+  </div>
+  <p class="muted tiny-note">Stored as <code>{t}</code></p>
+
+  {#if error}<p class="err" role="alert">{error}</p>{/if}
 
   <div class="actions">
     {#if confirmDelete}
@@ -106,22 +148,29 @@
     background: var(--panel); border-radius: 18px 18px 0 0; padding: 8px 16px max(16px, env(safe-area-inset-bottom));
     box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.6);
   }
-  @media (min-width: 760px) {
-    .sheet { left: 50%; right: auto; bottom: 50%; translate: -50% 50%; width: 560px; max-height: 88vh; border-radius: 18px; }
-  }
+  @media (min-width: 760px) { .sheet { left: 50%; right: auto; bottom: 50%; translate: -50% 50%; width: 600px; max-height: 88vh; border-radius: 18px; } }
   .grab { width: 40px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); margin: 4px auto 12px; }
   .top { display: flex; gap: 12px; margin-bottom: 14px; }
   .top img { width: 96px; height: 128px; object-fit: cover; border-radius: 10px; flex: 0 0 auto; background: var(--bg); }
   .meta { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
   .small { font-size: 12px; overflow-wrap: anywhere; }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
-  label input, label textarea { margin-top: 5px; }
+  label, .lbl { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+  label input, label textarea, label select { margin-top: 5px; }
+  select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); cursor: text; }
   .chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 13px; }
   .chip.ghost { background: transparent; color: var(--muted); }
   .chipin { flex: 1 1 90px; min-width: 90px; border: 0; background: transparent; padding: 4px 2px; }
   .offer { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .galleries { margin: 14px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+  .galleries legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+  .gal { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; color: var(--text); }
+  .gal input { width: auto; margin: 0; }
+  .loc-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .btn.tiny { padding: 4px 9px; font-size: 12px; }
+  .tiny-note { font-size: 12px; margin: 6px 0 0; }
+  code { font-size: 12px; }
   .err { color: var(--danger); font-size: 13px; }
   .actions { display: flex; gap: 8px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
   .spacer { flex: 1; }

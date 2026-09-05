@@ -34,12 +34,14 @@ Tags are **authored, never inferred**. Nothing in this repo classifies photos.
 
 ```sh
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:5173  (viewer, demo gallery)
 npm run dev -- --host   # to open it on your phone over LAN
 ```
 
-The demo trip and its placeholder media are committed, so a fresh clone runs as
-is. `npm run seed` regenerates them from `scripts/make-seed.js`.
+The demo trip is generated, not committed: every `dev`/`build`/`test` script
+first runs `scripts/make-seed.js`, which writes `seed/` (the private library,
+the public projection of one demo gallery, placeholder media) deterministically
+and mirrors the public half into `public/`.
 
 ## Layout
 
@@ -76,6 +78,23 @@ timezone never enters the picture.
 | hold / `space` | pause |
 | swipe down / `esc` | close |
 
+## Galleries
+
+Uploads are **private by default**. A gallery is a curated subset — any photos,
+any routes — with an **unguessable URL**: `/g/<12-char token>`. Share one link
+with one group, another with another; a photo can sit in as many galleries as
+you like. One gallery can be marked *home* and is what `/` shows; with no home
+gallery, `/` is a landing card that lists nothing.
+
+The public site never sees the library. The admin materialises one JSON per
+gallery under `data/galleries/<token>.json` using a **whitelist** projection
+(`pub()` in `server/store.js`) — uploader, filename, camera and the original's
+path can't leak without someone adding them there on purpose. Media is served by
+content hash, so a photo not linked from any gallery you hold is not discoverable.
+
+Deep links: `#m/<id>` opens a story, `#wall` the wall. Opening a story pushes
+one history entry, so the phone's back button closes it instead of leaving.
+
 ## Admin (uploads and tagging)
 
 `server/` is a small Node service (Hono + sharp) that lives at `/admin/` on the
@@ -100,6 +119,17 @@ npm run build:admin && npm run server   # http://localhost:8080/admin/  (set Rem
 npm run test:server                      # forges JPEGs with EXIF/GPS and exercises every route
 ```
 
+## Tests
+
+```sh
+npm test               # vitest + jsdom + Testing Library: store, router, gestures, admin components
+npm run test:server    # forges JPEGs with EXIF/GPS and drives every API route on a fresh, a legacy and an existing volume
+npm run test:e2e       # real headless Chromium via nix: nginx + admin server + puppeteer walking the user journey, screenshots
+```
+
+CI runs the first two before building any image. The e2e needs `nix`; it
+resolves Chromium and a font from nixpkgs itself (`scripts/browser.mjs`).
+
 ## Build and deploy
 
 The image is a two-stage Dockerfile: `node:24-alpine` runs `npm run build`,
@@ -122,7 +152,7 @@ on purpose — it is meant to be shared.
 
 ## Not built yet
 
-- Upload path (mobile + desktop), and the tagging UI that goes with it
-- Real media pipeline — `media.src` is the only field that needs repointing
-- Privacy scrub for publishing: clip route starts/ends, fuzz home, strip EXIF
-- Journey playback ("▶" — fly the map through the trip while photos appear)
+- Video (needs ffmpeg for poster frames and transcoding — a separate decision)
+- Tracks: GPX upload for runs and rides; the model and the viewer already render them
+- Journey playback ("▶" — fly the map through the trip while photos surface)
+- A Content-Security-Policy header, once it can be verified against the deployed site

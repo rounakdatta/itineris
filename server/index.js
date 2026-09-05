@@ -4,14 +4,14 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Store } from "./store.js";
+import { Store, token, TOKEN_RE } from "./store.js";
 import { ingestPhoto } from "./ingest.js";
 import { isLocalIso } from "./time.js";
 
 const env = (k, d) => process.env[k] ?? d;
 const PORT = +env("ITINERIS_PORT", 8080);
 const DATA_DIR = path.resolve(env("ITINERIS_DATA_DIR", ".data"));
-const SEED_DIR = path.resolve(env("ITINERIS_SEED_DIR", "public"));
+const SEED_DIR = path.resolve(env("ITINERIS_SEED_DIR", "seed"));
 const UI_DIR = path.resolve(env("ITINERIS_ADMIN_UI_DIR", "dist-admin"));
 // Optional second gate behind tinyauth's own whitelist. Empty = trust tinyauth.
 const ALLOWED = env("ITINERIS_ADMIN_EMAILS", "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -34,13 +34,34 @@ app.use("/admin/*", async (c, next) => {
   await next();
 });
 
-app.get("/admin/api/me", (c) => c.json({ email: c.get("email") }));
-app.get("/admin/api/moments", async (c) => c.json(await store.moments()));
+const STR = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : null);
+const NUM_OR_NULL = (v) => (v === null || v === "" ? null : Number.isFinite(+v) ? +v : undefined);
+const IDS = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === "string"))] : null);
+const cleanTags = (arr) => [...new Set(arr.map((t) => STR(t, 40)).filter(Boolean).map((t) => t.toLowerCase()))];
+const withGalleries = (moments, galleries) => {
+  const idx = new Map();
+  for (const g of galleries) for (const id of g.momentIds ?? []) (idx.get(id) ?? idx.set(id, []).get(id)).push(g.id);
+  return moments.map((m) => ({ ...m, galleries: idx.get(m.id) ?? [] }));
+};
+const galleryView = (g) => ({ ...g, count: (g.momentIds ?? []).length, trackCount: (g.trackIds ?? []).length });
 
+// ---- read ----------------------------------------------------------------
+app.get("/admin/api/me", (c) => c.json({ email: c.get("email") }));
+app.get("/admin/api/library", async (c) => {
+  const [moments, tracks, galleries] = await Promise.all([store.moments(), store.tracks(), store.galleries()]);
+  return c.json({ moments: withGalleries(moments, galleries), tracks, galleries: galleries.map(galleryView) });
+});
+app.get("/admin/api/moments", async (c) => c.json(withGalleries(await store.moments(), await store.galleries())));
+app.get("/admin/api/tracks", async (c) => c.json(await store.tracks()));
+app.get("/admin/api/galleries", async (c) => c.json((await store.galleries()).map(galleryView)));
+
+// ---- moments -------------------------------------------------------------
 app.post("/admin/api/upload", bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => {
   const body = await c.req.parseBody({ all: true });
   const files = [].concat(body.files ?? body.file ?? []).filter((f) => typeof f === "object" && typeof f.arrayBuffer === "function");
   if (files.length === 0) return c.json({ error: "no files" }, 400);
+  // Optional: drop straight into a gallery, so "upload to this gallery" is one step.
+  const galleryId = typeof body.gallery === "string" && TOKEN_RE.test(body.gallery) ? body.gallery : null;
 
   const created = [], duplicates = [], errors = [];
   for (const f of files) {
@@ -53,64 +74,151 @@ app.post("/admin/api/upload", bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => {
     }
   }
   if (created.length) {
-    await store.update((list) => {
+    await store.updateMoments((list) => {
       const have = new Set(list.map((m) => m.id));
       return [...list, ...created.filter((m) => !have.has(m.id))];
     });
   }
+  const touched = [...created.map((m) => m.id), ...duplicates.map((d) => d.id)];
+  if (galleryId && touched.length) {
+    await store.updateGalleries((gs) => gs.map((g) => (g.id === galleryId ? { ...g, momentIds: [...new Set([...(g.momentIds ?? []), ...touched])], updatedAt: new Date().toISOString() } : g)));
+  }
   return c.json({ created, duplicates, errors }, errors.length && !created.length ? 422 : 200);
 });
 
-const STR = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : null);
-const NUM_OR_NULL = (v) => (v === null || v === "" ? null : Number.isFinite(+v) ? +v : undefined);
-
-app.patch("/admin/api/moments/:id", async (c) => {
-  const id = c.req.param("id");
-  let patch;
-  try { patch = await c.req.json(); } catch { return c.json({ error: "invalid json" }, 400); }
+function momentPatch(patch, email) {
   const upd = {};
   if ("caption" in patch) upd.caption = STR(patch.caption, 2000) ?? "";
   if ("place" in patch) upd.place = STR(patch.place, 200) ?? "";
   if ("tags" in patch) {
-    if (!Array.isArray(patch.tags)) return c.json({ error: "tags must be an array" }, 400);
-    upd.tags = [...new Set(patch.tags.map((t) => STR(t, 40)).filter(Boolean).map((t) => t.toLowerCase()))];
+    if (!Array.isArray(patch.tags)) return { error: "tags must be an array" };
+    upd.tags = cleanTags(patch.tags);
   }
   if ("lat" in patch || "lng" in patch) {
     const lat = NUM_OR_NULL(patch.lat), lng = NUM_OR_NULL(patch.lng);
-    if (lat === undefined || lng === undefined) return c.json({ error: "lat/lng must be numbers or null" }, 400);
-    if ((lat === null) !== (lng === null)) return c.json({ error: "lat and lng go together" }, 400);
-    if (lat !== null && (Math.abs(lat) > 90 || Math.abs(lng) > 180)) return c.json({ error: "coordinates out of range" }, 400);
+    if (lat === undefined || lng === undefined) return { error: "lat/lng must be numbers or null" };
+    if ((lat === null) !== (lng === null)) return { error: "lat and lng go together" };
+    if (lat !== null && (Math.abs(lat) > 90 || Math.abs(lng) > 180)) return { error: "coordinates out of range" };
     upd.lat = lat; upd.lng = lng;
   }
   if ("t" in patch) {
-    if (!isLocalIso(patch.t)) return c.json({ error: "t must be ISO-8601 with an explicit offset, e.g. 2026-03-14T08:40:00+08:00" }, 400);
+    if (!isLocalIso(patch.t)) return { error: "t must be ISO-8601 with an explicit offset, e.g. 2026-03-14T08:40:00+08:00" };
     upd.t = patch.t; upd.tz = "manual";
   }
+  return { upd: { ...upd, editedBy: email, editedAt: new Date().toISOString() } };
+}
+
+app.patch("/admin/api/moments/:id", async (c) => {
+  const id = c.req.param("id");
+  let patch; try { patch = await c.req.json(); } catch { return c.json({ error: "invalid json" }, 400); }
+  const { upd, error } = momentPatch(patch, c.get("email"));
+  if (error) return c.json({ error }, 400);
   let result = null;
-  await store.update((list) => list.map((m) => (m.id === id ? (result = { ...m, ...upd, editedBy: c.get("email"), editedAt: new Date().toISOString() }) : m)));
-  return result ? c.json(result) : c.json({ error: "not found" }, 404);
+  await store.updateMoments((list) => list.map((m) => (m.id === id ? (result = { ...m, ...upd }) : m)));
+  if (!result) return c.json({ error: "not found" }, 404);
+  const galleries = await store.galleries();
+  return c.json(withGalleries([result], galleries)[0]);
 });
 
-// Removes the moment and its public derivatives. The ORIGINAL is deliberately
-// kept: deleting from the journal must never destroy the only copy of a photo.
+// Bulk: tag a whole selection, set a place, in one atomic write.
+app.patch("/admin/api/moments", async (c) => {
+  let body; try { body = await c.req.json(); } catch { return c.json({ error: "invalid json" }, 400); }
+  const ids = IDS(body.ids);
+  if (!ids?.length) return c.json({ error: "ids required" }, 400);
+  const add = Array.isArray(body.addTags) ? cleanTags(body.addTags) : [];
+  const remove = Array.isArray(body.removeTags) ? cleanTags(body.removeTags) : [];
+  const place = "place" in body ? (STR(body.place, 200) ?? "") : undefined;
+  const set = new Set(ids); let n = 0;
+  await store.updateMoments((list) => list.map((m) => {
+    if (!set.has(m.id)) return m;
+    n++;
+    const tags = [...new Set([...(m.tags ?? []).filter((t) => !remove.includes(t)), ...add])];
+    return { ...m, tags, ...(place !== undefined ? { place } : {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
+  }));
+  return c.json({ updated: n });
+});
+
+// Removes the moment, its public derivatives and its gallery memberships. The
+// ORIGINAL is deliberately kept: deleting from the journal must never destroy
+// the only copy of a photo.
 app.delete("/admin/api/moments/:id", async (c) => {
   const id = c.req.param("id");
   let gone = null;
-  await store.update((list) => list.filter((m) => (m.id === id ? ((gone = m), false) : true)));
+  await store.updateMoments((list) => list.filter((m) => (m.id === id ? ((gone = m), false) : true)));
   if (!gone) return c.json({ error: "not found" }, 404);
+  await store.updateGalleries((gs) => gs.map((g) => ((g.momentIds ?? []).includes(id) ? { ...g, momentIds: g.momentIds.filter((x) => x !== id), updatedAt: new Date().toISOString() } : g)));
   await store.removeFiles([gone.media?.src, gone.media?.thumb].filter((p) => p && p.startsWith("media/")));
   return c.json({ deleted: id, originalKept: gone.media?.original ?? null });
 });
 
-// The admin UI. In production Traefik only routes /admin to this process; the
-// public site is nginx. Locally this also serves media so thumbnails render.
+// ---- galleries -----------------------------------------------------------
+app.post("/admin/api/galleries", async (c) => {
+  let body; try { body = await c.req.json(); } catch { return c.json({ error: "invalid json" }, 400); }
+  const title = STR(body.title, 120);
+  if (!title) return c.json({ error: "title required" }, 400);
+  const now = new Date().toISOString();
+  const known = new Set((await store.moments()).map((m) => m.id));
+  const g = {
+    id: token(), title, description: STR(body.description, 1000) ?? "", home: false,
+    momentIds: (IDS(body.momentIds) ?? []).filter((id) => known.has(id)), trackIds: IDS(body.trackIds) ?? [],
+    createdAt: now, updatedAt: now, createdBy: c.get("email"),
+  };
+  await store.updateGalleries((gs) => {
+    if (body.home === true) gs = gs.map((x) => ({ ...x, home: false }));
+    return [...gs, { ...g, home: body.home === true }];
+  });
+  return c.json(galleryView({ ...g, home: body.home === true }), 201);
+});
+
+app.patch("/admin/api/galleries/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!TOKEN_RE.test(id)) return c.json({ error: "bad id" }, 400);
+  let body; try { body = await c.req.json(); } catch { return c.json({ error: "invalid json" }, 400); }
+  const [known, knownTracks] = [new Set((await store.moments()).map((m) => m.id)), new Set((await store.tracks()).map((t) => t.id))];
+  let result = null, bad = null;
+  await store.updateGalleries((gs) => {
+    if (!gs.some((g) => g.id === id)) return gs;
+    if (body.home === true) gs = gs.map((g) => ({ ...g, home: g.id === id }));
+    return gs.map((g) => {
+      if (g.id !== id) return g;
+      const n = { ...g };
+      if ("title" in body) { const t = STR(body.title, 120); if (!t) { bad = "title required"; return g; } n.title = t; }
+      if ("description" in body) n.description = STR(body.description, 1000) ?? "";
+      if (body.home === false) n.home = false;
+      let ms = new Set(n.momentIds ?? []), ts = new Set(n.trackIds ?? []);
+      if (IDS(body.momentIds)) ms = new Set(IDS(body.momentIds));
+      for (const x of IDS(body.add) ?? []) ms.add(x);
+      for (const x of IDS(body.remove) ?? []) ms.delete(x);
+      if (IDS(body.trackIds)) ts = new Set(IDS(body.trackIds));
+      for (const x of IDS(body.addTracks) ?? []) ts.add(x);
+      for (const x of IDS(body.removeTracks) ?? []) ts.delete(x);
+      n.momentIds = [...ms].filter((x) => known.has(x));
+      n.trackIds = [...ts].filter((x) => knownTracks.has(x));
+      n.updatedAt = new Date().toISOString();
+      return (result = n);
+    });
+  });
+  if (bad) return c.json({ error: bad }, 400);
+  return result ? c.json(galleryView(result)) : c.json({ error: "not found" }, 404);
+});
+
+app.delete("/admin/api/galleries/:id", async (c) => {
+  const id = c.req.param("id");
+  let found = false;
+  await store.updateGalleries((gs) => gs.filter((g) => (g.id === id ? ((found = true), false) : true)));
+  return found ? c.json({ deleted: id }) : c.json({ error: "not found" }, 404);
+});
+
+// ---- UI ------------------------------------------------------------------
+// In production Traefik only routes /admin to this process; the public site is
+// nginx. Locally this also serves the public data and media so both UIs work.
 app.get("/admin", (c) => c.redirect("/admin/"));
 app.use("/admin/*", serveStatic({ root: UI_DIR, rewriteRequestPath: (p) => p.replace(/^\/admin/, "") || "/" }));
 app.get("/admin/*", async (c) => c.html(await readFile(path.join(UI_DIR, "index.html"), "utf8")));
 app.use("/media/*", serveStatic({ root: DATA_DIR }));
 app.use("/data/*", serveStatic({ root: DATA_DIR }));
 
-const seeded = await store.init(SEED_DIR);
+const how = await store.init(SEED_DIR);
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
-  console.log(`itineris admin on :${PORT}  data=${DATA_DIR} (${seeded})  ui=${UI_DIR}  allowlist=${ALLOWED.length ? ALLOWED.join(",") : "(tinyauth only)"}`);
+  console.log(`itineris admin on :${PORT}  data=${DATA_DIR} (${how})  ui=${UI_DIR}  allowlist=${ALLOWED.length ? ALLOWED.join(",") : "(tinyauth only)"}`);
 });

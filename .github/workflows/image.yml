@@ -22,6 +22,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Tests before any image is built: component tests in jsdom, then the
+      # live server harness (which needs the admin UI built).
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Component tests
+        run: npm test
+
+      - name: Server harness
+        run: |
+          npm run build:admin
+          npm run test:server
+
       - name: Install Helm
         uses: azure/setup-helm@v4
 
