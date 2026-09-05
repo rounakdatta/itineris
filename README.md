@@ -76,6 +76,26 @@ timezone never enters the picture.
 | hold / `space` | pause |
 | swipe down / `esc` | close |
 
+## Build and deploy
+
+The image is a two-stage Dockerfile: `node:24-alpine` runs `npm run build`,
+then `nginxinc/nginx-unprivileged` serves `dist/` on port 8080 as uid 101 —
+non-root, read-only root filesystem, every capability dropped.
+`nginx/default.conf` owns caching (fingerprinted assets are immutable, `data/`
+and `media/` revalidate, the app shell is `no-cache`) and `/healthz`.
+
+CI pushes the image to `ghcr.io/rounakdatta/itineris` and the chart in
+`charts/itineris` to `oci://ghcr.io/rounakdatta/charts`, matching the
+`agentfest` and `texas-fold-em` pipelines. **A `v*` tag is the release**: it
+sets the chart version, the appVersion, and therefore the image the chart
+deploys, in one move. Plain pushes to `main` publish `+<sha>` chart versions
+for tracing. `homelab.setup` consumes the chart through a Kustomize
+`helmCharts` block pinned to a version.
+
+The chart deliberately ships no Ingress: the deployment repo owns hostnames,
+TLS and whatever sits in front. For the public viewer that is nothing at all,
+on purpose — it is meant to be shared.
+
 ## Not built yet
 
 - Upload path (mobile + desktop), and the tagging UI that goes with it

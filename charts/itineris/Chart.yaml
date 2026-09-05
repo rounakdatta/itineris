@@ -1,0 +1,6 @@
+apiVersion: v2
+name: itineris
+description: A travel journal viewed from several angles at once - map, timeline, photo wall and story
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

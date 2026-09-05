@@ -1,0 +1,56 @@
+image:
+  repository: ghcr.io/rounakdatta/itineris
+  # Empty means "use Chart.appVersion", so a release tag that sets
+  # --app-version moves the image with it and the two cannot drift. Set it
+  # explicitly to roll the image forward without bumping the chart.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Stateless: the image IS the site. Scaling is safe, though one nginx serving
+# a few megabytes of static files is plenty.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+# nginx-unprivileged listens here; anything below 1024 would need a capability
+# the container drops.
+containerPort: 8080
+
+# Unlike a workload that boots for minutes, a static site is either serving or
+# it isn't, so probes are cheap and honest here.
+probes:
+  enabled: true
+  path: /healthz
+
+# Pod-level. nginx-unprivileged runs as 101:101.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 101
+  runAsGroup: 101
+  fsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level securityContext, applied per-container in the Deployment.
+# Distinct from the pod securityContext above: capabilities and privilege
+# escalation are container properties, not pod ones.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  # Holds because nginx-unprivileged keeps its pid file and temp paths under
+  # /tmp, which the Deployment mounts as an emptyDir.
+  readOnlyRootFilesystem: true
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
