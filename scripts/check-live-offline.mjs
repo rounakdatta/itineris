@@ -3,12 +3,14 @@
 // install and saves the gallery for offline. The second reuses the profile but
 // resolves the site's host (and the map CDN) to nowhere, so neither the page
 // nor the worker can reach any network -- everything must come from cache.
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { launch, resolveBrowserEnv, shot, sleep, text, count } from "./browser.mjs";
 
 const SCRATCH = process.env.SCRATCH ?? "/tmp/itineris-shots";
+mkdirSync(path.join(SCRATCH, "shots"), { recursive: true });
 const base = process.argv[2] ?? "https://itineris.taptappers.club";
 const host = new URL(base).host;
 const env = resolveBrowserEnv(SCRATCH);
