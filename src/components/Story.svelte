@@ -165,6 +165,7 @@
     inset: 0;
     z-index: 50;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto 1fr auto;
     background: #06070a;
     overscroll-behavior: contain;
@@ -174,7 +175,15 @@
     overflow: hidden;
   }
   .media {
+    /*
+      grid-column is load-bearing. The bars/header/footer auto-place into
+      column 1, so an item spanning every row with no column of its own can't
+      fit there and grid opens an implicit column 2 for it -- which shoved the
+      photo off to the side of the viewer. Pin it to column 1 so it sits behind
+      the chrome (which carries z-index: 2) instead of beside it.
+    */
     grid-row: 1 / -1;
+    grid-column: 1;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -185,6 +194,7 @@
 
   .bars {
     grid-row: 1;
+    grid-column: 1;
     z-index: 2;
     display: flex;
     gap: 3px;
@@ -201,6 +211,7 @@
 
   header {
     grid-row: 2;
+    grid-column: 1;
     z-index: 2;
     display: flex;
     align-items: center;
@@ -218,6 +229,7 @@
 
   footer {
     grid-row: 4;
+    grid-column: 1;
     z-index: 2;
     padding: 28px 18px max(20px, env(safe-area-inset-bottom));
     background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);

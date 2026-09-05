@@ -1,10 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="0.6" y2="1">
-    <stop offset="0%" stop-color="#1f4037"/><stop offset="100%" stop-color="#99f2c8"/>
-  </linearGradient></defs>
-  <rect width="1080" height="1920" fill="url(#g)"/>
-  <circle cx="820" cy="430" r="230" fill="#fff" opacity="0.06"/>
-  <circle cx="240" cy="1380" r="330" fill="#fff" opacity="0.05"/>
-  <text x="72" y="1660" fill="#fff" opacity="0.95" font-family="system-ui,sans-serif" font-size="58" font-weight="600">East Coast Park</text>
-  <text x="72" y="1732" fill="#fff" opacity="0.6" font-family="system-ui,sans-serif" font-size="38">m012 &#183; cycle, nature</text>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0%" stop-color="#072b28"/>
+      <stop offset="58%" stop-color="#2fa896"/>
+      <stop offset="100%" stop-color="#a5ead9"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.62"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1080" height="1920" fill="url(#sky)"/>
+  
+  <circle cx="693" cy="726" r="430" fill="url(#glow)"/>
+  <circle cx="693" cy="726" r="104" fill="#fff" opacity="0.94"/>
+
+  <path d="M0,1292 L120,1286 L240,1262 L360,1230 L480,1207 L600,1202 L720,1218 L840,1248 L960,1277 L1080,1292 L1080,1920 L0,1920 Z" fill="#072b28" opacity="0.45"/>
+  <path d="M0,1342 L120,1311 L240,1304 L360,1326 L480,1367 L600,1406 L720,1426 L840,1418 L960,1385 L1080,1342 L1080,1920 L0,1920 Z" fill="#072b28" opacity="0.72"/>
+  <path d="M0,1492 L120,1516 L240,1540 L360,1553 L480,1547 L600,1527 L720,1501 L840,1482 L960,1478 L1080,1492 L1080,1920 L0,1920 Z" fill="#072b28" opacity="0.92"/>
+
+  <rect y="1180" width="1080" height="740" fill="url(#scrim)"/>
+  <!--
+    Baseline sits clear of y~1525, where the wall cell and timeline tick paint
+    their own time overlay. One line only: the id/tag line that used to live
+    here landed right on top of that clock.
+  -->
+  <text x="140" y="1440" fill="#fff" opacity="0.97" font-family="system-ui,-apple-system,sans-serif" font-size="80" font-weight="600">East Coast Park</text>
 </svg>

@@ -19,12 +19,6 @@
 </script>
 
 <nav class="bar">
-  <button
-    class="chip"
-    class:on={trip.facets.length === 0}
-    onclick={() => trip.clearFacets()}
-  >All</button>
-
   {#each FACETS as f}
     {#if counts[f.id] > 0}
       <button

@@ -1,10 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="0.6" y2="1">
-    <stop offset="0%" stop-color="#232526"/><stop offset="100%" stop-color="#414345"/>
-  </linearGradient></defs>
-  <rect width="1080" height="1920" fill="url(#g)"/>
-  <circle cx="820" cy="430" r="230" fill="#fff" opacity="0.06"/>
-  <circle cx="240" cy="1380" r="330" fill="#fff" opacity="0.05"/>
-  <text x="72" y="1660" fill="#fff" opacity="0.95" font-family="system-ui,sans-serif" font-size="58" font-weight="600">Merlion Park</text>
-  <text x="72" y="1732" fill="#fff" opacity="0.6" font-family="system-ui,sans-serif" font-size="38">m006 &#183; run</text>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0%" stop-color="#2e0f1d"/>
+      <stop offset="58%" stop-color="#e0426f"/>
+      <stop offset="100%" stop-color="#ffb3c9"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.62"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1080" height="1920" fill="url(#sky)"/>
+  
+  <circle cx="355" cy="750" r="430" fill="url(#glow)"/>
+  <circle cx="355" cy="750" r="104" fill="#fff" opacity="0.94"/>
+
+  <path d="M0,1229 L120,1205 L240,1200 L360,1216 L480,1245 L600,1275 L720,1290 L840,1285 L960,1260 L1080,1229 L1080,1920 L0,1920 Z" fill="#2e0f1d" opacity="0.45"/>
+  <path d="M0,1324 L120,1364 L240,1404 L360,1424 L480,1416 L600,1383 L720,1341 L840,1309 L960,1302 L1080,1324 L1080,1920 L0,1920 Z" fill="#2e0f1d" opacity="0.72"/>
+  <path d="M0,1551 L120,1546 L240,1525 L360,1499 L480,1480 L600,1476 L720,1489 L840,1514 L960,1538 L1080,1551 L1080,1920 L0,1920 Z" fill="#2e0f1d" opacity="0.92"/>
+
+  <rect y="1180" width="1080" height="740" fill="url(#scrim)"/>
+  <!--
+    Baseline sits clear of y~1525, where the wall cell and timeline tick paint
+    their own time overlay. One line only: the id/tag line that used to live
+    here landed right on top of that clock.
+  -->
+  <text x="140" y="1440" fill="#fff" opacity="0.97" font-family="system-ui,-apple-system,sans-serif" font-size="80" font-weight="600">Merlion Park</text>
 </svg>

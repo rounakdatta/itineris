@@ -1,12 +1,11 @@
 // Facets are authored, not inferred. Adding an angle = adding a row here.
 // `tags` match moments, `modes` match tracks. A facet with no modes shows no routes.
+// Two angles, matching the two primitives: places you stopped, and ways you
+// moved between them. No "All" chip -- an empty selection already means
+// everything (see momentMatches/trackMatches), so deselecting both is "all".
 export const FACETS = [
-  { id: "food",       label: "Food",        tags: ["food"],                 modes: [] },
-  { id: "experience", label: "Experiences", tags: ["experience"],           modes: [] },
-  { id: "nature",     label: "Nature",      tags: ["nature"],               modes: [] },
-  { id: "run",        label: "Runs",        tags: ["run"],                  modes: ["run"] },
-  { id: "cycle",      label: "Rides",       tags: ["cycle"],                modes: ["cycle"] },
-  { id: "night",      label: "Night",       tags: ["night"],                modes: [] },
+  { id: "spots",      label: "Spots",      tags: ["food", "experience", "nature", "coffee", "night"], modes: [] },
+  { id: "activities", label: "Activities", tags: ["run", "cycle"],                                    modes: ["run", "cycle", "walk"] },
 ];
 
 export const MODE_COLOR = {

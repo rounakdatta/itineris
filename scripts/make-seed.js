@@ -107,28 +107,95 @@ const tracks = [
 ];
 
 // Placeholder media so the story viewer has something with real dimensions.
-const PALETTES = [
-  ["#0f2027", "#2c5364"], ["#42275a", "#734b6d"], ["#1f4037", "#99f2c8"],
-  ["#414d0b", "#727a17"], ["#5f2c82", "#49a09d"], ["#232526", "#414345"],
-  ["#3a1c71", "#d76d77"], ["#134e5e", "#71b280"], ["#4b1248", "#f0c27b"],
-];
+//
+// COMPOSITION CONSTRAINT: these are authored 9:16, but the wall cells and the
+// timeline ticks are both 3:4 with `object-fit: cover`. Covering 9:16 into 3:4
+// scales to width, so only the middle 1440px is ever on screen -- everything
+// that identifies the frame has to live inside y 240..1680. (The previous
+// version put its caption at y 1660-1732 and it got cropped to a sliver, which
+// is what made the wall read as flat colour swatches.)
+const SAFE_TOP = 240;
+const SAFE_BOTTOM = 1680;
+
+// Keyed off tags[0] -- the same field the map colours its dots by -- so a tile
+// on the wall and its marker on the map read as the same thing.
+const TAG_PALETTE = {
+  food:       ["#2b1408", "#e8752f", "#ffc98a"],
+  experience: ["#221443", "#8a5cd6", "#e3cdff"],
+  nature:     ["#0b2f24", "#2f9e79", "#a8ecd3"],
+  run:        ["#2e0f1d", "#e0426f", "#ffb3c9"],
+  cycle:      ["#072b28", "#2fa896", "#a5ead9"],
+  coffee:     ["#241811", "#b3814e", "#eccfab"],
+  night:      ["#070c22", "#3f5ea8", "#b9caf5"],
+};
+
 const esc = (s) => s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
 
-mkdirSync(out("public/media"), { recursive: true });
-moments.forEach((m, i) => {
-  const [a, b] = PALETTES[i % PALETTES.length];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="0.6" y2="1">
-    <stop offset="0%" stop-color="${a}"/><stop offset="100%" stop-color="${b}"/>
-  </linearGradient></defs>
-  <rect width="1080" height="1920" fill="url(#g)"/>
-  <circle cx="820" cy="430" r="230" fill="#fff" opacity="0.06"/>
-  <circle cx="240" cy="1380" r="330" fill="#fff" opacity="0.05"/>
-  <text x="72" y="1660" fill="#fff" opacity="0.95" font-family="system-ui,sans-serif" font-size="58" font-weight="600">${esc(m.place)}</text>
-  <text x="72" y="1732" fill="#fff" opacity="0.6" font-family="system-ui,sans-serif" font-size="38">${esc(m.id)} &#183; ${esc(m.tags.join(", "))}</text>
+// A ridge line across the full width, filled down to the bottom edge.
+const ridge = (y, amp, phase) => {
+  const pts = [];
+  for (let x = 0; x <= 1080; x += 120) {
+    pts.push(`${x},${Math.round(y + Math.sin((x / 1080) * Math.PI * 2 + phase) * amp)}`);
+  }
+  return `M${pts.join(" L")} L1080,1920 L0,1920 Z`;
+};
+
+function placeholder(m, i) {
+  const [deep, mid, light] = TAG_PALETTE[m.tags[0]] ?? TAG_PALETTE.experience;
+  const isNight = m.tags.includes("night");
+
+  // Deterministic per-moment variation, so reseeding doesn't reshuffle the art.
+  const horizon = 1150 + ((i * 47) % 140);
+  const sunX = 190 + ((i * 173) % 700);
+  const sunY = horizon - 360 - ((i * 61) % 170);
+
+  const stars = isNight
+    ? Array.from({ length: 26 }, (_, s) => {
+        const x = (s * 331) % 1060 + 10;
+        const y = SAFE_TOP + ((s * 197) % (horizon - SAFE_TOP - 120));
+        const r = 3 + ((s * 7) % 4);
+        return `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity="${(0.25 + ((s * 13) % 50) / 100).toFixed(2)}"/>`;
+      }).join("")
+    : "";
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0%" stop-color="${deep}"/>
+      <stop offset="58%" stop-color="${mid}"/>
+      <stop offset="100%" stop-color="${light}"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.62"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1080" height="1920" fill="url(#sky)"/>
+  ${stars}
+  <circle cx="${sunX}" cy="${sunY}" r="430" fill="url(#glow)"/>
+  <circle cx="${sunX}" cy="${sunY}" r="${isNight ? 74 : 104}" fill="#fff" opacity="${isNight ? 0.82 : 0.94}"/>
+
+  <path d="${ridge(horizon, 46, i * 0.7)}" fill="${deep}" opacity="0.45"/>
+  <path d="${ridge(horizon + 118, 62, i * 0.7 + 2.1)}" fill="${deep}" opacity="0.72"/>
+  <path d="${ridge(horizon + 268, 38, i * 0.7 + 4.2)}" fill="${deep}" opacity="0.92"/>
+
+  <rect y="1180" width="1080" height="740" fill="url(#scrim)"/>
+  <!--
+    Baseline sits clear of y~1525, where the wall cell and timeline tick paint
+    their own time overlay. One line only: the id/tag line that used to live
+    here landed right on top of that clock.
+  -->
+  <text x="140" y="${SAFE_BOTTOM - 240}" fill="#fff" opacity="0.97" font-family="system-ui,-apple-system,sans-serif" font-size="80" font-weight="600">${esc(m.place)}</text>
 </svg>`;
-  writeFileSync(out(`public/media/${m.id}.svg`), svg);
-});
+}
+
+mkdirSync(out("public/media"), { recursive: true });
+moments.forEach((m, i) => writeFileSync(out(`public/media/${m.id}.svg`), placeholder(m, i)));
 
 mkdirSync(out("public/data"), { recursive: true });
 writeFileSync(out("public/data/moments.json"), JSON.stringify(moments, null, 2));
