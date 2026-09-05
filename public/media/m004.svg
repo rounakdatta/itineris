@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0.6" y2="1">
+    <stop offset="0%" stop-color="#414d0b"/><stop offset="100%" stop-color="#727a17"/>
+  </linearGradient></defs>
+  <rect width="1080" height="1920" fill="url(#g)"/>
+  <circle cx="820" cy="430" r="230" fill="#fff" opacity="0.06"/>
+  <circle cx="240" cy="1380" r="330" fill="#fff" opacity="0.05"/>
+  <text x="72" y="1660" fill="#fff" opacity="0.95" font-family="system-ui,sans-serif" font-size="58" font-weight="600">Tiong Bahru</text>
+  <text x="72" y="1732" fill="#fff" opacity="0.6" font-family="system-ui,sans-serif" font-size="38">m004 &#183; experience, coffee</text>
+</svg>

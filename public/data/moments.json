@@ -1,0 +1,369 @@
+[
+  {
+    "id": "m001",
+    "t": "2026-03-14T08:40+08:00",
+    "lat": 1.282818,
+    "lng": 103.844149,
+    "place": "Chinatown",
+    "placeId": "chinatown",
+    "caption": "Kaya toast and kopi-o at a corner shophouse",
+    "tags": [
+      "food"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m001.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m002",
+    "t": "2026-03-14T09:25+08:00",
+    "lat": 1.282318,
+    "lng": 103.84465,
+    "place": "Chinatown",
+    "placeId": "chinatown",
+    "caption": "Incense coils at Thian Hock Keng",
+    "tags": [
+      "experience"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m002.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m003",
+    "t": "2026-03-14T12:10+08:00",
+    "lat": 1.281043,
+    "lng": 103.84549,
+    "place": "Maxwell Food Centre",
+    "placeId": "maxwell",
+    "caption": "Tian Tian chicken rice. Worth the queue.",
+    "tags": [
+      "food"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m003.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m004",
+    "t": "2026-03-14T15:30+08:00",
+    "lat": 1.286255,
+    "lng": 103.826655,
+    "place": "Tiong Bahru",
+    "placeId": "tiongbahru",
+    "caption": "Art deco walkups and a very good flat white",
+    "tags": [
+      "experience",
+      "coffee"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m004.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m005",
+    "t": "2026-03-14T19:45+08:00",
+    "lat": 1.281449,
+    "lng": 103.850184,
+    "place": "Lau Pa Sat",
+    "placeId": "laupasat",
+    "caption": "Satay street after the road closes",
+    "tags": [
+      "food",
+      "night"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m005.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m006",
+    "t": "2026-03-15T06:35+08:00",
+    "lat": 1.287041,
+    "lng": 103.854946,
+    "place": "Merlion Park",
+    "placeId": "merlion",
+    "caption": "Sunrise over the bay, empty promenade",
+    "tags": [
+      "run"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m006.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m007",
+    "t": "2026-03-15T07:05+08:00",
+    "lat": 1.284009,
+    "lng": 103.861388,
+    "place": "Marina Bay Sands",
+    "placeId": "mbs",
+    "caption": "Halfway. Legs fine, humidity brutal.",
+    "tags": [
+      "run"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m007.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m008",
+    "t": "2026-03-15T10:20+08:00",
+    "lat": 1.281292,
+    "lng": 103.863853,
+    "place": "Gardens by the Bay",
+    "placeId": "gardens",
+    "caption": "Supertrees from underneath",
+    "tags": [
+      "experience",
+      "nature"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m008.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m009",
+    "t": "2026-03-15T13:00+08:00",
+    "lat": 1.282125,
+    "lng": 103.862709,
+    "place": "Gardens by the Bay",
+    "placeId": "gardens",
+    "caption": "Laksa at Satay by the Bay",
+    "tags": [
+      "food"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m009.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m010",
+    "t": "2026-03-15T19:50+08:00",
+    "lat": 1.28426,
+    "lng": 103.860187,
+    "place": "Marina Bay Sands",
+    "placeId": "mbs",
+    "caption": "Spectra light show from the boardwalk",
+    "tags": [
+      "experience",
+      "night"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m010.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m011",
+    "t": "2026-03-16T07:10+08:00",
+    "lat": 1.300918,
+    "lng": 103.912042,
+    "place": "East Coast Park",
+    "placeId": "eastcoast",
+    "caption": "Rented a bike at Bedok jetty",
+    "tags": [
+      "cycle"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m011.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m012",
+    "t": "2026-03-16T08:15+08:00",
+    "lat": 1.30028,
+    "lng": 103.911825,
+    "place": "East Coast Park",
+    "placeId": "eastcoast",
+    "caption": "Casuarina trees the whole way out",
+    "tags": [
+      "cycle",
+      "nature"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m012.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m013",
+    "t": "2026-03-16T09:30+08:00",
+    "lat": 1.300968,
+    "lng": 103.912405,
+    "place": "East Coast Park",
+    "placeId": "eastcoast",
+    "caption": "Breakfast stop: carrot cake, black",
+    "tags": [
+      "food"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m013.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m014",
+    "t": "2026-03-16T14:00+08:00",
+    "lat": 1.255851,
+    "lng": 103.810658,
+    "place": "Siloso Beach",
+    "placeId": "sentosa",
+    "caption": "Siloso, and the water is bathwater-warm",
+    "tags": [
+      "experience"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m014.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m015",
+    "t": "2026-03-16T18:40+08:00",
+    "lat": 1.25622,
+    "lng": 103.810188,
+    "place": "Siloso Beach",
+    "placeId": "sentosa",
+    "caption": "Sunset from the boardwalk back",
+    "tags": [
+      "nature"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m015.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m016",
+    "t": "2026-03-17T09:15+08:00",
+    "lat": 1.314448,
+    "lng": 103.816671,
+    "place": "Botanic Gardens",
+    "placeId": "botanic",
+    "caption": "Orchid garden before the heat",
+    "tags": [
+      "nature",
+      "experience"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m016.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m017",
+    "t": "2026-03-17T12:30+08:00",
+    "lat": 1.306296,
+    "lng": 103.851595,
+    "place": "Little India",
+    "placeId": "littleindia",
+    "caption": "Banana leaf, too much of it",
+    "tags": [
+      "food"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m017.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m018",
+    "t": "2026-03-17T15:00+08:00",
+    "lat": 1.30613,
+    "lng": 103.852086,
+    "place": "Little India",
+    "placeId": "littleindia",
+    "caption": "Tekka market, upstairs fabric stalls",
+    "tags": [
+      "experience"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m018.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m019",
+    "t": "2026-03-17T17:20+08:00",
+    "lat": 1.301552,
+    "lng": 103.859789,
+    "place": "Haji Lane",
+    "placeId": "hajilane",
+    "caption": "Murals and an iced kopi to finish",
+    "tags": [
+      "experience",
+      "coffee"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m019.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  },
+  {
+    "id": "m020",
+    "t": "2026-03-18T11:00+08:00",
+    "lat": 1.359267,
+    "lng": 103.988519,
+    "place": "Jewel Changi",
+    "placeId": "jewel",
+    "caption": "The Rain Vortex, on the way out",
+    "tags": [
+      "experience"
+    ],
+    "media": {
+      "type": "photo",
+      "src": "media/m020.svg",
+      "w": 1080,
+      "h": 1920
+    }
+  }
+]
