@@ -31,11 +31,12 @@ export function resolveBrowserEnv(scratch) {
 // `identity` adds the forward-auth header ONLY to requests for that origin --
 // a page-wide extra header would turn every cross-origin fetch (map tiles!)
 // into a CORS preflight the CDN rejects, which never happens in production.
-export async function launch({ width = 390, height = 844, mobile = true, env = process.env, identity = null, extraArgs = [] } = {}) {
+export async function launch({ width = 390, height = 844, mobile = true, env = process.env, identity = null, extraArgs = [], userDataDir = undefined } = {}) {
   const browser = await puppeteer.launch({
     executablePath: env.CHROMIUM,
     headless: true,
     env,
+    userDataDir,
     protocolTimeout: 60_000,
     args: [
       "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--hide-scrollbars",

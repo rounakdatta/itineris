@@ -155,6 +155,7 @@ npm run test:server                      # forges JPEGs with EXIF/GPS and exerci
 npm test               # vitest + jsdom + Testing Library: store, router, gestures, admin components
 npm run test:server    # forges JPEGs with EXIF/GPS and drives every API route on a fresh, a legacy and an existing volume
 npm run test:e2e       # real headless Chromium via nix: nginx + admin server + puppeteer walking the user journey, screenshots
+npm run check:live     # production: install the worker, Save for offline, relaunch with the network unreachable, reopen from cache
 ```
 
 CI runs the first two before building any image. The e2e needs `nix`; it

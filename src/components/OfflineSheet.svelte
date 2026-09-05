@@ -34,7 +34,7 @@
     {#if info}
       <p>Saved {ago(info.at)} — {info.media} photos{#if info.tiles}, map to zoom {info.zmax}{/if}, {fmtBytes(info.bytes)}{#if info.failed} · {info.failed} could not be fetched{/if}. It opens without a connection.</p>
     {:else}
-      <p>Downloads every photo{#if plan?.tiles.length} and the map of the area ({plan.tiles.length} tiles){/if} to this device, so the gallery works on a plane or abroad without data.</p>
+      <p>Downloads every photo{#if plan?.tiles.length}{" "}and the map of the area ({plan.tiles.length} tiles){/if} to this device, so the gallery works on a plane or abroad without data.</p>
     {/if}
     {#if plan && !info}<p class="muted small">{plan.media.length} images{#if !getTileTemplate()} · map not yet ready, photos only{/if}</p>{/if}
     {#if progress}
