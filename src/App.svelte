@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { trip } from "./lib/trip.svelte.js";
   import { applyHash, syncHash } from "./lib/router.js";
+  import { hasAnyCoords } from "./lib/data.js";
   import MapView from "./components/MapView.svelte";
   import PhotoWall from "./components/PhotoWall.svelte";
   import FacetBar from "./components/FacetBar.svelte";
@@ -12,7 +13,13 @@
   let online = $state(typeof navigator === "undefined" ? true : navigator.onLine !== false);
 
   onMount(() => {
-    trip.load().then(() => { if (trip.loaded) applyHash(trip, location.hash); });
+    trip.load().then(() => {
+      if (!trip.loaded) return;
+      // No photo or route has a location: the map would be an empty globe, so
+      // open on the wall. The hash can still override.
+      if (!hasAnyCoords(trip.moments, trip.tracks)) trip.view = "wall";
+      applyHash(trip, location.hash);
+    });
     const onPop = () => applyHash(trip, location.hash);
     const up = () => { online = true; if (trip.fromCache) trip.load(); }, down = () => (online = false);
     window.addEventListener("popstate", onPop); window.addEventListener("online", up); window.addEventListener("offline", down);
@@ -44,6 +51,7 @@
       <div class="top">
         <h1 class="brand"><span class="word">itineris</span>{#if trip.title}<span class="sep" aria-hidden="true">·</span><span class="title">{trip.title}</span>{/if}</h1>
         {#if !online || trip.fromCache}<span class="pill" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
+        {#if trip.view === "map" && !hasAnyCoords(trip.moments, trip.tracks)}<span class="pill muted" role="status">No locations yet</span>{/if}
         <OfflineSheet />
         <button
           class="toggle"
@@ -103,6 +111,7 @@
   }
   .toggle[aria-pressed="true"] { background: rgba(255, 255, 255, 0.16); color: #fff; }
   .pill { flex: 0 0 auto; font-size: 11px; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }
+  .pill.muted { background: rgba(255, 255, 255, 0.08); color: var(--muted); }
 
   .status { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 30; color: var(--muted); font-size: 13px; }
   .card {

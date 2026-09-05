@@ -29,7 +29,7 @@ describe("URL -> state", () => {
     applyHash(trip, "#wall");
     expect(trip.storyOpen).toBe(false); expect(trip.view).toBe("wall");
     applyHash(trip, "");
-    expect(trip.view).toBe("map");
+    expect(trip.view).toBe("wall");            // an empty hash never forces the map: the app picks the default from the data
   });
   it("ignores an unknown story id without throwing", () => {
     applyHash(trip, "#m/nope");

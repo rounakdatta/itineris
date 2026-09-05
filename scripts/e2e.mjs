@@ -25,6 +25,8 @@ const clickText = (page, sel, t) => page.evaluate((s, txt) => { const el = [...d
 // Screenshots taken the instant after a layout change can capture a stale
 // compositor tile in headless Chromium; let it settle, and let the map finish.
 const settle = async (page, { map = false } = {}) => { if (map) await page.waitForSelector('.map[data-idle="1"]', { timeout: 30000 }).catch(() => {}); await sleep(450); };
+// Tap a tile after scrolling it to the middle of the viewport, clear of the fixed bars.
+const tapEl = async (page, handle) => { await handle.evaluate((el) => el.scrollIntoView({ block: "center" })); await sleep(120); await handle.tap(); };
 const waitFor = async (page, fn, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await page.evaluate(fn)) return true; await sleep(100); } return false; };
 
 // --- admin server with a fresh data dir -------------------------------------
@@ -75,6 +77,7 @@ try {
   await page.waitForSelector(".story");
   ok("second tap opens the story, URL carries it", (await hash(page)) === "#m/m003", await hash(page));
   ok("story header: day + place + clock", /Day 1/.test(await text(page, ".story header")) && /Maxwell/.test(await text(page, ".story header")), await text(page, ".story header"));
+  ok("story: thumbnail placeholder at once, full image fades in", (await page.$(".story img.placeholder")) !== null && (await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }).then(() => true).catch(() => false)));
   await settle(page); await shot(page, `${SHOTS}/02-story.png`);
   await swipe(page, [300, 450], [70, 455]); await sleep(400);
   ok("swipe left -> next photo", (await hash(page)) === "#m/m004", await hash(page));
@@ -117,10 +120,10 @@ try {
   ok("20 photos, none private (all in the demo gallery)", (await count(page, ".cell")) === 20 && (await count(page, ".flag.private")) === 0);
   await settle(page); await shot(page, `${SHOTS}/10-admin-photos.png`);
   await clickText(page, ".toolbar button", "Select"); await sleep(200);
-  const cells = await page.$$(".cell"); await cells[0].tap(); await cells[1].tap(); await sleep(200);
+  const cells = await page.$$(".cell"); await tapEl(page, cells[0]); await tapEl(page, cells[1]); await sleep(200);
   ok("bulk bar counts the selection", (await text(page, ".bulk strong")) === "2 selected", await text(page, ".bulk strong"));
   await settle(page); await shot(page, `${SHOTS}/11-admin-select.png`);
-  await clickText(page, ".bulk button", "Add to gallery"); await sleep(200);
+  await clickText(page, ".bulk button", "Gallery"); await sleep(200);
   await page.select(".bulk select", "__new__");
   page.once("dialog", (d) => d.accept("Friends"));
   await clickText(page, ".bulk button", "Add");
@@ -199,6 +202,35 @@ try {
   ok("arrived annotated: caption + tag from the queue, EXIF time kept", !!q && q.tags.includes("queued") && q.t === "2026-03-19T10:00:00+08:00", JSON.stringify(q && { tags: q.tags, t: q.t }));
   ok("both queued photos are in the library, private", libAfter.length === before + 2 && libAfter.filter((m) => m.galleries.length === 0).length >= 2, `${before} -> ${libAfter.length}`);
   ok("nothing left in the queue on a fresh load", (await page.reload({ waitUntil: "domcontentloaded" }), await page.waitForSelector(".cell"), (await page.$(".queue")) === null));
+
+  console.log("--- photos without GPS: a gallery with no locations, then bulk Set location ---");
+  const lib2 = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
+  const noGps = lib2.find((m) => m.lat === null && m.galleries.length === 0);
+  ok("a photo arrived without GPS (as phones do)", !!noGps, noGps?.id);
+  await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
+  await tapEl(page, await page.$(`.cell[data-id="${noGps.id}"]`));
+  await clickText(page, ".bulk button", "Gallery"); await page.select(".bulk select", "__new__");
+  page.once("dialog", (d) => d.accept("Nowhere in particular")); await clickText(page, ".bulk button", "Add");
+  ok("gallery of one unplaced photo created", await waitFor(page, () => [...document.querySelectorAll(".filter option")].some((o) => /Nowhere in particular \(1\)/.test(o.textContent))));
+  const nowhere = (await (await fetch(`${A}/admin/api/galleries`, { headers: { "remote-email": WHO } })).json()).find((g) => g.title === "Nowhere in particular");
+  await page.goto(`${V}/g/${nowhere.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".wall .cell", { timeout: 20000 });
+  ok("a gallery with no locations opens on the wall", (await hash(page)) === "#wall");
+  await tap(page, ".chrome .toggle"); await sleep(400);
+  ok("...and its map says why it is empty (no city pretends to be the place)", /No locations yet/.test(await text(page, ".chrome .top")), await text(page, ".chrome .top"));
+  await settle(page); await shot(page, `${SHOTS}/23-viewer-no-locations.png`);
+  await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
+  await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
+  await tapEl(page, await page.$(`.cell[data-id="${noGps.id}"]`));
+  await clickText(page, ".bulk button", "Location"); await page.waitForSelector('.bulk input[aria-label="Latitude"]');
+  await page.type('.bulk input[aria-label="Latitude"]', "37.7749"); await page.type('.bulk input[aria-label="Longitude"]', "-122.4194");
+  await clickText(page, ".bulk button", "Apply to 1");
+  ok("bulk Set location applied", await waitFor(page, () => !document.querySelector(".bulk .loc")));
+  const placedNow = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.id === noGps.id);
+  ok("...and stored", Math.abs(placedNow.lat - 37.7749) < 1e-4 && Math.abs(placedNow.lng + 122.4194) < 1e-4, `${placedNow.lat},${placedNow.lng}`);
+  await page.goto(`${V}/g/${nowhere.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick", { timeout: 20000 });
+  ok("now that gallery opens on the map, fitted to San Francisco", (await page.$(".wall")) === null && await waitFor(page, () => document.querySelector('.map[data-idle="1"]') !== null, 30000));
+  await settle(page, { map: true }); await shot(page, `${SHOTS}/24-viewer-placed.png`);
+  await clickText(page, ".tabs button", "Photos").catch(() => {});
 
   console.log("--- viewer: the new gallery, as a visitor sees it ---");
   await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" });

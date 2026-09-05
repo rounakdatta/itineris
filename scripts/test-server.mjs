@@ -71,6 +71,7 @@ try {
     ok("C: no EXIF -> tz unknown", c.tz === "unknown" && c.lat === null, c.t);
     ok("upload with gallery field lands in that gallery", (await readJson(path.join(d1, "data", "galleries", "sg2026demo.json"))).moments.some((m) => m.id === c.id));
     ok("derivative EXIF-free", !(await sharp(path.join(d1, a.media.src)).metadata()).exif);
+    ok("960px tier written for phones", a.media.medium?.endsWith("-960.webp") && (await exists(path.join(d1, a.media.medium))) && (await sharp(path.join(d1, a.media.medium)).metadata()).width === 960);
     const again = await s1.upload([["a2.jpg", A]]);
     ok("same bytes -> duplicate", again.body.created.length === 0 && again.body.duplicates[0].id === a.id);
 
@@ -86,7 +87,7 @@ try {
     const PRIVATE = ["uploadedBy", "uploadedAt", "editedBy", "filename", "camera", "original", "createdBy"];
     const leaked = PRIVATE.filter((k) => JSON.stringify(gf).includes(`"${k}"`));
     ok("public projection leaks nothing private", leaked.length === 0, leaked.join(",") || "clean");
-    ok("public projection keeps what the viewer needs", ["id", "t", "lat", "lng", "place", "caption", "tags", "media"].every((k) => k in gf.moments[0]) && "thumb" in gf.moments[0].media);
+    ok("public projection keeps what the viewer needs", ["id", "t", "lat", "lng", "place", "caption", "tags", "media"].every((k) => k in gf.moments[0]) && "thumb" in gf.moments[0].media && "medium" in gf.moments[0].media);
 
     const p = await s1.api("PATCH", `/admin/api/galleries/${gid}`, { add: [b.id, c.id], remove: [a.id], title: "Family" });
     ok("PATCH add/remove/title", p.status === 200 && p.body.title === "Family" && p.body.momentIds.sort().join() === [b.id, c.id].sort().join());
@@ -121,12 +122,16 @@ try {
     ok("single PATCH returns memberships", single.status === 200 && single.body.galleries.length === 2 && single.body.tz === "manual");
     ok("PATCH rejects naive time", (await s1.api("PATCH", `/admin/api/moments/${c.id}`, { t: "2026-03-16T20:00:00" })).status === 400);
     ok("bulk without ids -> 400", (await s1.api("PATCH", "/admin/api/moments", { addTags: ["x"] })).status === 400);
+    const bl = await s1.api("PATCH", "/admin/api/moments", { ids: [b.id, c.id], lat: 37.7749, lng: -122.4194 });
+    const placed = (await s1.api("GET", "/admin/api/moments")).body.filter((m) => [b.id, c.id].includes(m.id));
+    ok("bulk Set location places every selected photo", bl.body.updated === 2 && placed.every((m) => Math.abs(m.lat - 37.7749) < 1e-6 && Math.abs(m.lng + 122.4194) < 1e-6));
+    ok("bulk location needs both coordinates", (await s1.api("PATCH", "/admin/api/moments", { ids: [b.id], lat: 1 })).status === 400);
     const demo = await readJson(path.join(d1, "data", "galleries", "sg2026demo.json"));
     ok("...and in the other gallery that holds it", demo.moments.find((m) => m.id === c.id)?.caption === "Satay after dark");
 
     // --- delete: moment leaves every gallery; gallery delete keeps photos ---
     const del = await s1.api("DELETE", `/admin/api/moments/${c.id}`);
-    ok("DELETE moment keeps original, removes derivatives", del.status === 200 && (await exists(path.join(d1, c.media.original))) && !(await exists(path.join(d1, c.media.src))));
+    ok("DELETE moment keeps original, removes derivatives", del.status === 200 && (await exists(path.join(d1, c.media.original))) && !(await exists(path.join(d1, c.media.src))) && !(await exists(path.join(d1, c.media.medium))));
     gf = await readJson(path.join(d1, "data", "galleries", `${gid}.json`));
     ok("deleted moment gone from public galleries", !gf.moments.some((m) => m.id === c.id) && !(await readJson(path.join(d1, "data", "galleries", "sg2026demo.json"))).moments.some((m) => m.id === c.id));
     const gdel = await s1.api("DELETE", `/admin/api/galleries/${gid}`);

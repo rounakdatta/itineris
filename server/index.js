@@ -140,12 +140,20 @@ app.patch("/admin/api/moments", async (c) => {
   const add = Array.isArray(body.addTags) ? cleanTags(body.addTags) : [];
   const remove = Array.isArray(body.removeTags) ? cleanTags(body.removeTags) : [];
   const place = "place" in body ? (STR(body.place, 200) ?? "") : undefined;
+  // One location for the whole selection: how photos a phone stripped GPS from get placed.
+  let loc;
+  if ("lat" in body || "lng" in body) {
+    const lat = NUM_OR_NULL(body.lat), lng = NUM_OR_NULL(body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return c.json({ error: "lat and lng must both be numbers" }, 400);
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return c.json({ error: "coordinates out of range" }, 400);
+    loc = { lat, lng };
+  }
   const set = new Set(ids); let n = 0;
   await store.updateMoments((list) => list.map((m) => {
     if (!set.has(m.id)) return m;
     n++;
     const tags = [...new Set([...(m.tags ?? []).filter((t) => !remove.includes(t)), ...add])];
-    return { ...m, tags, ...(place !== undefined ? { place } : {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
+    return { ...m, tags, ...(place !== undefined ? { place } : {}), ...(loc ?? {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
   }));
   return c.json({ updated: n });
 });
@@ -159,7 +167,7 @@ app.delete("/admin/api/moments/:id", async (c) => {
   await store.updateMoments((list) => list.filter((m) => (m.id === id ? ((gone = m), false) : true)));
   if (!gone) return c.json({ error: "not found" }, 404);
   await store.updateGalleries((gs) => gs.map((g) => ((g.momentIds ?? []).includes(id) ? { ...g, momentIds: g.momentIds.filter((x) => x !== id), updatedAt: new Date().toISOString() } : g)));
-  await store.removeFiles([gone.media?.src, gone.media?.thumb].filter((p) => p && p.startsWith("media/")));
+  await store.removeFiles([gone.media?.src, gone.media?.medium, gone.media?.thumb].filter((p) => p && p.startsWith("media/")));
   return c.json({ deleted: id, originalKept: gone.media?.original ?? null });
 });
 

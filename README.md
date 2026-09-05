@@ -184,7 +184,7 @@ on purpose — it is meant to be shared.
 ## Not built yet
 
 - Video (needs ffmpeg for poster frames and transcoding — a separate decision)
-- Tracks: GPX upload for runs and rides; the model and the viewer already render them
+- Tracks: GPX upload for runs and rides; the model and the viewer already render them — and placing GPS-less photos by timestamp against a track, since phones strip location from photos picked in a browser
 - Journey playback ("▶" — fly the map through the trip while photos surface)
 - A Content-Security-Policy header, once it can be verified against the deployed site
 - Self-hosted PMTiles, so the map needs nothing from Carto

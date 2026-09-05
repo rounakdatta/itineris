@@ -16,8 +16,10 @@
     map = new maplibregl.Map({
       container,
       style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-      center: [103.855, 1.293],
-      zoom: 11.4,
+      // A neutral start; the first fitBounds takes it to the photos. Never a
+      // particular city: a gallery with no locations must not look like one.
+      center: [20, 15],
+      zoom: 1.2,
       attributionControl: { compact: true },
     });
 
@@ -145,11 +147,15 @@
     }
   });
 
-  // Filter changed -> refit. Depends only on the filter INPUTS, so it does not
-  // re-fire every time the derived selection is recomputed for other reasons.
+  // Filter changed, or data arrived -> refit. Depends on the INPUTS (filters,
+  // which gallery is loaded), not on the derived selection, so it does not
+  // re-fire on every recomputation. `trip.loaded`/`galleryId` matter because a
+  // cached style can make the map ready before the gallery JSON has landed.
   $effect(() => {
     trip.facets;
     trip.day;
+    trip.loaded;
+    trip.galleryId;
     if (!ready || !map) return;
     untrack(() => {
       const box = bboxOf(trip.visibleMoments, trip.visibleTracks);

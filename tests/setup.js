@@ -11,7 +11,9 @@ afterEach(cleanup);
 // browser harness (scripts/e2e.mjs) instead.
 vi.mock("maplibre-gl", () => {
   class Map {
-    constructor() { this.handlers = {}; this.sources = {}; this.filters = {}; this.camera = []; }
+    static instances = [];
+    constructor(opts) { this.options = opts; this.handlers = {}; this.sources = {}; this.filters = {}; this.camera = []; Map.instances.push(this); }
+    getStyle() { return { sources: {} }; }
     on(ev, a, b) { const fn = b ?? a; (this.handlers[ev] ??= []).push(fn); if (ev === "load") queueMicrotask(() => fn()); return this; }
     addControl() { return this; }
     addSource(id, src) { this.sources[id] = { data: src.data, setData: (d) => (this.sources[id].data = d) }; }

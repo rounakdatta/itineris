@@ -49,6 +49,7 @@ export const pub = (m) => ({
   place: m.place ?? "", caption: m.caption ?? "", tags: m.tags ?? [],
   media: {
     type: m.media?.type ?? "photo", src: m.media?.src, w: m.media?.w, h: m.media?.h,
+    ...(m.media?.medium ? { medium: m.media.medium } : {}),
     ...(m.media?.thumb ? { thumb: m.media.thumb } : {}),
   },
 });

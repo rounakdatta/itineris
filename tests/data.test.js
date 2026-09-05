@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords } from "../src/lib/data.js";
+import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc } from "../src/lib/data.js";
 import { moments, tracks } from "./fixtures.js";
 
 describe("time helpers never touch the host zone", () => {
@@ -44,6 +44,15 @@ describe("geometry tolerates moments without GPS", () => {
     expect(box[0]).toBeGreaterThan(103.8); expect(box[3]).toBeLessThan(1.3);
     expect(momentsFC(moments).features.map((f) => f.id)).toEqual(["a", "b", "c"]);
     expect(tracksFC(tracks).features[0].properties.color).toMatch(/^#/);
+  });
+  it("knows when nothing at all is placed", () => {
+    expect(hasAnyCoords(moments, tracks)).toBe(true);
+    expect(hasAnyCoords([moments[3]], [])).toBe(false);
+    expect(hasAnyCoords([], tracks)).toBe(true);
+  });
+  it("picks the phone tier when there is one", () => {
+    expect(storySrc({ src: "media/x.webp", medium: "media/x-960.webp" })).toBe("/media/x-960.webp");
+    expect(storySrc({ src: "media/x.webp" })).toBe("/media/x.webp");
   });
   it("bbox of nothing is null", () => {
     expect(bboxOf([], [])).toBeNull();

@@ -11,6 +11,7 @@ sharp.concurrency(1);
 sharp.cache(false);
 
 export const LARGE = 1600;
+export const MEDIUM = 960;   // what a phone actually displays; a quarter of the bytes of LARGE
 export const THUMB = 400;
 
 const exists = (p) => access(p).then(() => true, () => false);
@@ -48,6 +49,7 @@ export async function ingestPhoto(buf, filename, { dataDir, email }) {
   const ext = (path.extname(filename || "").toLowerCase().replace(/[^a-z0-9.]/g, "") || ".jpg").slice(0, 8);
   const originalRel = `originals/${hash}${ext}`;
   const largeRel = `media/${hash}-${LARGE}.webp`;
+  const mediumRel = `media/${hash}-${MEDIUM}.webp`;
   const thumbRel = `media/${hash}-${THUMB}.webp`;
 
   if (await exists(path.join(dataDir, originalRel))) return { id, duplicate: true };
@@ -62,6 +64,9 @@ export async function ingestPhoto(buf, filename, { dataDir, email }) {
   const large = await base.clone().rotate()
     .resize({ width: LARGE, height: LARGE, fit: "inside", withoutEnlargement: true })
     .webp({ quality: 82 }).toBuffer({ resolveWithObject: true });
+  const medium = await base.clone().rotate()
+    .resize({ width: MEDIUM, height: MEDIUM, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 80 }).toBuffer();
   const thumb = await base.clone().rotate()
     .resize({ width: THUMB, height: THUMB, fit: "inside", withoutEnlargement: true })
     .webp({ quality: 74 }).toBuffer();
@@ -70,6 +75,7 @@ export async function ingestPhoto(buf, filename, { dataDir, email }) {
   await mkdir(path.join(dataDir, "media"), { recursive: true });
   await writeFile(path.join(dataDir, originalRel), buf);
   await writeFile(path.join(dataDir, largeRel), large.data);
+  await writeFile(path.join(dataDir, mediumRel), medium);
   await writeFile(path.join(dataDir, thumbRel), thumb);
 
   return {
@@ -78,7 +84,7 @@ export async function ingestPhoto(buf, filename, { dataDir, email }) {
       id, t, tz,
       lat: exif.lat, lng: exif.lng,
       place: "", caption: "", tags: [],
-      media: { type: "photo", src: largeRel, w: large.info.width, h: large.info.height, thumb: thumbRel, original: originalRel },
+      media: { type: "photo", src: largeRel, w: large.info.width, h: large.info.height, medium: mediumRel, thumb: thumbRel, original: originalRel },
       camera: exif.camera,
       uploadedBy: email, uploadedAt: new Date().toISOString(), filename: path.basename(filename || ""),
     },

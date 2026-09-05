@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey, mediaUrl } from "../lib/data.js";
+  import { clockOf, dayKey, mediaUrl, storySrc } from "../lib/data.js";
 
   const SEGMENT_MS = 5000;
   const DISMISS_PX = 110;   // drag down this far to close
@@ -13,6 +13,10 @@
   let dragY = $state(0);
   let dragX = $state(0);
   let axis = $state(null);   // null | "x" | "y" once the finger commits
+  // Which photo's full-size image has arrived (or failed). Keyed by id rather
+  // than reset per photo, so no effect can race the load/error event.
+  let loadedId = $state(null);
+  let failedId = $state(null);
   let dialog;
 
   let down = null;
@@ -22,6 +26,10 @@
   const current = $derived(trip.storyMoment);
   const landscape = $derived(!!current && current.media.w > current.media.h);
   const dayLabel = $derived(current ? trip.days.find((d) => d.key === dayKey(current.t))?.label : "");
+  const thumbUrl = $derived(current ? mediaUrl(current.media.thumb ?? current.media.src) : "");
+  const fullUrl = $derived(current ? storySrc(current.media) : "");
+  const loaded = $derived(!!current && loadedId === current.id);
+  const failed = $derived(!!current && failedId === current.id);
 
   // Advance timer. Restarts whenever the index changes; `paused`/`axis` are
   // read inside rAF (outside the tracking pass) so they gate without restarting.
@@ -33,7 +41,8 @@
     let raf = requestAnimationFrame(function tick(now) {
       const dt = now - last;
       last = now;
-      if (!paused && !axis) {
+      // On a slow link the timer must not run ahead of the photo.
+      if (!paused && !axis && (loaded || failed)) {
         progress += dt / SEGMENT_MS;
         if (progress >= 1) {
           if (!trip.step(1)) trip.closeStory();
@@ -49,7 +58,7 @@
   $effect(() => {
     const i = trip.storyIndex;
     if (i < 0) return;
-    for (const m of items.slice(i + 1, i + 3)) { const img = new Image(); img.src = mediaUrl(m.media.src); }
+    for (const m of items.slice(i + 1, i + 3)) { const img = new Image(); img.src = storySrc(m.media); }
   });
 
   // Keyboard, and focus the dialog so screen readers and arrow keys land here.
@@ -147,9 +156,15 @@
     {#key current.id}
       {#if landscape}
         <!-- A landscape photo on a portrait screen: show all of it, over a blurred copy of itself. -->
-        <img class="backdrop" src={mediaUrl(current.media.thumb ?? current.media.src)} alt="" draggable="false" aria-hidden="true" />
+        <img class="backdrop" src={thumbUrl} alt="" draggable="false" aria-hidden="true" />
       {/if}
-      <img class="media" class:contain={landscape} src={mediaUrl(current.media.src)} alt={current.caption || current.place || ""} draggable="false" />
+      <!-- The thumbnail is already on the device (it is in the strip): show it
+           sharp at once, and fade the full-size image in over it when it lands. -->
+      <img class="placeholder" class:contain={landscape} src={thumbUrl} alt="" draggable="false" aria-hidden="true" />
+      <img class="media" class:contain={landscape} class:loaded src={fullUrl} alt={current.caption || current.place || ""} draggable="false"
+        onload={() => (loadedId = current.id)} onerror={() => (failedId = current.id)} />
+      {#if !loaded && !failed}<span class="loading" aria-label="Loading photo" role="status"></span>{/if}
+      {#if failed}<p class="failed" role="alert">Couldn't load this photo</p>{/if}
     {/key}
 
     <footer>
@@ -177,9 +192,19 @@
   /* grid-column is load-bearing: the bars/header/footer auto-place into column
      1, so an item spanning every row with no column of its own would be pushed
      into an implicit column 2 -- beside the chrome instead of behind it. */
-  .media, .backdrop { grid-row: 1 / -1; grid-column: 1; width: 100%; height: 100%; pointer-events: none; }
-  .media { object-fit: cover; animation: fade 320ms ease; }
+  .media, .placeholder, .backdrop { grid-row: 1 / -1; grid-column: 1; width: 100%; height: 100%; pointer-events: none; }
+  .placeholder { object-fit: cover; }
+  .placeholder.contain { object-fit: contain; }
+  .media { object-fit: cover; opacity: 0; transition: opacity 260ms ease; }
+  .media.loaded { opacity: 1; }
   .media.contain { object-fit: contain; }
+  .loading {
+    grid-row: 1 / -1; grid-column: 1; place-self: center; z-index: 1; pointer-events: none;
+    width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.25); border-top-color: #fff;
+    animation: spin 900ms linear infinite; box-shadow: 0 0 0 6px rgba(0, 0, 0, 0.25);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .failed { grid-row: 1 / -1; grid-column: 1; place-self: center; z-index: 1; margin: 0; padding: 8px 14px; border-radius: 10px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 14px; }
   .backdrop { object-fit: cover; filter: blur(28px) brightness(0.45); transform: scale(1.15); }
   @keyframes fade { from { opacity: 0.25; } to { opacity: 1; } }
 

@@ -116,7 +116,7 @@
   <button class:on={tab === "galleries"} aria-pressed={tab === "galleries"} onclick={() => switchTab("galleries")}>Galleries <span class="n">{galleries.length}</span></button>
 </nav>
 
-<main>
+<main class:selecting={selectMode}>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   {#if tab === "photos"}
@@ -186,6 +186,8 @@
   .tabs button.on { background: var(--panel); color: #fff; border-color: var(--line); }
   .n { font-size: 11px; opacity: 0.6; }
   main { max-width: 960px; margin: 0 auto; padding: 14px 14px 120px; }
+  /* Room to scroll the last row out from under the fixed bulk bar. */
+  main.selecting { padding-bottom: 220px; }
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 18px 2px 8px; }
   .filter { display: flex; align-items: center; gap: 8px; }
   .filter select { width: auto; max-width: 60vw; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }

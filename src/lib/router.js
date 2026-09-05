@@ -19,7 +19,9 @@ export function applyHash(trip, hash) {
     if (trip.storyMoment?.id !== story) trip.openStory(story);
   } else {
     if (trip.storyOpen) trip.closeStory();
-    trip.view = wall ? "wall" : "map";
+    // "#wall" selects the wall; an empty hash keeps whatever view is showing
+    // (the app picks the default from the data, and the wall writes "#wall").
+    if (wall) trip.view = "wall";
   }
 }
 

@@ -49,6 +49,11 @@ export function trackMatches(track, facetIds) {
 // Uploaded photos may carry no GPS; they still belong in the timeline, wall and
 // story, just not on the map.
 export const hasCoords = (m) => Number.isFinite(m.lat) && Number.isFinite(m.lng);
+export const hasAnyCoords = (moments = [], tracks = []) => moments.some(hasCoords) || tracks.some((t) => (t.geometry?.length ?? 0) > 0);
+
+// Phones display ~400-1200 physical px across; the 1600 tier is for big screens.
+export const isSmallScreen = () => !(globalThis.matchMedia?.("(min-width: 760px)")?.matches ?? false);
+export const storySrc = (media) => mediaUrl(isSmallScreen() ? media.medium ?? media.src : media.src);
 
 export function bboxOf(moments, tracks) {
   const pts = [

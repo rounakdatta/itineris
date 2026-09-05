@@ -57,6 +57,7 @@
   <input bind:this={input} type="file" accept="image/*" multiple hidden onchange={(e) => pick(e.target.files)} data-testid="file-input" />
   <button class="btn primary" onclick={() => input.click()}>{gallery ? `Add photos to “${gallery.title}”` : "Add photos"}</button>
   <p class="muted hint">or drop them here · works offline — photos queue on this device and upload when they can{gallery ? "" : " · new photos stay private until they're in a gallery"}</p>
+  <p class="muted hint small">Phones usually strip GPS from photos picked in a browser. Photos without a location show ⌖ — set it in the editor, or select several and use <em>Set location</em>.</p>
 
   {#if status}
     <div class="queue" role="region" aria-label="Upload queue">
@@ -98,6 +99,7 @@
   .drop { border: 1.5px dashed var(--line); border-radius: 14px; padding: 22px 16px; text-align: center; background: var(--panel); transition: border-color 140ms, background 140ms; }
   .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
   .hint { margin: 10px 0 0; font-size: 13px; }
+  .hint.small { margin-top: 6px; font-size: 12px; }
   .queue { margin-top: 16px; text-align: left; }
   .status { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 14px; }
   .status .text { flex: 1; }

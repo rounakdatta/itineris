@@ -58,6 +58,33 @@ describe("Story", () => {
     await fireEvent.keyDown(window, { key: "Escape" });
     expect(trip.storyOpen).toBe(false);
   });
+  it("shows the thumbnail at once, fades the full image in, and the timer waits for it", async () => {
+    trip.openStory("a"); render(Story);
+    const d = dialog();
+    const ph = d.querySelector("img.placeholder"), big = d.querySelector("img.media");
+    expect(ph.getAttribute("src")).toBe("/media/a-t.webp");
+    expect(big.getAttribute("src")).toBe("/media/a.webp");
+    expect(big).not.toHaveClass("loaded"); expect(d.querySelector(".loading")).not.toBeNull();
+    await new Promise((r) => setTimeout(r, 120));
+    expect(d.querySelectorAll(".fill")[0].style.width).toBe("0%");        // no advancing before the photo is there
+    await fireEvent.load(big);
+    expect(big).toHaveClass("loaded"); expect(d.querySelector(".loading")).toBeNull();
+    await new Promise((r) => setTimeout(r, 160));
+    expect(parseFloat(d.querySelectorAll(".fill")[0].style.width)).toBeGreaterThan(0);
+  });
+  it("a photo that fails to load says so instead of going dark, and the story moves on", async () => {
+    trip.openStory("a"); render(Story);
+    const d = dialog();
+    await fireEvent.error(d.querySelector("img.media"));
+    expect(d).toHaveTextContent("Couldn't load this photo");
+    await new Promise((r) => setTimeout(r, 160));
+    expect(parseFloat(d.querySelectorAll(".fill")[0].style.width)).toBeGreaterThan(0);
+  });
+  it("prefers the 960px tier on a small screen", () => {
+    trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, media: { ...m.media, medium: "media/a-960.webp" } } : m));
+    trip.openStory("a"); render(Story);
+    expect(dialog().querySelector("img.media").getAttribute("src")).toBe("/media/a-960.webp");
+  });
   it("progress bars: one per visible photo, earlier ones full", () => {
     trip.openStory("c"); render(Story);
     const fills = [...screen.getByRole("dialog").querySelectorAll(".fill")].map((f) => f.style.width);

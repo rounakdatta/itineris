@@ -1,12 +1,15 @@
 <script>
   import { api } from "./lib/api.js";
+  import MapPicker from "./MapPicker.svelte";
 
   let { selection, galleries, suggestions = [], onDone, onExit } = $props();
   let busy = $state(false);
   let error = $state(null);
-  let mode = $state(null);      // null | "gallery" | "ungallery" | "tag" | "delete"
+  let mode = $state(null);      // null | "gallery" | "ungallery" | "tag" | "location" | "delete"
   let pick = $state("");
   let tag = $state("");
+  let lat = $state("");
+  let lng = $state("");
 
   const ids = $derived([...selection]);
 
@@ -28,6 +31,7 @@
   });
   const removeFromGallery = () => run(() => api.patchGallery(pick, { remove: ids }));
   const addTag = () => run(() => api.bulk(ids, { addTags: [tag] }));
+  const setLocation = () => run(() => api.bulk(ids, { lat: +lat, lng: +lng }));
   const remove = () => run(async () => { for (const id of ids) await api.remove(id); selection.clear(); });
 </script>
 
@@ -36,26 +40,32 @@
     <strong>{ids.length} selected</strong>
     <span class="spacer"></span>
     {#if !mode}
-      <button class="btn small" onclick={() => { mode = "gallery"; pick = galleries[0]?.id ?? "__new__"; }}>Add to gallery</button>
-      {#if galleries.length}<button class="btn small" onclick={() => { mode = "ungallery"; pick = galleries[0].id; }}>Remove from gallery</button>{/if}
+      <button class="btn small" onclick={() => { mode = "gallery"; pick = galleries[0]?.id ?? "__new__"; }}>Gallery</button>
       <button class="btn small" onclick={() => { mode = "tag"; tag = ""; }}>Tag</button>
+      <button class="btn small" onclick={() => { mode = "location"; lat = ""; lng = ""; }}>Location</button>
       <button class="btn small danger" onclick={() => (mode = "delete")}>Delete</button>
-      <button class="btn small" onclick={onExit}>Cancel</button>
+      <button class="btn small" onclick={onExit} aria-label="Done selecting">Done</button>
     {:else if mode === "gallery"}
       <select bind:value={pick} aria-label="Gallery">
         {#each galleries as g (g.id)}<option value={g.id}>{g.title}</option>{/each}
         <option value="__new__">New gallery…</option>
       </select>
       <button class="btn small primary" disabled={busy} onclick={addToGallery}>Add</button>
-      <button class="btn small" onclick={() => (mode = null)}>Back</button>
-    {:else if mode === "ungallery"}
-      <select bind:value={pick} aria-label="Gallery">{#each galleries as g (g.id)}<option value={g.id}>{g.title}</option>{/each}</select>
-      <button class="btn small primary" disabled={busy} onclick={removeFromGallery}>Remove</button>
+      <button class="btn small" disabled={busy || pick === "__new__"} onclick={removeFromGallery}>Remove</button>
       <button class="btn small" onclick={() => (mode = null)}>Back</button>
     {:else if mode === "tag"}
       <input list="bulk-tags" bind:value={tag} placeholder="tag" aria-label="Tag to add" onkeydown={(e) => e.key === "Enter" && tag.trim() && addTag()} />
       <datalist id="bulk-tags">{#each suggestions as s (s)}<option value={s}></option>{/each}</datalist>
       <button class="btn small primary" disabled={busy || !tag.trim()} onclick={addTag}>Add tag</button>
+      <button class="btn small" onclick={() => (mode = null)}>Back</button>
+    {:else if mode === "location"}
+      <span class="muted small">Phones strip GPS from photos picked in the browser. Tap the map or type coordinates; all {ids.length} get this spot.</span>
+      <div class="loc">
+        <MapPicker lat={lat === "" ? null : +lat} lng={lng === "" ? null : +lng} onChange={(a, b) => { lat = a; lng = b; }} />
+        <input inputmode="decimal" bind:value={lat} placeholder="latitude" aria-label="Latitude" />
+        <input inputmode="decimal" bind:value={lng} placeholder="longitude" aria-label="Longitude" />
+      </div>
+      <button class="btn small primary" disabled={busy || lat === "" || lng === "" || !Number.isFinite(+lat) || !Number.isFinite(+lng)} onclick={setLocation}>Apply to {ids.length}</button>
       <button class="btn small" onclick={() => (mode = null)}>Back</button>
     {:else if mode === "delete"}
       <span class="muted small">Delete {ids.length} from the journal? Originals are kept.</span>
@@ -74,8 +84,11 @@
   }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 960px; margin: 0 auto; }
   .spacer { flex: 1; }
-  .btn.small { padding: 7px 12px; font-size: 14px; }
-  select, input { width: auto; max-width: 48vw; padding: 7px 10px; }
+  .btn.small { padding: 7px 11px; font-size: 13px; }
+  select, input { width: auto; max-width: 44vw; padding: 7px 10px; }
   .err { color: var(--danger); margin: 8px 0 0; font-size: 13px; }
   .small { font-size: 13px; }
+  .loc { flex: 1 1 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .loc :global(.picker) { grid-column: 1 / -1; height: 180px; }
+  .loc input { max-width: none; width: 100%; }
 </style>

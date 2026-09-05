@@ -28,19 +28,30 @@ describe("BulkBar", () => {
   it("adds the selection to a gallery, or a brand new one", async () => {
     const selection = new SvelteSet(["a", "b"]);
     render(BulkBar, { selection, galleries, onDone: () => {}, onExit: () => {} });
-    await fireEvent.click(screen.getByRole("button", { name: "Add to gallery" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Gallery" }));
     const sel = screen.getByLabelText("Gallery");
     await fireEvent.change(sel, { target: { value: "g2" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(api.patchGallery).toHaveBeenCalledWith("g2", { add: ["a", "b"] });
     vi.stubGlobal("prompt", () => "Trip mates");
-    await fireEvent.click(screen.getByRole("button", { name: "Add to gallery" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Gallery" }));   // a successful action returns to the first row
     await fireEvent.change(screen.getByLabelText("Gallery"), { target: { value: "__new__" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(api.createGallery).toHaveBeenCalledWith({ title: "Trip mates" });
     expect(api.patchGallery).toHaveBeenLastCalledWith("newgallery12", { add: ["a", "b"] });
+  });
+  it("sets one location on the whole selection", async () => {
+    const selection = new SvelteSet(["a", "b"]);
+    render(BulkBar, { selection, galleries, onDone: () => {}, onExit: () => {} });
+    await fireEvent.click(screen.getByRole("button", { name: "Location" }));
+    expect(screen.getByText(/Phones strip GPS/)).toBeInTheDocument();
+    await fireEvent.input(screen.getByLabelText("Latitude"), { target: { value: "37.7749" } });
+    await fireEvent.input(screen.getByLabelText("Longitude"), { target: { value: "-122.4194" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Apply to 2" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.bulk).toHaveBeenCalledWith(["a", "b"], { lat: 37.7749, lng: -122.4194 });
   });
   it("delete asks first", async () => {
     const selection = new SvelteSet(["a"]);

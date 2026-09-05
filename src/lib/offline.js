@@ -1,7 +1,7 @@
 // "Save for offline": pull a gallery's photos and its map area into the same
 // Cache Storage the service worker serves from, with progress. The worker
 // also caches whatever you browse; this is the deliberate, complete version.
-import { hasCoords, mediaUrl, bboxOf } from "./data.js";
+import { hasCoords, mediaUrl, bboxOf, isSmallScreen } from "./data.js";
 import { tilesFor, fillTemplate, normalizeTileKey, zoomToFit } from "../sw/strategies.js";
 
 let tileTemplate = null;
@@ -14,7 +14,8 @@ export function savedInfo(id) {
 }
 
 export function planDownload({ moments = [], tracks = [] }) {
-  const media = [...new Set(moments.flatMap((m) => [m.media?.thumb, m.media?.src].filter(Boolean).map(mediaUrl)))];
+  // The thumbnail plus the tier this device will actually display.
+  const media = [...new Set(moments.flatMap((m) => [m.media?.thumb, isSmallScreen() ? m.media?.medium ?? m.media?.src : m.media?.src].filter(Boolean).map(mediaUrl)))];
   const box = bboxOf(moments.filter(hasCoords), tracks);
   let tiles = [], stoppedAt = null, zmin = null, zmax = null;
   if (box && tileTemplate) {
