@@ -94,3 +94,18 @@ export const tapAt = (page, x, y) => page.evaluate((x, y) => {
   el.dispatchEvent(new PointerEvent("pointerdown", o));
   el.dispatchEvent(new PointerEvent("pointerup", o));
 }, x, y);
+
+// puppeteer's page.setOfflineMode reaches the page only; a service worker's own
+// fetches keep their network. Emulate on every worker target of the origin too,
+// or "offline" tests quietly pass through the worker.
+export async function setOffline(browser, page, offline, origin) {
+  await page.setOfflineMode(offline);
+  for (const t of browser.targets()) {
+    if (t.type() !== "service_worker" || (origin && !t.url().startsWith(origin))) continue;
+    try {
+      const s = await t.createCDPSession();
+      await s.send("Network.enable");
+      await s.send("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    } catch { /* target gone */ }
+  }
+}

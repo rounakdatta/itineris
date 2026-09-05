@@ -237,6 +237,7 @@ try {
   const pubFriends = await (await fetch(`${V}/data/galleries/${friendsId}.json`)).json();
   ok("public gallery JSON carries no private fields", !JSON.stringify(pubFriends).match(/uploadedBy|filename|camera|original/));
   const libTry = await fetch(`${V}/library/moments.json`);
+  ok("manifest served as application/manifest+json", ((await fetch(`${V}/manifest.webmanifest`)).headers.get("content-type") ?? "").includes("manifest+json"));
   ok("the library itself is not reachable publicly", (await fetch(`${V}/data/moments.json`)).status === 404 && !(libTry.headers.get("content-type") ?? "").includes("json") && !(await libTry.text()).includes("uploadedBy"));
 } catch (e) {
   fail++; console.log("  FAIL  exception:", e.message); await shot(page, `${SHOTS}/99-failure.png`).catch(() => {});

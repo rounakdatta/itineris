@@ -227,6 +227,7 @@ app.delete("/admin/api/galleries/:id", async (c) => {
 app.get("/admin", (c) => c.redirect("/admin/"));
 // The worker script itself must be revalidated on every check or updates lag.
 app.use("/admin/sw.js", async (c, next) => { await next(); c.res.headers.set("Cache-Control", "no-cache"); });
+app.use("/admin/manifest.webmanifest", async (c, next) => { await next(); c.res.headers.set("Content-Type", "application/manifest+json"); c.res.headers.set("Cache-Control", "no-cache"); });
 app.use("/admin/*", serveStatic({ root: UI_DIR, rewriteRequestPath: (p) => p.replace(/^\/admin/, "") || "/" }));
 app.get("/admin/*", async (c) => c.html(await readFile(path.join(UI_DIR, "index.html"), "utf8")));
 app.use("/media/*", serveStatic({ root: DATA_DIR }));
