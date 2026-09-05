@@ -20,7 +20,8 @@
     "prebuild:admin": "node scripts/make-seed.js",
     "pretest:server": "node scripts/make-seed.js",
     "preserver": "node scripts/make-seed.js",
-    "test:e2e": "node scripts/e2e.mjs"
+    "test:e2e": "node scripts/e2e.mjs",
+    "shot:live": "node scripts/shot-live.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
