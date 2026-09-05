@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { classify, normalizeTileKey, tilesFor, fillTemplate, zoomToFit } from "../src/sw/strategies.js";
 import { planDownload, setTileTemplate } from "../src/lib/offline.js";
+import { partitionAssets } from "../scripts/lib/sw-assets.mjs";
 import { moments, tracks } from "./fixtures.js";
 
 const origin = "https://itineris.taptappers.club";
@@ -30,6 +31,14 @@ describe("what each request is", () => {
     expect(classify(`${origin}/admin/api/moments`, admin)).toBe("network");   // mutations and lists we don't cache
     expect(classify(`${origin}/media/abc-400.webp`, admin)).toBe("media");     // thumbnails, shared cache
     expect(classify(`${origin}/data/home.json`, admin)).toBe("network");      // outside its scope
+  });
+});
+
+describe("what a new worker downloads before it can take over", () => {
+  it("the app, not the megabyte of MapLibre", () => {
+    const { precache, heavy } = partitionAssets(["/assets/index-a.js", "/assets/index-b.css", "/assets/maplibre-c.js", "/assets/maplibre-gl-d.css", "/assets/maplibre-gl-e.js"]);
+    expect(precache).toEqual(["/assets/index-a.js", "/assets/index-b.css"]);
+    expect(heavy).toHaveLength(3);
   });
 });
 

@@ -90,3 +90,28 @@ export async function ingestPhoto(buf, filename, { dataDir, email }) {
     },
   };
 }
+
+// 0.5.0 added the 960 px copy phones actually display. Photos from before it
+// get theirs here, one at a time in the background, from the original when it
+// is still around (else from the 1600 px copy). Idempotent: a restart resumes.
+export async function backfillMedium(store, dataDir) {
+  const todo = (await store.moments()).filter((m) => m.media?.type === "photo" && !m.media.medium && m.media.src);
+  const made = new Map();
+  for (const m of todo) {
+    const rel = m.media.src.replace(/(-\d+)?\.webp$/, `-${MEDIUM}.webp`);
+    if (rel === m.media.src) continue;
+    if (!(await exists(path.join(dataDir, rel)))) {
+      const from = m.media.original && (await exists(path.join(dataDir, m.media.original))) ? m.media.original : m.media.src;
+      if (!(await exists(path.join(dataDir, from)))) continue;
+      try {
+        const buf = await sharp(path.join(dataDir, from), { failOn: "none" }).rotate()
+          .resize({ width: MEDIUM, height: MEDIUM, fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 80 }).toBuffer();
+        await writeFile(path.join(dataDir, rel), buf);
+      } catch (e) { console.error(`backfill ${m.id}: ${e.message}`); continue; }
+    }
+    made.set(m.id, rel);
+  }
+  if (made.size) await store.updateMoments((ms) => ms.map((x) => (made.has(x.id) && !x.media.medium ? { ...x, media: { ...x.media, medium: made.get(x.id) } } : x)));
+  return made.size;
+}

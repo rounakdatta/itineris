@@ -4,6 +4,5 @@ import "./admin.css";
 
 export default mount(App, { target: document.getElementById("app") });
 
-if (import.meta.env.PROD && "serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/admin/sw.js", { scope: "/admin/" }).catch(() => {});
-}
+import { registerServiceWorker } from "../src/lib/sw-client.js";
+if (import.meta.env.PROD) registerServiceWorker("/admin/sw.js", { scope: "/admin/" });

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import Outbox from "../admin/Outbox.svelte";
 
-const item = (o) => ({ id: o.id, name: o.id + ".jpg", type: "image/jpeg", size: 1, file: null, thumb: null, exif: {}, meta: { tags: o.tags ?? [], galleries: [] }, state: o.state ?? "waiting", attempts: o.attempts ?? 0, error: o.error ?? null, progress: o.progress ?? 0 });
+const item = (o) => ({ id: o.id, name: o.id + ".jpg", type: "image/jpeg", size: 1, file: null, thumb: null, exif: {}, meta: { tags: o.tags ?? [], galleries: [], lat: o.lat ?? null, lng: o.lng ?? null }, state: o.state ?? "waiting", attempts: o.attempts ?? 0, error: o.error ?? null, progress: o.progress ?? 0 });
 const fakeOutbox = () => ({ add: vi.fn(), retryNow: vi.fn(), remove: vi.fn() });
 
 describe("Outbox UI", () => {
@@ -32,6 +32,14 @@ describe("Outbox UI", () => {
     expect(screen.getAllByTitle("unsupported image format").length).toBeGreaterThan(0);
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [item({ id: "z" })], blocked: true, flushing: false, online: true } });
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
+  });
+  it("says which photos arrived without a location, and why", () => {
+    const { container, unmount } = render(Outbox, { outbox: fakeOutbox(), queue: { items: [item({ id: "a", lat: 1.29, lng: 103.85 }), item({ id: "b" })], blocked: false, flushing: false, online: true } });
+    expect(container.querySelectorAll(".tile .flag.loc")).toHaveLength(1);
+    expect(screen.getByText(/1 of these have no location in the file/)).toHaveTextContent(/phones remove GPS/);
+    unmount();
+    render(Outbox, { outbox: fakeOutbox(), queue: { items: [item({ id: "a", lat: 1.29, lng: 103.85 })], blocked: false, flushing: false, online: true } });
+    expect(screen.queryByText(/no location/)).toBeNull();
   });
   it("no queue, no panel", () => {
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true } });

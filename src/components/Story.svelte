@@ -17,7 +17,7 @@
   // than reset per photo, so no effect can race the load/error event.
   let loadedId = $state(null);
   let failedId = $state(null);
-  let dialog;
+  let dialog = $state(null);
 
   let down = null;
   let holdTimer = null;

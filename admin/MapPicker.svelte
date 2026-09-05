@@ -1,7 +1,5 @@
 <script>
   import { onMount } from "svelte";
-  import maplibregl from "maplibre-gl";
-  import "maplibre-gl/dist/maplibre-gl.css";
 
   // Tap or drag to place the photo. `hint` centres the map somewhere sensible
   // when the photo has no coordinates yet -- usually a neighbour's location.
@@ -10,6 +8,10 @@
   let map, marker;
 
   onMount(() => {
+    let cancelled = false;
+    (async () => {
+    const [{ default: maplibregl }] = await Promise.all([import("maplibre-gl"), import("maplibre-gl/dist/maplibre-gl.css")]);
+    if (cancelled) return;
     const has = Number.isFinite(lat) && Number.isFinite(lng);
     const center = has ? [lng, lat] : hint ? [hint.lng, hint.lat] : [103.85, 1.29];
     map = new maplibregl.Map({ container, style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json", center, zoom: has || hint ? 14 : 10, attributionControl: { compact: true } });
@@ -17,7 +19,8 @@
     if (has) marker.setLngLat(center).addTo(map);
     marker.on("dragend", () => { const p = marker.getLngLat(); onChange?.(+p.lat.toFixed(6), +p.lng.toFixed(6)); });
     map.on("click", (e) => { marker.setLngLat(e.lngLat).addTo(map); onChange?.(+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6)); });
-    return () => map?.remove();
+    })();
+    return () => { cancelled = true; map?.remove(); };
   });
 
   // Coordinates typed into the fields move the pin.
