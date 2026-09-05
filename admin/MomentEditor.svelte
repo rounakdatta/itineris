@@ -119,7 +119,7 @@
     <button type="button" class="btn tiny" aria-pressed={showMap} onclick={() => (showMap = !showMap)}>{showMap ? "Hide map" : "Pick on map"}</button>
   </div>
   {#if showMap}
-    <MapPicker lat={numLat} lng={numLng} hint={neighbours.prev ?? neighbours.next} onChange={(a, b) => { lat = a; lng = b; }} />
+    <MapPicker lat={numLat} lng={numLng} hint={neighbours.prev ?? neighbours.next} onChange={(a, b) => { lat = a; lng = b; }} onPlace={(name) => { if (!place.trim()) place = name; }} />
   {/if}
   <div class="row">
     <label>Latitude<input inputmode="decimal" bind:value={lat} placeholder="1.2829" /></label>

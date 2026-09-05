@@ -110,3 +110,21 @@ export async function setOffline(browser, page, offline, origin) {
     } catch { /* target gone */ }
   }
 }
+
+// A slow link, for the page AND the worker's own fetches (a separate target;
+// conditions set on the page never reach it). Emulation belongs to the CDP
+// session that set it, so the session is kept until the conditions are lifted
+// and the restore is sent through that same session, then it is detached.
+const netSessions = new Map();
+export async function setNetwork(browser, page, conditions, origin) {
+  const lifting = !conditions.offline && conditions.downloadThroughput === -1 && conditions.uploadThroughput === -1;
+  const targets = [page, ...browser.targets().filter((t) => t.type() === "service_worker" && (!origin || t.url().startsWith(origin)))];
+  for (const t of targets) {
+    try {
+      let s = netSessions.get(t);
+      if (!s) { s = await t.createCDPSession(); netSessions.set(t, s); await s.send("Network.enable"); }
+      await s.send("Network.emulateNetworkConditions", conditions);
+      if (lifting) { netSessions.delete(t); await s.detach().catch(() => {}); }
+    } catch { /* target gone */ }
+  }
+}

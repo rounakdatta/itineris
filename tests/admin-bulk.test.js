@@ -85,3 +85,17 @@ describe("MomentList", () => {
     expect(onSelect).toHaveBeenCalledWith("b");
   });
 });
+
+describe("BulkBar: location", () => {
+  it("one spot, optionally one place name, for the whole selection", async () => {
+    const selection = new SvelteSet(["a", "b"]);
+    render(BulkBar, { selection, galleries, onDone: () => {}, onExit: () => {} });
+    await fireEvent.click(screen.getByRole("button", { name: "Location" }));
+    await fireEvent.input(screen.getByLabelText("Latitude"), { target: { value: "37.7614" } });
+    await fireEvent.input(screen.getByLabelText("Longitude"), { target: { value: "-122.4118" } });
+    await fireEvent.input(screen.getByLabelText("Place name"), { target: { value: " Tartine Manufactory " } });
+    await fireEvent.click(screen.getByRole("button", { name: "Apply to 2" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.bulk).toHaveBeenCalledWith(["a", "b"], { lat: 37.7614, lng: -122.4118, place: "Tartine Manufactory" });
+  });
+});
