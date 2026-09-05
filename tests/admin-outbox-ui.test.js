@@ -3,7 +3,8 @@ import { render, screen, fireEvent } from "@testing-library/svelte";
 import Outbox from "../admin/Outbox.svelte";
 
 const item = (o) => ({ id: o.id, name: o.id + ".jpg", type: "image/jpeg", size: 1, file: null, thumb: null, exif: {}, meta: { tags: o.tags ?? [], galleries: [], lat: o.lat ?? null, lng: o.lng ?? null }, state: o.state ?? "waiting", attempts: o.attempts ?? 0, error: o.error ?? null, progress: o.progress ?? 0 });
-const fakeOutbox = () => ({ add: vi.fn(), retryNow: vi.fn(), remove: vi.fn() });
+const fakeOutbox = () => ({ add: vi.fn(), retryNow: vi.fn(), remove: vi.fn(), updateMeta: vi.fn(async () => {}) });
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe("Outbox UI", () => {
   it("offline: says so, counts the photos, offers Retry, tiles are tappable", async () => {
@@ -40,6 +41,16 @@ describe("Outbox UI", () => {
     unmount();
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [item({ id: "a", lat: 1.29, lng: 103.85 })], blocked: false, flushing: false, online: true } });
     expect(screen.queryByText(/no location/)).toBeNull();
+  });
+  it("one tap places every unplaced queued photo at the device's location", async () => {
+    Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition: (ok) => ok({ coords: { latitude: 37.7614, longitude: -122.4118, accuracy: 9 } }) } });
+    const outbox = fakeOutbox();
+    render(Outbox, { outbox, queue: { items: [item({ id: "a", lat: 1.29, lng: 103.85 }), item({ id: "b" }), item({ id: "c" })], blocked: false, flushing: false, online: true } });
+    await fireEvent.click(screen.getByRole("button", { name: "📍 Use my location for these 2" })); await flush();
+    expect(outbox.updateMeta).toHaveBeenCalledTimes(2);
+    expect(outbox.updateMeta).toHaveBeenCalledWith("b", { lat: 37.7614, lng: -122.4118, locEdited: true });
+    expect(outbox.updateMeta).toHaveBeenCalledWith("c", { lat: 37.7614, lng: -122.4118, locEdited: true });
+    expect(screen.getByText(/Placed 2 photos at your location \(±9 m\)/)).toBeInTheDocument();
   });
   it("no queue, no panel", () => {
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true } });

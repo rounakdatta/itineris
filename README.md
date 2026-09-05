@@ -104,6 +104,15 @@ copies; phones get the 960 (older photos are backfilled on server start). **⤓ 
 plus its map area (to zoom 14; Carto's round-robin tile hosts are normalized to
 one cache key). The viewer is installable (`manifest.webmanifest`).
 
+**Location.** EXIF GPS is read on upload, but phones strip it from photos
+handed to a website (Android redacts location for apps without
+`ACCESS_MEDIA_LOCATION`, which browsers lack; iOS likewise), so photos picked on
+a phone arrive unplaced. The admin marks them ⌖ and offers, in the queue and in
+every location picker: **📍 My location** (the device's position — right when
+you upload from where you shot), a **place search** (OpenStreetMap Nominatim,
+one request per search) that also fills the place name, a neighbour's location,
+tapping the map, or coordinates. Desktop uploads keep their GPS.
+
 **Admin.** The same worker under `/admin/`: it opens offline with the last
 library and the queue. Edits to already-uploaded photos still need the network
 and fail visibly; uploads never do.

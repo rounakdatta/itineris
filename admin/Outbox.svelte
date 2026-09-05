@@ -2,6 +2,8 @@
   // The upload surface. Picking photos is instant and local; the network is
   // somebody else's problem, handled by the Outbox in the background.
   // NB: not named `state` -- a prop called state turns `$state(...)` into a store subscription.
+  import { currentPosition } from "./lib/geo.js";
+
   let { outbox, queue, gallery = null, onEdit } = $props();
   let input;
   let over = $state(false);
@@ -14,7 +16,23 @@
   const total = $derived(items.length);
   // The file had no GPS -- phones strip it from photos picked in a browser --
   // so the server will not be able to place it either. Say so up front.
-  const noLoc = $derived(items.filter((i) => !Number.isFinite(i.meta?.lat) || !Number.isFinite(i.meta?.lng)).length);
+  const noGps = (i) => !Number.isFinite(i.meta?.lat) || !Number.isFinite(i.meta?.lng);
+  const noLoc = $derived(items.filter(noGps).length);
+  let locBusy = $state(false);
+  let locNote = $state(null);
+  // Photos are usually uploaded from where they were taken: one tap places
+  // every unplaced photo in the queue at the device's position; the location
+  // travels with the upload like any other edit.
+  async function useMyLocation() {
+    locBusy = true; locNote = null;
+    try {
+      const p = await currentPosition();
+      const targets = items.filter(noGps);
+      for (const it of targets) await outbox.updateMeta(it.id, { lat: p.lat, lng: p.lng, locEdited: true });
+      locNote = `Placed ${targets.length} photo${targets.length === 1 ? "" : "s"} at your location (±${p.accuracy} m). Tap one to adjust.`;
+    } catch (e) { locNote = e.message; }
+    finally { locBusy = false; }
+  }
 
   const status = $derived.by(() => {
     if (!total) return null;
@@ -94,7 +112,11 @@
           </div>
         {/each}
       </div>
-      {#if noLoc}<p class="muted small">⌖ {noLoc === total ? (total === 1 ? "This photo has" : "These photos have") : `${noLoc} of these have`} no location in the file — phones remove GPS from photos picked in a browser. Tap a photo to set it, now or after upload.</p>{/if}
+      {#if noLoc}
+        <p class="muted small">⌖ {noLoc === total ? (total === 1 ? "This photo has" : "These photos have") : `${noLoc} of these have`} no location in the file — phones remove GPS from photos picked in a browser. Tap a photo to place it, or if you're still there:</p>
+        <p class="small"><button class="btn small" onclick={useMyLocation} disabled={locBusy}>{locBusy ? "Locating…" : `📍 Use my location for ${noLoc === total ? (total === 1 ? "it" : "all") : `these ${noLoc}`}`}</button></p>
+      {/if}
+      {#if locNote}<p class="muted small" role="status">{locNote}</p>{/if}
       {#if rejected.length}<p class="muted small">Refused files stay here so you can see why (tap one); remove them when done.</p>{/if}
     </div>
   {/if}

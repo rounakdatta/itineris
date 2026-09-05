@@ -10,6 +10,7 @@
   let tag = $state("");
   let lat = $state("");
   let lng = $state("");
+  let place = $state("");
 
   const ids = $derived([...selection]);
 
@@ -31,7 +32,7 @@
   });
   const removeFromGallery = () => run(() => api.patchGallery(pick, { remove: ids }));
   const addTag = () => run(() => api.bulk(ids, { addTags: [tag] }));
-  const setLocation = () => run(() => api.bulk(ids, { lat: +lat, lng: +lng }));
+  const setLocation = () => run(() => api.bulk(ids, { lat: +lat, lng: +lng, ...(place.trim() ? { place: place.trim() } : {}) }));
   const remove = () => run(async () => { for (const id of ids) await api.remove(id); selection.clear(); });
 </script>
 
@@ -42,7 +43,7 @@
     {#if !mode}
       <button class="btn small" onclick={() => { mode = "gallery"; pick = galleries[0]?.id ?? "__new__"; }}>Gallery</button>
       <button class="btn small" onclick={() => { mode = "tag"; tag = ""; }}>Tag</button>
-      <button class="btn small" onclick={() => { mode = "location"; lat = ""; lng = ""; }}>Location</button>
+      <button class="btn small" onclick={() => { mode = "location"; lat = ""; lng = ""; place = ""; }}>Location</button>
       <button class="btn small danger" onclick={() => (mode = "delete")}>Delete</button>
       <button class="btn small" onclick={onExit} aria-label="Done selecting">Done</button>
     {:else if mode === "gallery"}
@@ -59,11 +60,12 @@
       <button class="btn small primary" disabled={busy || !tag.trim()} onclick={addTag}>Add tag</button>
       <button class="btn small" onclick={() => (mode = null)}>Back</button>
     {:else if mode === "location"}
-      <span class="muted small">Phones strip GPS from photos picked in the browser. Tap the map or type coordinates; all {ids.length} get this spot.</span>
+      <span class="muted small">Phones strip GPS from photos picked in the browser. Search a place, use your location, tap the map or type coordinates; all {ids.length} get this spot.</span>
       <div class="loc">
-        <MapPicker lat={lat === "" ? null : +lat} lng={lng === "" ? null : +lng} onChange={(a, b) => { lat = a; lng = b; }} />
+        <MapPicker lat={lat === "" ? null : +lat} lng={lng === "" ? null : +lng} onChange={(a, b) => { lat = a; lng = b; }} onPlace={(name) => { if (!place.trim()) place = name; }} />
         <input inputmode="decimal" bind:value={lat} placeholder="latitude" aria-label="Latitude" />
         <input inputmode="decimal" bind:value={lng} placeholder="longitude" aria-label="Longitude" />
+        <input class="place" bind:value={place} placeholder="place name for all of them (optional)" aria-label="Place name" />
       </div>
       <button class="btn small primary" disabled={busy || lat === "" || lng === "" || !Number.isFinite(+lat) || !Number.isFinite(+lng)} onclick={setLocation}>Apply to {ids.length}</button>
       <button class="btn small" onclick={() => (mode = null)}>Back</button>
@@ -89,6 +91,8 @@
   .err { color: var(--danger); margin: 8px 0 0; font-size: 13px; }
   .small { font-size: 13px; }
   .loc { flex: 1 1 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .loc :global(.picker) { grid-column: 1 / -1; height: 180px; }
+  .loc :global(.pick) { grid-column: 1 / -1; }
+  .loc :global(.picker) { height: 180px; }
+  .loc .place { grid-column: 1 / -1; }
   .loc input { max-width: none; width: 100%; }
 </style>

@@ -6,9 +6,10 @@ import { spawn, execSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { launch, shot, tap, swipe, sleep, text, count, tapAt, resolveBrowserEnv } from "./browser.mjs";
+import { launch, shot, tap, swipe, sleep, text, count, tapAt, resolveBrowserEnv, setNetwork } from "./browser.mjs";
 import { startAuthProxy } from "./lib/authproxy.mjs";
 import { fakeJpeg } from "./lib/fakejpeg.mjs";
+import sharp from "sharp";
 
 const ROOT = process.cwd();
 const SCRATCH = process.env.SCRATCH ?? mkdtempSync(path.join(tmpdir(), "itineris-e2e-"));
@@ -95,8 +96,8 @@ try {
   // The photo's full copy takes ages; the thumbnail (already on screen in the
   // strip) must stand in at once, the spinner must show, and the 5 s timer must
   // not run until the photo has actually arrived. Never a dark screen.
-  const cdp = await page.createCDPSession(); await cdp.send("Network.enable");
-  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 300, downloadThroughput: 1500, uploadThroughput: 1500 });
+  // (the worker may already control this page: throttle its fetches too)
+  await setNetwork(browser, page, { offline: false, latency: 300, downloadThroughput: 1500, uploadThroughput: 1500 }, V);
   const slowTick = (await page.$$(".tick"))[12];   // m013: the seed's one real raster photo (400/960/1600 copies)
   ok("slow: the photo under test is a real photo, not a placeholder", (await slowTick.evaluate((el) => el.dataset.id)) === "m013" && (await slowTick.$eval("img", (i) => i.getAttribute("src"))) === "/media/m013-400.webp", await slowTick.$eval("img", (i) => i.getAttribute("src")));
   await slowTick.tap(); await sleep(250); await (await page.$(".tick.on")).tap(); await page.waitForSelector(".story");
@@ -106,8 +107,30 @@ try {
   ok("slow: the story timer waits for the photo", (await page.$$eval(".story .fill", (fs) => fs.map((f) => f.style.width))).filter((w) => w !== "0%" && w !== "100%").length === 0, JSON.stringify(await page.$$eval(".story .fill", (fs) => fs.map((f) => f.style.width))));
   ok("slow: nothing on screen is the blurred backdrop alone", await page.evaluate(() => { const b = document.querySelector(".story img.backdrop"); const p = document.querySelector(".story img.placeholder"); return !b || (p && p.getBoundingClientRect().width > 0); }));
   await settle(page); await shot(page, `${SHOTS}/03-story-slow-link.png`);
-  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }); await cdp.detach();
+  await setNetwork(browser, page, { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }, V);
   ok("slow: the photo fades in once it arrives", await page.waitForSelector(".story img.media.loaded", { timeout: 20000 }).then(() => true).catch(() => false));
+  await page.keyboard.press("Escape"); await sleep(300);
+
+  console.log("--- viewer: a LANDSCAPE photo in the story is the photo, not its blurred backdrop ---");
+  // Pixel-level: the contained photo occupies the middle band of a portrait
+  // screen; the blurred, darkened copy fills the rest. Read both bands off a
+  // screenshot: the photo has strong adjacent-pixel contrast (16 px blocks) and
+  // is bright; the backdrop is smooth and dark. Anything else is a paint bug.
+  const texture = async (png, [fx0, fy0, fx1, fy1]) => {
+    const { width, height } = await sharp(png).metadata();
+    const left = Math.round(width * fx0), top = Math.round(height * fy0), w = Math.round(width * (fx1 - fx0)), h = Math.round(height * (fy1 - fy0));
+    const { data, info } = await sharp(png).extract({ left, top, width: w, height: h }).greyscale().raw().toBuffer({ resolveWithObject: true });
+    let diff = 0, sum = 0, n = 0;
+    for (let y = 0; y < info.height; y++) for (let x = 1; x < info.width; x++) { const i = y * info.width + x; diff += Math.abs(data[i] - data[i - 1]); sum += data[i]; n++; }
+    return { contrast: +(diff / n).toFixed(1), luma: Math.round(sum / n) };
+  };
+  await page.goto(`${V}/#m/m005`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story");
+  ok("landscape: it is the landscape photo, shown whole over a blurred copy", (await page.$eval(".story img.media", (i) => i.classList.contains("contain") && /m005-960\.webp$/.test(i.getAttribute("src")))) && (await page.$(".story img.backdrop")) !== null, await page.$eval(".story img.media", (i) => i.getAttribute("src")));
+  await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }); await sleep(700);
+  const png = await page.screenshot({ encoding: "binary" }); writeFileSync(`${SHOTS}/04-story-landscape.png`, png);
+  const photo = await texture(png, [0.1, 0.42, 0.9, 0.58]), above = await texture(png, [0.1, 0.22, 0.9, 0.3]);
+  ok("landscape: the middle band is the sharp, bright photo", photo.contrast > 4 && photo.luma > 100, JSON.stringify(photo));
+  ok("landscape: the band above it is the smooth, dimmed backdrop", above.contrast < 2 && above.luma < 90, JSON.stringify(above));
   await page.keyboard.press("Escape"); await sleep(300);
 
   console.log("--- viewer: deep link, wall, facet ---");

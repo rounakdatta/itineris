@@ -198,27 +198,32 @@
      1, so an item spanning every row with no column of its own would be pushed
      into an implicit column 2 -- beside the chrome instead of behind it. */
   .media, .placeholder, .backdrop { grid-row: 1 / -1; grid-column: 1; width: 100%; height: 100%; pointer-events: none; }
-  .placeholder { object-fit: cover; }
+  /* Paint order is explicit. A grid item with a transform, a filter or an
+     opacity below 1 forms a stacking context and paints ABOVE plain siblings
+     whatever the DOM order -- so the blurred, darkened backdrop covered the
+     photo, and a landscape photo showed as nothing but its own dark blur. */
+  .backdrop { z-index: 0; }
+  .placeholder { z-index: 1; object-fit: cover; }
   .placeholder.contain { object-fit: contain; }
-  .media { object-fit: cover; opacity: 0; transition: opacity 260ms ease; }
+  .media { z-index: 2; object-fit: cover; opacity: 0; transition: opacity 260ms ease; }
   .media.loaded { opacity: 1; }
   .media.contain { object-fit: contain; }
   .loading {
-    grid-row: 1 / -1; grid-column: 1; place-self: center; z-index: 1; pointer-events: none;
+    grid-row: 1 / -1; grid-column: 1; place-self: center; z-index: 3; pointer-events: none;
     width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.25); border-top-color: #fff;
     animation: spin 900ms linear infinite; box-shadow: 0 0 0 6px rgba(0, 0, 0, 0.25);
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .failed { grid-row: 1 / -1; grid-column: 1; place-self: center; z-index: 1; margin: 0; padding: 8px 14px; border-radius: 10px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 14px; }
+  .failed { grid-row: 1 / -1; grid-column: 1; place-self: center; z-index: 3; margin: 0; padding: 8px 14px; border-radius: 10px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 14px; }
   .backdrop { object-fit: cover; filter: blur(28px) brightness(0.45); transform: scale(1.15); }
   @keyframes fade { from { opacity: 0.25; } to { opacity: 1; } }
 
-  .bars { grid-row: 1; grid-column: 1; z-index: 2; display: flex; gap: 3px; padding: max(10px, env(safe-area-inset-top)) 10px 0; }
+  .bars { grid-row: 1; grid-column: 1; z-index: 4; display: flex; gap: 3px; padding: max(10px, env(safe-area-inset-top)) 10px 0; }
   .bar { flex: 1; height: 2.5px; border-radius: 2px; background: rgba(255, 255, 255, 0.3); overflow: hidden; }
   .fill { height: 100%; background: #fff; }
 
   header {
-    grid-row: 2; grid-column: 1; z-index: 2;
+    grid-row: 2; grid-column: 1; z-index: 4;
     display: flex; align-items: flex-start; justify-content: space-between; padding: 12px 14px;
     background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
   }
@@ -232,7 +237,7 @@
   }
 
   footer {
-    grid-row: 4; grid-column: 1; z-index: 2;
+    grid-row: 4; grid-column: 1; z-index: 4;
     padding: 28px 18px max(20px, env(safe-area-inset-bottom));
     background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent); color: #fff; pointer-events: none;
   }

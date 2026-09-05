@@ -211,30 +211,34 @@ const GALLERY = {
 rmSync(out("seed"), { recursive: true, force: true });
 for (const d of ["seed/library", "seed/data/galleries", "seed/media"]) mkdirSync(out(d), { recursive: true });
 
-// One moment is a real raster photo with the three copies the server makes
-// (400/960/1600), so tests exercise the thumbnail -> medium -> large path and
-// slow-network behaviour against bytes that actually take time to arrive.
-// Deterministic (LCG noise over a gradient), a few hundred KB at 960 px.
-async function rasterPhoto(m, w = 1200, h = 1600) {
+// Two moments are real raster photos with the three copies the server makes
+// (400/960/1600), so tests exercise the thumbnail -> medium -> large path,
+// slow-network behaviour, and -- with the landscape one -- how a photo is
+// composited over its blurred backdrop. Deterministic: LCG noise over a
+// gradient, in 16 px blocks so the texture survives downscaling and a
+// screenshot can tell "sharp" from "blurred" by adjacent-pixel contrast.
+async function rasterPhoto(m, { w, h, seed }) {
   const px = Buffer.alloc(w * h * 3);
-  let seed = 20260314;
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  let st = seed >>> 0;
+  const rnd = () => ((st = (st * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const bw = Math.ceil(w / 16), bh = Math.ceil(h / 16);
+  const blocks = Float32Array.from({ length: bw * bh }, () => (rnd() - 0.5) * 140);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = (y * w + x) * 3, n = (rnd() - 0.5) * 90;
-    px[i] = Math.max(0, Math.min(255, 40 + (x / w) * 120 + n));
-    px[i + 1] = Math.max(0, Math.min(255, 90 + (y / h) * 90 + n));
-    px[i + 2] = Math.max(0, Math.min(255, 160 - (y / h) * 60 + n));
+    const i = (y * w + x) * 3, n = blocks[(y >> 4) * bw + (x >> 4)] + (rnd() - 0.5) * 30;
+    px[i] = Math.max(0, Math.min(255, 60 + (x / w) * 110 + n));
+    px[i + 1] = Math.max(0, Math.min(255, 110 + (y / h) * 80 + n));
+    px[i + 2] = Math.max(0, Math.min(255, 170 - (y / h) * 60 + n));
   }
   const base = sharp(px, { raw: { width: w, height: h, channels: 3 } });
   const sizes = { 1600: 82, 960: 80, 400: 74 };
   const info = {};
   for (const [size, quality] of Object.entries(sizes)) {
-    const r = await base.clone().resize({ width: +size, height: +size, fit: "inside", withoutEnlargement: true }).webp({ quality }).toFile(out(`seed/media/${m.id}-${size}.webp`));
-    info[size] = r;
+    info[size] = await base.clone().resize({ width: +size, height: +size, fit: "inside", withoutEnlargement: true }).webp({ quality }).toFile(out(`seed/media/${m.id}-${size}.webp`));
   }
   m.media = { type: "photo", src: `media/${m.id}-1600.webp`, w: info[1600].width, h: info[1600].height, medium: `media/${m.id}-960.webp`, thumb: `media/${m.id}-400.webp` };
 }
-await rasterPhoto(moments[12]);
+await rasterPhoto(moments[12], { w: 1200, h: 1600, seed: 20260314 });   // portrait
+await rasterPhoto(moments[4], { w: 1600, h: 1200, seed: 20260315 });    // landscape
 moments.forEach((m, i) => { if (m.media.src.endsWith(".svg")) writeFileSync(out(`seed/media/${m.id}.svg`), placeholder(m, i)); });
 writeFileSync(out("seed/library/moments.json"), JSON.stringify(moments, null, 2) + "\n");
 writeFileSync(out("seed/library/tracks.json"), JSON.stringify(tracks, null, 2) + "\n");

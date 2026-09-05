@@ -2,6 +2,9 @@
   import { trip } from "../lib/trip.svelte.js";
   import { planDownload, saveGallery, forgetGallery, savedInfo, fmtBytes, canSave, getTileTemplate } from "../lib/offline.js";
 
+  // Stamped at build time; lets "which version is your phone running?" be answered.
+  const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
+
   let open = $state(false);
   let busy = $state(false);
   let progress = $state(null);
@@ -51,6 +54,7 @@
       {/if}
       <span class="spacer"></span>
       <button class="btn" onclick={() => (open = false)}>Close</button>
+      <span class="muted small version">itineris {APP_VERSION}</span>
     </div>
   </aside>
 {/if}
@@ -72,6 +76,7 @@
   h2 { margin: 0 0 8px; font-size: 17px; }
   p { margin: 0 0 10px; line-height: 1.5; }
   .small { font-size: 12px; }
+  .version { margin-left: auto; align-self: center; opacity: 0.6; }
   .bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
   .fill { height: 100%; background: #4dd4ac; transition: width 120ms linear; }
   .err { color: #ff8080; }
