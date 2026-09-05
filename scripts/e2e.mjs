@@ -20,6 +20,9 @@ let fail = 0;
 const ok = (name, cond, extra = "") => { console.log(`${cond ? "  ok  " : "  FAIL"}  ${name}${extra ? "  " + extra : ""}`); if (!cond) fail++; };
 const hash = (page) => page.evaluate(() => location.hash);
 const clickText = (page, sel, t) => page.evaluate((s, txt) => { const el = [...document.querySelectorAll(s)].find((e) => e.textContent.trim().startsWith(txt)); if (el) el.click(); return !!el; }, sel, t);
+// Screenshots taken the instant after a layout change can capture a stale
+// compositor tile in headless Chromium; let it settle, and let the map finish.
+const settle = async (page, { map = false } = {}) => { if (map) await page.waitForSelector('.map[data-idle="1"]', { timeout: 30000 }).catch(() => {}); await sleep(450); };
 const waitFor = async (page, fn, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await page.evaluate(fn)) return true; await sleep(100); } return false; };
 
 // --- admin server with a fresh data dir -------------------------------------
@@ -55,8 +58,7 @@ try {
   ok("facet chips with counts", /Spots\s*17/.test(await text(page, ".chrome nav")) && /Activities\s*7/.test(await text(page, ".chrome nav")), await text(page, ".chrome nav"));
   ok("day chips carry dates", /Day 1\s*14 Mar/.test(await text(page, ".days")), await text(page, ".days"));
   ok("no desktop zoom buttons on a phone", (await count(page, ".maplibregl-ctrl-zoom-in")) === 0);
-  await sleep(2500);   // let tiles land for the screenshot
-  await shot(page, `${SHOTS}/01-viewer-home.png`);
+  await settle(page, { map: true }); await shot(page, `${SHOTS}/01-viewer-home.png`);
 
   console.log("--- viewer: story by tap, swipe, back button ---");
   const ticks = await page.$$(".tick");
@@ -66,7 +68,7 @@ try {
   await page.waitForSelector(".story");
   ok("second tap opens the story, URL carries it", (await hash(page)) === "#m/m003", await hash(page));
   ok("story header: day + place + clock", /Day 1/.test(await text(page, ".story header")) && /Maxwell/.test(await text(page, ".story header")), await text(page, ".story header"));
-  await shot(page, `${SHOTS}/02-story.png`);
+  await settle(page); await shot(page, `${SHOTS}/02-story.png`);
   await swipe(page, [300, 450], [70, 455]); await sleep(400);
   ok("swipe left -> next photo", (await hash(page)) === "#m/m004", await hash(page));
   await page.evaluate(() => { window.__pe = []; const s = document.querySelector(".story"); for (const t of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) s.addEventListener(t, (ev) => window.__pe.push([t, Math.round(ev.clientX), Math.round(performance.now())])); });
@@ -87,31 +89,31 @@ try {
   await page.keyboard.press("Escape"); await sleep(300);
   await tap(page, ".chrome .toggle"); await page.waitForSelector(".wall");
   ok("wall view, URL #wall", (await hash(page)) === "#wall" && (await count(page, ".wall .cell")) === 20);
-  await shot(page, `${SHOTS}/03-wall.png`);
+  await settle(page); await shot(page, `${SHOTS}/03-wall.png`);
   await (await page.$$(".wall .cell"))[5].tap(); await page.waitForSelector(".story");
   await page.goBack(); await sleep(400);
   ok("back from a wall story returns to the wall", (await page.$(".story")) === null && (await hash(page)) === "#wall" && (await page.$(".wall")) !== null);
   await tap(page, ".chrome .toggle"); await sleep(300);
   await clickText(page, ".chrome nav .chip", "Activities"); await sleep(400);
   ok("facet narrows the strip to runs and rides", (await count(page, ".tick")) === 4, String(await count(page, ".tick")));
-  await shot(page, `${SHOTS}/04-facet-activities.png`);
+  await settle(page, { map: true }); await shot(page, `${SHOTS}/04-facet-activities.png`);
   await clickText(page, ".chrome nav .chip", "Activities"); await sleep(300);
   ok("...and back", (await count(page, ".tick")) === 20);
   await page.goto(`${V}/g/nope-not-real`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".card");
   ok("dead gallery link explains itself", /doesn't point to a gallery/.test(await text(page, ".card")));
-  await shot(page, `${SHOTS}/05-notfound.png`);
+  await settle(page); await shot(page, `${SHOTS}/05-notfound.png`);
 
   console.log("--- admin: photos, select, new gallery from selection ---");
   await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".cell");
   ok("signed-in identity shown", (await text(page, "header")).includes(WHO));
   ok("20 photos, none private (all in the demo gallery)", (await count(page, ".cell")) === 20 && (await count(page, ".flag.private")) === 0);
-  await shot(page, `${SHOTS}/10-admin-photos.png`);
+  await settle(page); await shot(page, `${SHOTS}/10-admin-photos.png`);
   await clickText(page, ".toolbar button", "Select"); await sleep(200);
   const cells = await page.$$(".cell"); await cells[0].tap(); await cells[1].tap(); await sleep(200);
   ok("bulk bar counts the selection", (await text(page, ".bulk strong")) === "2 selected", await text(page, ".bulk strong"));
-  await shot(page, `${SHOTS}/11-admin-select.png`);
+  await settle(page); await shot(page, `${SHOTS}/11-admin-select.png`);
   await clickText(page, ".bulk button", "Add to gallery"); await sleep(200);
   await page.select(".bulk select", "__new__");
   page.once("dialog", (d) => d.accept("Friends"));
@@ -125,7 +127,7 @@ try {
   friendsId = links.map((l) => l.match(/\/g\/([a-z0-9]+)$/)?.[1]).find((id) => id && id !== "sg2026demo");
   ok("Friends has an unguessable 12-char link", !!friendsId && friendsId.length === 12, friendsId ?? "none");
   ok("demo gallery is home", /home · shown at \//.test(await text(page, ".gallery.home h3")));
-  await shot(page, `${SHOTS}/12-admin-galleries.png`);
+  await settle(page); await shot(page, `${SHOTS}/12-admin-galleries.png`);
   await page.evaluate((id) => { const card = [...document.querySelectorAll(".gallery")].find((g) => g.textContent.includes(id)); [...card.querySelectorAll("button")].find((b) => b.textContent.trim() === "Show photos").click(); }, friendsId);
   await page.waitForSelector(".cell");
   ok("Show photos filters to the gallery", (await count(page, ".cell")) === 2 && (await page.$eval(".filter select", (s) => s.value)) === friendsId);
@@ -137,10 +139,10 @@ try {
   await (await page.$(".cell")).tap(); await page.waitForSelector(".sheet");
   ok("native time picker holds the photo's local time", (await page.$eval('.sheet input[type="datetime-local"]', (i) => i.value)) === editRec.t.slice(0, 16) && (await page.$eval(".sheet select", (s) => s.value)) === editRec.t.slice(-6), `${editId} ${editRec.t}`);
   ok("gallery checklist: in both", (await page.$$eval(".sheet .gal input", (is) => is.filter((i) => i.checked).length)) === 2);
-  await shot(page, `${SHOTS}/13-admin-editor.png`);
+  await settle(page); await shot(page, `${SHOTS}/13-admin-editor.png`);
   await clickText(page, ".sheet button", "Pick on map"); await page.waitForSelector(".picker canvas");
   ok("map picker renders", true);
-  await sleep(1500); await shot(page, `${SHOTS}/14-admin-mappicker.png`);
+  await sleep(2500); await shot(page, `${SHOTS}/14-admin-mappicker.png`);
   await page.evaluate(() => { const home = [...document.querySelectorAll(".sheet .gal")].find((l) => /home/.test(l.textContent)); home.querySelector("input").click(); });
   await clickText(page, ".sheet button", "Save");
   ok("save closes the editor", await waitFor(page, () => !document.querySelector(".sheet")));
@@ -153,7 +155,7 @@ try {
   ok("Friends gallery: title and exactly its 2 photos", (await text(page, ".brand .title")) === "Friends" && (await count(page, ".tick")) === 2, `${await text(page, ".brand .title")} / ${await count(page, ".tick")}`);
   await page.waitForFunction(() => [...document.querySelectorAll(".tick img")].every((i) => i.complete), { timeout: 10000 });
   ok("thumbnails really load under /g/<token> (absolute media URLs)", await page.$$eval(".tick img", (imgs) => imgs.length > 0 && imgs.every((i) => i.naturalWidth > 0)), await page.$$eval(".tick img", (imgs) => imgs.map((i) => i.getAttribute("src")).join(",")));
-  await sleep(4500); await shot(page, `${SHOTS}/20-viewer-friends.png`);
+  await settle(page, { map: true }); await shot(page, `${SHOTS}/20-viewer-friends.png`);
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("home gallery lost the photo moved out of it", (await count(page, ".tick")) === 19, String(await count(page, ".tick")));
   const pubFriends = await (await fetch(`${V}/data/galleries/${friendsId}.json`)).json();

@@ -86,6 +86,11 @@
         const id = hits?.[0]?.properties?.id;
         if (id) trip.openStory(id);
       });
+      // Test hook: tiles loaded and nothing pending. Screenshots wait for it.
+      map.on("idle", () => { container.dataset.idle = "1"; });
+      map.on("movestart", () => { container.dataset.idle = "0"; });
+      map.on("dataloading", () => { container.dataset.idle = "0"; });
+
       map.on("mouseenter", "moments-dot", () => (map.getCanvas().style.cursor = "pointer"));
       map.on("mouseleave", "moments-dot", () => (map.getCanvas().style.cursor = ""));
 
