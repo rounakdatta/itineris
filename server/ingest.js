@@ -5,6 +5,11 @@ import sharp from "sharp";
 import exifr from "exifr";
 import { localIso } from "./time.js";
 
+// One small pod, occasional bursts of very large phone photos: trade throughput
+// for a bounded peak. Single libvips thread, no operation cache.
+sharp.concurrency(1);
+sharp.cache(false);
+
 export const LARGE = 1600;
 export const THUMB = 400;
 

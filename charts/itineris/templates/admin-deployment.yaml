@@ -62,10 +62,17 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /srv/itineris
+            # libvips spills decoded images larger than ~100 MB (a 24-48 MP
+            # phone photo) to temp files; with a read-only rootfs this is the
+            # only place it can.
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "itineris.claimName" . }}
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

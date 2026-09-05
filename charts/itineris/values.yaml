@@ -58,14 +58,16 @@ admin:
   # Comma-separated e-mail allowlist checked AFTER tinyauth. Empty trusts
   # tinyauth's own whitelist entirely, which is the usual choice.
   allowedEmails: ""
-  # Uploads are decoded in memory and re-encoded by sharp; a burst of large
-  # phone photos wants headroom, so the limit sits well above the request.
+  # Uploads are decoded in memory and re-encoded by sharp. A 48 MP photo is
+  # ~200 MB decoded, and two uploads can be in flight at once, so the limit
+  # sits far above the request; sharp runs single-threaded with no cache to
+  # keep the peak bounded.
   resources:
     requests:
       cpu: 50m
       memory: 128Mi
     limits:
-      memory: 512Mi
+      memory: 1Gi
 
 # Pod-level. nginx-unprivileged runs as 101:101, and the admin image deliberately
 # uses the same uid so both own what the other writes on the shared volume.
