@@ -70,7 +70,7 @@
   function prev() { trip.step(-1); }
 
   function onPointerDown(e) {
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* synthetic or already-released pointer */ }
     down = { x: e.clientX, y: e.clientY, t: performance.now() };
     dragX = 0; dragY = 0; axis = null;
     holdTimer = setTimeout(() => { paused = true; }, TAP_MS);

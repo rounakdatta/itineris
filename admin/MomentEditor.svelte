@@ -2,7 +2,9 @@
   import { api, mediaUrl, splitIso, joinIso, OFFSETS, storyUrl } from "./lib/api.js";
   import MapPicker from "./MapPicker.svelte";
 
-  let { moment, galleries = [], suggestions = [], neighbours = { prev: null, next: null }, onSaved, onDeleted, onClose } = $props();
+  // `pending`: a queued photo that has not been uploaded yet. Same fields, but
+  // saving writes to the on-device queue (onSaveLocal) instead of the server.
+  let { moment, pending = false, galleries = [], suggestions = [], neighbours = { prev: null, next: null }, onSaved, onSaveLocal, onDeleted, onClose } = $props();
 
   let caption = $state(moment.caption ?? "");
   let place = $state(moment.place ?? "");
@@ -49,6 +51,11 @@
     try {
       const hasLat = lat !== "" && lat !== null, hasLng = lng !== "" && lng !== null;
       if (hasLat !== hasLng) throw new Error("Give both latitude and longitude, or neither.");
+      if (pending) {
+        const locEdited = String(lat) !== String(moment.lat ?? "") || String(lng) !== String(moment.lng ?? "");
+        await onSaveLocal?.({ caption, place, tags, galleries: inGalleries, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null, t, locEdited: moment.locEdited || locEdited, timeEdited: moment.timeEdited || t !== moment.t });
+        return;
+      }
       const body = { caption, place, tags, t, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null };
       let saved = await api.patch(moment.id, body);
       const before = new Set(moment.galleries ?? []), after = new Set(inGalleries);
@@ -61,7 +68,7 @@
   }
   async function remove() {
     saving = true; error = null;
-    try { await api.remove(moment.id); onDeleted?.(moment.id); }
+    try { if (!pending) await api.remove(moment.id); onDeleted?.(moment.id); }
     catch (e) { error = e.message; } finally { saving = false; }
   }
 </script>
@@ -70,13 +77,14 @@
 <aside class="sheet" role="dialog" aria-modal="true" aria-label="Edit moment">
   <div class="grab" aria-hidden="true"></div>
   <div class="top">
-    <img src={mediaUrl(moment.media.src)} alt="" />
+    <img src={pending ? moment.media.src : mediaUrl(moment.media.src)} alt="" />
     <div class="meta">
       <div class="muted small">{moment.filename ?? moment.id}{#if moment.camera} · {moment.camera}{/if}</div>
-      <div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy} · by {moment.uploadedBy}{/if}</div>
+      {#if !pending}<div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy} · by {moment.uploadedBy}{/if}</div>{/if}
+      {#if pending}<span class="badge">waiting to upload — edits are kept on this device</span>{/if}
       {#if moment.tz === "unknown"}<span class="badge warn">time zone unknown — check the time</span>{/if}
       {#if moment.lat === null}<span class="badge warn">no GPS — set a location</span>{/if}
-      {#if viewerLink}<a class="small" href={viewerLink} target="_blank" rel="noopener">open in viewer ↗</a>{/if}
+      {#if viewerLink && !pending}<a class="small" href={viewerLink} target="_blank" rel="noopener">open in viewer ↗</a>{/if}
     </div>
   </div>
 
@@ -130,7 +138,7 @@
 
   <div class="actions">
     {#if confirmDelete}
-      <button class="btn danger" disabled={saving} onclick={remove}>Delete for real (the original file is kept)</button>
+      <button class="btn danger" disabled={saving} onclick={remove}>{pending ? "Remove from the queue" : "Delete for real (the original file is kept)"}</button>
       <button class="btn" onclick={() => (confirmDelete = false)}>Keep</button>
     {:else}
       <button class="btn danger" disabled={saving} onclick={() => (confirmDelete = true)}>Delete</button>

@@ -4,6 +4,7 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import { trip } from "../lib/trip.svelte.js";
   import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression } from "../lib/data.js";
+  import { setTileTemplate } from "../lib/offline.js";
 
   let container;
   let map = null;
@@ -95,6 +96,16 @@
       map.on("mouseleave", "moments-dot", () => (map.getCanvas().style.cursor = ""));
 
       ready = true;
+
+      // Where the tiles come from, so "Save for offline" can fetch the same URLs
+      // the map will ask for. The style names a TileJSON; resolve it once.
+      (async () => {
+        try {
+          const src = map.getStyle()?.sources?.carto;
+          const tiles = src?.tiles ?? (src?.url ? (await (await fetch(src.url)).json()).tiles : null);
+          setTileTemplate(tiles?.[0] ?? null);
+        } catch { setTileTemplate(null); }
+      })();
     });
 
     return () => {

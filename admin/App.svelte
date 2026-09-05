@@ -3,7 +3,9 @@
   import { SvelteSet } from "svelte/reactivity";
   import { api } from "./lib/api.js";
   import { TAG_COLOR } from "../src/lib/data.js";
-  import Uploader from "./Uploader.svelte";
+  import Outbox from "./Outbox.svelte";
+  import { Outbox as OutboxQueue, metaToSend } from "./lib/outbox.js";
+  import { exifToIso } from "./lib/exif.js";
   import MomentList from "./MomentList.svelte";
   import MomentEditor from "./MomentEditor.svelte";
   import GalleryList from "./GalleryList.svelte";
@@ -19,6 +21,29 @@
   let editingId = $state(null);
   let selectMode = $state(false);
   const selection = new SvelteSet();
+
+  // The upload queue lives in IndexedDB and uploads in the background.
+  const outbox = new OutboxQueue({ upload: (item, onProgress) => api.uploadOne({ ...item, metaForServer: metaToSend(item) }, onProgress) });
+  let queue = $state({ items: [], blocked: false, flushing: false, online: true, ready: false });
+  let online = $state(typeof navigator === "undefined" ? true : navigator.onLine !== false);
+  let pendingEditId = $state(null);
+  const pendingItem = $derived(queue.items.find((i) => i.id === pendingEditId) ?? null);
+  let pendingUrl = $state(null);
+  // Depends only on pendingItem; the URL it creates is revoked by the cleanup.
+  $effect(() => {
+    const blob = pendingItem?.thumb ?? pendingItem?.file ?? null;
+    const url = blob && typeof URL.createObjectURL === "function" ? URL.createObjectURL(blob) : null;
+    pendingUrl = url;
+    return () => { if (url) URL.revokeObjectURL(url); };
+  });
+  // A queued photo dressed as a moment so the same editor works on it.
+  const pendingMoment = $derived(pendingItem && {
+    id: pendingItem.id, pending: true, filename: pendingItem.name,
+    t: pendingItem.meta.t ?? exifToIso(pendingItem.exif, pendingItem.createdAt), tz: pendingItem.meta.timeEdited ? "manual" : pendingItem.exif?.offset ? "exif" : "unknown",
+    lat: pendingItem.meta.lat ?? null, lng: pendingItem.meta.lng ?? null,
+    place: pendingItem.meta.place ?? "", caption: pendingItem.meta.caption ?? "", tags: pendingItem.meta.tags ?? [], galleries: pendingItem.meta.galleries ?? [],
+    media: { src: pendingUrl ?? "", w: 0, h: 0 },
+  });
 
   const editing = $derived(moments.find((m) => m.id === editingId) ?? null);
   const suggestions = $derived([...new Set([...Object.keys(TAG_COLOR), ...moments.flatMap((m) => m.tags)])].sort());
@@ -40,21 +65,25 @@
     return { prev: sorted.slice(0, i).reverse().find(placed) ?? null, next: sorted.slice(i + 1).find(placed) ?? null };
   });
 
+  let fromCache = $state(false);
   async function refresh() {
     try {
-      const lib = await api.library();
+      const { body: lib, fromCache: cached } = await api.libraryWithMeta();
       moments = lib.moments; tracks = lib.tracks; galleries = lib.galleries;
+      fromCache = cached;
       error = null;
     } catch (e) { error = e.message; }
   }
-  onMount(async () => {
-    try { me = await api.me(); await refresh(); } catch (e) { error = e.message; }
+  onMount(() => {
+    (async () => { try { me = await api.me(); await refresh(); } catch (e) { error = e.message; } })();
+    const unsub = outbox.subscribe((snap) => { queue = snap; });
+    outbox.onUploaded = () => refresh();
+    outbox.start();
+    const up = () => { online = true; if (fromCache) refresh(); }, down = () => (online = false);
+    window.addEventListener("online", up); window.addEventListener("offline", down);
+    return () => { unsub(); window.removeEventListener("online", up); window.removeEventListener("offline", down); };
   });
 
-  function onUploaded(result) {
-    refresh();
-    if (result.created?.length) editingId = result.created[0].id;
-  }
   function onSaved(m) { moments = moments.map((x) => (x.id === m.id ? m : x)); }
   function onDeleted(id) { moments = moments.filter((x) => x.id !== id); editingId = null; selection.delete(id); }
   function toggleSelect(id) { selection.has(id) ? selection.delete(id) : selection.add(id); }
@@ -66,7 +95,7 @@
 
   $effect(() => {
     // Escape backs out of whatever is open.
-    const onKey = (e) => { if (e.key === "Escape") { if (editingId) editingId = null; else if (selectMode) exitSelect(); } };
+    const onKey = (e) => { if (e.key === "Escape") { if (pendingEditId) pendingEditId = null; else if (editingId) editingId = null; else if (selectMode) exitSelect(); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
@@ -76,6 +105,8 @@
   <div class="brand">
     <strong>itineris</strong> <span class="muted">admin</span>
     {#if me}<span class="muted who">· {me.email}</span>{/if}
+    {#if !online || fromCache}<span class="pill offline" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
+    {#if queue.items.length}<span class="pill" role="status">{queue.items.length} queued</span>{/if}
   </div>
   <a class="muted small" href="/" target="_blank" rel="noopener">view site ↗</a>
 </header>
@@ -89,7 +120,7 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   {#if tab === "photos"}
-    <Uploader onDone={onUploaded} gallery={currentGallery} />
+    <Outbox {outbox} {queue} gallery={currentGallery} onEdit={(id) => (pendingEditId = id)} />
 
     <section class="toolbar">
       <label class="filter">
@@ -127,6 +158,15 @@
   {/key}
 {/if}
 
+{#if pendingMoment}
+  {#key pendingMoment.id}
+    <MomentEditor moment={pendingMoment} pending {galleries} {suggestions}
+      onSaveLocal={async (meta) => { await outbox.updateMeta(pendingMoment.id, meta); pendingEditId = null; }}
+      onDeleted={async (id) => { await outbox.remove(id); pendingEditId = null; }}
+      onClose={() => (pendingEditId = null)} />
+  {/key}
+{/if}
+
 <style>
   header {
     position: sticky; top: 0; z-index: 5;
@@ -136,6 +176,8 @@
   }
   header a { text-decoration: none; }
   .who { font-size: 13px; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: var(--muted); }
+  .pill.offline { background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }
   .tabs {
     position: sticky; top: 0; z-index: 4; display: flex; gap: 4px; padding: 0 12px 8px;
     background: rgba(11, 13, 16, 0.92); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line);

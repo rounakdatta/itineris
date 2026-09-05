@@ -56,36 +56,6 @@ app.get("/admin/api/tracks", async (c) => c.json(await store.tracks()));
 app.get("/admin/api/galleries", async (c) => c.json((await store.galleries()).map(galleryView)));
 
 // ---- moments -------------------------------------------------------------
-app.post("/admin/api/upload", bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => {
-  const body = await c.req.parseBody({ all: true });
-  const files = [].concat(body.files ?? body.file ?? []).filter((f) => typeof f === "object" && typeof f.arrayBuffer === "function");
-  if (files.length === 0) return c.json({ error: "no files" }, 400);
-  // Optional: drop straight into a gallery, so "upload to this gallery" is one step.
-  const galleryId = typeof body.gallery === "string" && TOKEN_RE.test(body.gallery) ? body.gallery : null;
-
-  const created = [], duplicates = [], errors = [];
-  for (const f of files) {
-    try {
-      const r = await ingestPhoto(Buffer.from(await f.arrayBuffer()), f.name, { dataDir: DATA_DIR, email: c.get("email") });
-      if (r.duplicate) duplicates.push({ id: r.id, filename: f.name });
-      else created.push(r.moment);
-    } catch (e) {
-      errors.push({ filename: f.name, error: e.message });
-    }
-  }
-  if (created.length) {
-    await store.updateMoments((list) => {
-      const have = new Set(list.map((m) => m.id));
-      return [...list, ...created.filter((m) => !have.has(m.id))];
-    });
-  }
-  const touched = [...created.map((m) => m.id), ...duplicates.map((d) => d.id)];
-  if (galleryId && touched.length) {
-    await store.updateGalleries((gs) => gs.map((g) => (g.id === galleryId ? { ...g, momentIds: [...new Set([...(g.momentIds ?? []), ...touched])], updatedAt: new Date().toISOString() } : g)));
-  }
-  return c.json({ created, duplicates, errors }, errors.length && !created.length ? 422 : 200);
-});
-
 function momentPatch(patch, email) {
   const upd = {};
   if ("caption" in patch) upd.caption = STR(patch.caption, 2000) ?? "";
@@ -107,6 +77,48 @@ function momentPatch(patch, email) {
   }
   return { upd: { ...upd, editedBy: email, editedAt: new Date().toISOString() } };
 }
+
+app.post("/admin/api/upload", bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => {
+  const body = await c.req.parseBody({ all: true });
+  const files = [].concat(body.files ?? body.file ?? []).filter((f) => typeof f === "object" && typeof f.arrayBuffer === "function");
+  if (files.length === 0) return c.json({ error: "no files" }, 400);
+  // Optional annotations decided while the photo was still in the phone's
+  // queue: caption, place, tags, galleries, and lat/lng or t only if the user
+  // set them. Validated exactly like a PATCH, applied at creation.
+  let meta = {};
+  if (typeof body.meta === "string" && body.meta.trim()) {
+    try { meta = JSON.parse(body.meta); } catch { return c.json({ error: "meta must be JSON" }, 400); }
+  }
+  const { upd = {}, error: metaError } = momentPatch(meta, c.get("email"));
+  if (metaError) return c.json({ error: `meta: ${metaError}` }, 400);
+  delete upd.editedBy; delete upd.editedAt;
+  const wanted = new Set([
+    ...(typeof body.gallery === "string" && TOKEN_RE.test(body.gallery) ? [body.gallery] : []),
+    ...(Array.isArray(meta.galleries) ? meta.galleries.filter((g) => typeof g === "string" && TOKEN_RE.test(g)) : []),
+  ]);
+
+  const created = [], duplicates = [], errors = [];
+  for (const f of files) {
+    try {
+      const r = await ingestPhoto(Buffer.from(await f.arrayBuffer()), f.name, { dataDir: DATA_DIR, email: c.get("email") });
+      if (r.duplicate) duplicates.push({ id: r.id, filename: f.name });
+      else created.push({ ...r.moment, ...upd, tz: upd.t ? "manual" : r.moment.tz });
+    } catch (e) {
+      errors.push({ filename: f.name, error: e.message });
+    }
+  }
+  if (created.length) {
+    await store.updateMoments((list) => {
+      const have = new Set(list.map((m) => m.id));
+      return [...list, ...created.filter((m) => !have.has(m.id))];
+    });
+  }
+  const touched = [...created.map((m) => m.id), ...duplicates.map((d) => d.id)];
+  if (wanted.size && touched.length) {
+    await store.updateGalleries((gs) => gs.map((g) => (wanted.has(g.id) ? { ...g, momentIds: [...new Set([...(g.momentIds ?? []), ...touched])], updatedAt: new Date().toISOString() } : g)));
+  }
+  return c.json({ created, duplicates, errors }, errors.length && !created.length ? 422 : 200);
+});
 
 app.patch("/admin/api/moments/:id", async (c) => {
   const id = c.req.param("id");
@@ -213,6 +225,8 @@ app.delete("/admin/api/galleries/:id", async (c) => {
 // In production Traefik only routes /admin to this process; the public site is
 // nginx. Locally this also serves the public data and media so both UIs work.
 app.get("/admin", (c) => c.redirect("/admin/"));
+// The worker script itself must be revalidated on every check or updates lag.
+app.use("/admin/sw.js", async (c, next) => { await next(); c.res.headers.set("Cache-Control", "no-cache"); });
 app.use("/admin/*", serveStatic({ root: UI_DIR, rewriteRequestPath: (p) => p.replace(/^\/admin/, "") || "/" }));
 app.get("/admin/*", async (c) => c.html(await readFile(path.join(UI_DIR, "index.html"), "utf8")));
 app.use("/media/*", serveStatic({ root: DATA_DIR }));

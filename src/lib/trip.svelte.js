@@ -13,6 +13,7 @@ class Trip {
   // loading | ready | landing (no gallery at /) | notfound (bad token) | error
   status = $state("loading");
   error = $state(null);
+  fromCache = $state(false);   // the service worker served a saved copy
 
   // --- selection ---
   facets = $state([]);      // active facet ids; empty means "everything"
@@ -47,17 +48,21 @@ class Trip {
   async load(loc = globalThis.location) {
     this.status = "loading";
     this.error = null;
+    this.fromCache = false;
+    const cached = (r) => r.headers?.get?.("x-itineris-cache") === "fallback";
     try {
       let id = loc?.pathname?.match(GALLERY_PATH)?.[1] ?? null;
       if (!id) {
         const r = await fetch("/data/home.json");
         if (r.status === 404) { this.status = "landing"; return; }
-        if (!r.ok) throw new Error(`home.json: HTTP ${r.status}`);
+        if (!r.ok) throw new Error(r.status === 503 ? "You're offline and this gallery isn't saved on this device." : `home.json: HTTP ${r.status}`);
+        if (cached(r)) this.fromCache = true;
         id = (await r.json()).gallery;
       }
       const r = await fetch(`/data/galleries/${id}.json`);
       if (r.status === 404) { this.status = "notfound"; return; }
-      if (!r.ok) throw new Error(`gallery: HTTP ${r.status}`);
+      if (!r.ok) throw new Error(r.status === 503 ? "You're offline and this gallery isn't saved on this device." : `gallery: HTTP ${r.status}`);
+      if (cached(r)) this.fromCache = true;
       const g = await r.json();
       this.galleryId = g.id;
       this.title = g.title ?? "";

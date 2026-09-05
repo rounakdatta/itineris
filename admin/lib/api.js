@@ -8,28 +8,38 @@ const json = (method, body) => ({ method, headers: { "content-type": "applicatio
 export const api = {
   me: () => fetch("/admin/api/me").then(J),
   library: () => fetch("/admin/api/library").then(J),
+  // Same, plus whether the service worker served a saved copy (we are offline,
+  // or the server is unreachable even though the browser thinks it is online).
+  libraryWithMeta: async () => { const r = await fetch("/admin/api/library"); return { body: await J(r), fromCache: r.headers.get("x-itineris-cache") === "fallback" }; },
   patch: (id, body) => fetch(`/admin/api/moments/${id}`, json("PATCH", body)).then(J),
   bulk: (ids, body) => fetch("/admin/api/moments", json("PATCH", { ids, ...body })).then(J),
   remove: (id) => fetch(`/admin/api/moments/${id}`, { method: "DELETE" }).then(J),
   createGallery: (body) => fetch("/admin/api/galleries", json("POST", body)).then(J),
   patchGallery: (id, body) => fetch(`/admin/api/galleries/${id}`, json("PATCH", body)).then(J),
   removeGallery: (id) => fetch(`/admin/api/galleries/${id}`, { method: "DELETE" }).then(J),
-  // XHR rather than fetch: it is the only way to get upload progress, and a
-  // dozen phone photos over mobile data is exactly when you want a bar.
-  upload: (files, onProgress, gallery = null) =>
+  // One file per request, with progress. Rejects with {status} so the queue can
+  // tell "signed out" (401) and "server down" (5xx, network) from "this file was
+  // refused" (a JSON body with errors), which is the difference between retrying
+  // forever and asking the user.
+  uploadOne: (item, onProgress) =>
     new Promise((resolve, reject) => {
       const fd = new FormData();
-      for (const f of files) fd.append("files", f, f.name);
-      if (gallery) fd.append("gallery", gallery);
+      fd.append("files", item.file, item.name);
+      fd.append("meta", JSON.stringify(item.metaForServer ?? {}));
       const x = new XMLHttpRequest();
       x.open("POST", "/admin/api/upload");
+      x.timeout = 180_000;
       x.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
+      const fail = (message, status) => reject(Object.assign(new Error(message), { status }));
       x.onload = () => {
-        if (x.status === 401) return reject(new Error("Not signed in. Reload the page to go through the login."));
-        try { const body = JSON.parse(x.responseText); x.status < 300 || x.status === 422 ? resolve(body) : reject(new Error(body.error ?? x.statusText)); }
-        catch { reject(new Error(`${x.status} ${x.responseText.slice(0, 200)}`)); }
+        if (x.status === 401 || x.status === 403) return fail("signed out", x.status);
+        if (x.status >= 500) return fail(`server error ${x.status}`, x.status);
+        try { resolve(JSON.parse(x.responseText)); }
+        catch { /^\s*</.test(x.responseText) ? fail("signed out", 401) : fail(`unexpected response ${x.status}`, x.status || 0); }
       };
-      x.onerror = () => reject(new Error("network error"));
+      x.onerror = () => fail("network error", 0);
+      x.ontimeout = () => fail("timed out", 0);
+      x.onabort = () => fail("aborted", 0);
       x.send(fd);
     }),
 };

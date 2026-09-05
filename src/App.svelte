@@ -7,12 +7,16 @@
   import FacetBar from "./components/FacetBar.svelte";
   import Timeline from "./components/Timeline.svelte";
   import Story from "./components/Story.svelte";
+  import OfflineSheet from "./components/OfflineSheet.svelte";
+
+  let online = $state(typeof navigator === "undefined" ? true : navigator.onLine !== false);
 
   onMount(() => {
     trip.load().then(() => { if (trip.loaded) applyHash(trip, location.hash); });
     const onPop = () => applyHash(trip, location.hash);
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+    const up = () => { online = true; if (trip.fromCache) trip.load(); }, down = () => (online = false);
+    window.addEventListener("popstate", onPop); window.addEventListener("online", up); window.addEventListener("offline", down);
+    return () => { window.removeEventListener("popstate", onPop); window.removeEventListener("online", up); window.removeEventListener("offline", down); };
   });
 
   // Keep the URL honest about what is on screen (see router.js).
@@ -39,6 +43,8 @@
     <div class="chrome" class:hidden={trip.storyOpen} class:wall={trip.view === "wall"}>
       <div class="top">
         <h1 class="brand"><span class="word">itineris</span>{#if trip.title}<span class="sep" aria-hidden="true">·</span><span class="title">{trip.title}</span>{/if}</h1>
+        {#if !online || trip.fromCache}<span class="pill" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
+        <OfflineSheet />
         <button
           class="toggle"
           onclick={() => (trip.view = trip.view === "map" ? "wall" : "map")}
@@ -96,6 +102,7 @@
     background: var(--panel); backdrop-filter: blur(12px); color: var(--text); cursor: pointer;
   }
   .toggle[aria-pressed="true"] { background: rgba(255, 255, 255, 0.16); color: #fff; }
+  .pill { flex: 0 0 auto; font-size: 11px; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }
 
   .status { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 30; color: var(--muted); font-size: 13px; }
   .card {

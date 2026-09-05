@@ -6,7 +6,7 @@ import { mkdtemp, readFile, writeFile, access, rm, mkdir, cp, readdir } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import piexif from "piexifjs";
+import { fakeJpeg as jpeg } from "./lib/fakejpeg.mjs";
 
 const WHO = "tester@example.com";
 let fail = 0;
@@ -16,19 +16,6 @@ const H = { "remote-email": WHO };
 const JH = { ...H, "content-type": "application/json" };
 const j = async (r) => ({ status: r.status, body: r.headers.get("content-type")?.includes("json") ? await r.json() : await r.text() });
 const readJson = async (p) => JSON.parse(await readFile(p, "utf8"));
-
-piexif.TAGS.Exif[36881] = { name: "OffsetTimeOriginal", type: "Ascii" };
-async function jpeg({ date, offset, lat, lng, w = 2000, h = 1500, seed = 0 }) {
-  const raw = await sharp({ create: { width: w, height: h, channels: 3, background: { r: 40 + seed * 20, g: 60, b: 120 } } }).jpeg({ quality: 70 }).toBuffer();
-  const exif = { "0th": { [piexif.ImageIFD.Make]: "TestCam", [piexif.ImageIFD.Model]: `T${seed}` }, Exif: {}, GPS: {} };
-  if (date) exif.Exif[piexif.ExifIFD.DateTimeOriginal] = date;
-  if (offset) exif.Exif[36881] = offset;
-  if (lat !== undefined) {
-    exif.GPS[piexif.GPSIFD.GPSLatitudeRef] = lat >= 0 ? "N" : "S"; exif.GPS[piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDmsRational(Math.abs(lat));
-    exif.GPS[piexif.GPSIFD.GPSLongitudeRef] = lng >= 0 ? "E" : "W"; exif.GPS[piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDmsRational(Math.abs(lng));
-  }
-  return Buffer.from(piexif.insert(piexif.dump(exif), raw.toString("binary")), "binary");
-}
 
 // Starts a server on a fresh data dir (optionally pre-populated), returns helpers.
 async function startServer({ port, dataDir, seedDir = "seed" }) {
@@ -111,11 +98,25 @@ try {
     ok("home moves to the new gallery", home.body.home === true && (await readJson(path.join(d1, "data", "home.json"))).gallery === gid);
     ok("...and off the old one", (await s1.api("GET", "/admin/api/galleries")).body.filter((x) => x.home).length === 1);
 
+    // --- annotated upload: what a phone's queue sends after captioning offline ---
+    const D = await jpeg({ date: "2026:03:19 10:00:00", offset: "+08:00", lat: 1.29, lng: 103.85, seed: 4 });
+    const fdMeta = new FormData(); fdMeta.append("files", new Blob([D], { type: "image/jpeg" }), "d.jpg");
+    fdMeta.append("meta", JSON.stringify({ caption: "  From the queue ", place: "Tiong Bahru", tags: ["Queued", "food", "queued"], galleries: [gid, "nope"] }));
+    const upM = await j(await fetch(`${s1.BASE}/admin/api/upload`, { method: "POST", headers: H, body: fdMeta }));
+    const d = upM.body.created?.[0];
+    ok("meta applied at creation: caption trimmed, tags cleaned, place", upM.status === 200 && d?.caption === "From the queue" && d.tags.join() === "queued,food" && d.place === "Tiong Bahru", JSON.stringify(d && { c: d.caption, t: d.tags, p: d.place }));
+    ok("meta without lat/lng/t keeps the file's own EXIF", d?.t === "2026-03-19T10:00:00+08:00" && d.tz === "exif" && Math.abs(d.lat - 1.29) < 1e-3, `${d?.t} ${d?.tz} ${d?.lat}`);
+    ok("meta.galleries lands it in the gallery (unknown ids ignored)", (await readJson(path.join(d1, "data", "galleries", `${gid}.json`))).moments.some((m) => m.id === d.id));
+    const fdBad = new FormData(); fdBad.append("files", new Blob([D], { type: "image/jpeg" }), "d.jpg"); fdBad.append("meta", JSON.stringify({ t: "2026-03-19T10:00" }));
+    ok("meta with a naive time -> 400, nothing stored", (await fetch(`${s1.BASE}/admin/api/upload`, { method: "POST", headers: H, body: fdBad })).status === 400);
+    const fdJunk = new FormData(); fdJunk.append("files", new Blob([D], { type: "image/jpeg" }), "d.jpg"); fdJunk.append("meta", "{not json");
+    ok("meta that is not JSON -> 400", (await fetch(`${s1.BASE}/admin/api/upload`, { method: "POST", headers: H, body: fdJunk })).status === 400);
+
     // --- edits propagate to every public copy ---
     const bulk = await s1.api("PATCH", "/admin/api/moments", { ids: [b.id, c.id], addTags: ["Food", "night"], place: "Lau Pa Sat" });
     ok("bulk PATCH updates 2", bulk.body.updated === 2);
     gf = await readJson(path.join(d1, "data", "galleries", `${gid}.json`));
-    ok("bulk edit visible in the public gallery", gf.moments.every((m) => m.tags.includes("food") && m.place === "Lau Pa Sat"));
+    ok("bulk edit visible in the public gallery", gf.moments.filter((m) => [b.id, c.id].includes(m.id)).every((m) => m.tags.includes("food") && m.place === "Lau Pa Sat"));
     const single = await s1.api("PATCH", `/admin/api/moments/${c.id}`, { caption: "Satay after dark", lat: 1.28, lng: 103.85, t: "2026-03-16T20:00:00+08:00" });
     ok("single PATCH returns memberships", single.status === 200 && single.body.galleries.length === 2 && single.body.tz === "manual");
     ok("PATCH rejects naive time", (await s1.api("PATCH", `/admin/api/moments/${c.id}`, { t: "2026-03-16T20:00:00" })).status === 400);
@@ -165,7 +166,7 @@ try {
   try {
     ok("server reports existing", s3.log().includes("(existing)"));
     ok("stale public gallery file removed on boot", !(await exists(path.join(d1, "data", "galleries", "stale.json"))));
-    ok("library intact: 20 seed + a + b", (await s3.api("GET", "/admin/api/moments")).body.length === 22);
+    ok("library intact: 20 seed + a + b + d", (await s3.api("GET", "/admin/api/moments")).body.length === 23);
   } finally { s3.server.kill(); }
 } finally {
   await rm(root, { recursive: true, force: true });

@@ -78,6 +78,36 @@ timezone never enters the picture.
 | hold / `space` | pause |
 | swipe down / `esc` | close |
 
+## Offline
+
+The traveler is the person most likely to have no signal, and whoever gets a
+link is often on a plane, so both apps work without one.
+
+**Uploading in bad conditions.** Photos go into IndexedDB the moment they are
+picked — with an on-device thumbnail and client-read EXIF — and show up as a
+queue immediately, network or not. They upload one file per request with
+exponential backoff, wake on the browser's `online` event, and can be retried by
+hand. Caption, tags and galleries can be set while a photo is queued; they
+arrive with it. A 401 (the tinyauth session expired) pauses the queue and asks
+for a sign-in; the queue survives reloads, closed tabs and sleeping phones. The
+server dedups by content hash, so a retry after a lost response is harmless.
+(`admin/lib/outbox.js`)
+
+**Viewer.** A service worker (`src/sw/`) precaches the shell, serves gallery
+data network-first with the last copy as fallback — marked
+`X-Itineris-Cache: fallback` and shown as *Saved copy* — and caches photos and
+map tiles as you browse. **⤓ Save for offline** fetches every photo of a gallery
+plus its map area (to zoom 14; Carto's round-robin tile hosts are normalized to
+one cache key). The viewer is installable (`manifest.webmanifest`).
+
+**Admin.** The same worker under `/admin/`: it opens offline with the last
+library and the queue. Edits to already-uploaded photos still need the network
+and fail visibly; uploads never do.
+
+Known limits: iOS has no Background Sync, so the queue drains when the app is
+opened — install it to the home screen so iOS keeps its storage. The map style,
+glyphs and tiles come from Carto's CDN until PMTiles are self-hosted.
+
 ## Galleries
 
 Uploads are **private by default**. A gallery is a curated subset — any photos,
@@ -156,3 +186,5 @@ on purpose — it is meant to be shared.
 - Tracks: GPX upload for runs and rides; the model and the viewer already render them
 - Journey playback ("▶" — fly the map through the trip while photos surface)
 - A Content-Security-Policy header, once it can be verified against the deployed site
+- Self-hosted PMTiles, so the map needs nothing from Carto
+- An edit queue for offline changes to photos already uploaded

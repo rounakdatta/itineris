@@ -36,6 +36,7 @@ export async function launch({ width = 390, height = 844, mobile = true, env = p
     executablePath: env.CHROMIUM,
     headless: true,
     env,
+    protocolTimeout: 60_000,
     args: [
       "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--hide-scrollbars",
       // WebGL via SwiftShader so MapLibre actually renders a map.
@@ -45,14 +46,10 @@ export async function launch({ width = 390, height = 844, mobile = true, env = p
   });
   const page = await browser.newPage();
   await page.setViewport({ width, height, deviceScaleFactor: 2, isMobile: mobile, hasTouch: mobile });
-  if (identity) {
-    await page.setRequestInterception(true);
-    page.on("request", (r) => {
-      const headers = r.headers();
-      if (r.url().startsWith(identity.origin)) headers["remote-email"] = identity.email;
-      r.continue({ headers });
-    });
-  }
+  // Identity is NOT injected here: request interception never sees a service
+  // worker's script fetch or the fetches the worker makes. scripts/lib/authproxy.mjs
+  // plays Traefik instead. `identity` is accepted for compatibility and ignored.
+  void identity;
 
   // Anything a user would experience as "broken" ends up here.
   const problems = [];
@@ -87,3 +84,13 @@ export async function swipe(page, [x0, y0], [x1, y1], { steps = 14, holdMs = 0 }
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const text = (page, sel) => page.$eval(sel, (el) => el.textContent.trim()).catch(() => null);
 export const count = (page, sel) => page.$$eval(sel, (els) => els.length);
+
+// A tap as the app sees it (pointerdown + pointerup at a point) without the
+// CDP round-trip between touchstart and touchend, which under load exceeds any
+// sane tap threshold. Swipes stay real touch input.
+export const tapAt = (page, x, y) => page.evaluate((x, y) => {
+  const el = document.elementFromPoint(x, y);
+  const o = { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, pointerType: "touch", isPrimary: true };
+  el.dispatchEvent(new PointerEvent("pointerdown", o));
+  el.dispatchEvent(new PointerEvent("pointerup", o));
+}, x, y);

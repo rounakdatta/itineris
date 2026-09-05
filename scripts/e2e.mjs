@@ -3,10 +3,12 @@
 // server behind a forged identity header, and puppeteer walking the actual user
 // journeys on a phone-sized viewport. Screenshots land in $SCRATCH/shots.
 import { spawn, execSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { launch, shot, tap, swipe, sleep, text, count, resolveBrowserEnv } from "./browser.mjs";
+import { launch, shot, tap, swipe, sleep, text, count, tapAt, resolveBrowserEnv } from "./browser.mjs";
+import { startAuthProxy } from "./lib/authproxy.mjs";
+import { fakeJpeg } from "./lib/fakejpeg.mjs";
 
 const ROOT = process.cwd();
 const SCRATCH = process.env.SCRATCH ?? mkdtempSync(path.join(tmpdir(), "itineris-e2e-"));
@@ -14,7 +16,7 @@ const SHOTS = path.join(SCRATCH, "shots"); mkdirSync(SHOTS, { recursive: true })
 const env = resolveBrowserEnv(SCRATCH);
 const NIX = "nix --extra-experimental-features nix-command --extra-experimental-features flakes";
 const NGINX_STORE = execSync(`${NIX} build nixpkgs#nginx --no-link --print-out-paths`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n").pop();
-const V = "http://127.0.0.1:4331", A = "http://127.0.0.1:4332";
+const V = "http://127.0.0.1:4331", ADMIN_PORT = 4332, A = "http://127.0.0.1:4333";   // A = auth proxy in front of the admin
 const WHO = "e2e@example.com";
 let fail = 0;
 const ok = (name, cond, extra = "") => { console.log(`${cond ? "  ok  " : "  FAIL"}  ${name}${extra ? "  " + extra : ""}`); if (!cond) fail++; };
@@ -29,13 +31,14 @@ const waitFor = async (page, fn, ms = 8000) => { const t0 = Date.now(); while (D
 const dataDir = path.join(SCRATCH, "e2e-data"); rmSync(dataDir, { recursive: true, force: true });
 const admin = spawn(process.execPath, ["server/index.js"], { env: { ...process.env, ITINERIS_PORT: "4332", ITINERIS_DATA_DIR: dataDir, ITINERIS_SEED_DIR: "seed", ITINERIS_ADMIN_UI_DIR: "dist-admin" }, stdio: ["ignore", "pipe", "pipe"] });
 let adminLog = ""; admin.stdout.on("data", (d) => (adminLog += d)); admin.stderr.on("data", (d) => (adminLog += d));
-for (let i = 0; i < 100; i++) { try { if ((await fetch(`${A}/admin/healthz`)).ok) break; } catch {} await sleep(100); }
+for (let i = 0; i < 100; i++) { try { if ((await fetch(`http://127.0.0.1:${ADMIN_PORT}/admin/healthz`)).ok) break; } catch {} await sleep(100); }
+const proxy = await startAuthProxy({ port: 4333, target: ADMIN_PORT, email: WHO });
 
 // --- nginx on a docroot that is dist/ plus the admin's data + media -----------
 // (production mounts the same volume into nginx; a symlink farm is the local twin)
 const nd = path.join(SCRATCH, "e2e-nginx"); rmSync(nd, { recursive: true, force: true });
 for (const d of ["conf", "logs", "tmp", "docroot"]) mkdirSync(path.join(nd, d), { recursive: true });
-for (const f of ["index.html", "assets"]) symlinkSync(path.join(ROOT, "dist", f), path.join(nd, "docroot", f));
+for (const f of readdirSync(path.join(ROOT, "dist"))) if (!["data", "media"].includes(f)) symlinkSync(path.join(ROOT, "dist", f), path.join(nd, "docroot", f));
 symlinkSync(path.join(dataDir, "data"), path.join(nd, "docroot", "data"));
 symlinkSync(path.join(dataDir, "media"), path.join(nd, "docroot", "media"));
 writeFileSync(path.join(nd, "conf", "security-headers.conf"), readFileSync(path.join(ROOT, "nginx/security-headers.conf")));
@@ -43,10 +46,14 @@ writeFileSync(path.join(nd, "conf", "default.conf"), readFileSync(path.join(ROOT
   .replace("/etc/nginx/security-headers.conf", path.join(nd, "conf", "security-headers.conf")).replaceAll("/etc/nginx/security-headers.conf", path.join(nd, "conf", "security-headers.conf"))
   .replace("root /usr/share/nginx/html;", `root ${path.join(nd, "docroot")};`).replace("listen 8080;", "listen 127.0.0.1:4331;"));
 writeFileSync(path.join(nd, "conf", "nginx.conf"), `pid ${nd}/nginx.pid;\nerror_log ${nd}/logs/error.log;\nevents {}\nhttp {\n  include ${NGINX_STORE}/conf/mime.types;\n  access_log ${nd}/logs/access.log;\n  client_body_temp_path ${nd}/tmp; proxy_temp_path ${nd}/tmp; fastcgi_temp_path ${nd}/tmp; uwsgi_temp_path ${nd}/tmp; scgi_temp_path ${nd}/tmp;\n  include ${nd}/conf/default.conf;\n}\n`);
-const nginx = spawn(path.join(NGINX_STORE, "bin", "nginx"), ["-c", path.join(nd, "conf", "nginx.conf"), "-p", nd, "-g", "daemon off;"], { stdio: "ignore" });
-for (let i = 0; i < 100; i++) { try { if ((await fetch(`${V}/healthz`)).ok) break; } catch {} await sleep(100); }
+async function startNginx() {
+  const p = spawn(path.join(NGINX_STORE, "bin", "nginx"), ["-c", path.join(nd, "conf", "nginx.conf"), "-p", nd, "-g", "daemon off;"], { stdio: "ignore" });
+  for (let i = 0; i < 100; i++) { try { if ((await fetch(`${V}/healthz`)).ok) break; } catch {} await sleep(100); }
+  return p;
+}
+let nginx = await startNginx();
 
-const { browser, page, problems } = await launch({ env, identity: { origin: A, email: WHO } });
+const { browser, page, problems } = await launch({ env });
 page.setDefaultTimeout(20000);
 let friendsId = null;
 try {
@@ -71,10 +78,9 @@ try {
   await settle(page); await shot(page, `${SHOTS}/02-story.png`);
   await swipe(page, [300, 450], [70, 455]); await sleep(400);
   ok("swipe left -> next photo", (await hash(page)) === "#m/m004", await hash(page));
-  await page.evaluate(() => { window.__pe = []; const s = document.querySelector(".story"); for (const t of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) s.addEventListener(t, (ev) => window.__pe.push([t, Math.round(ev.clientX), Math.round(performance.now())])); });
-  await page.touchscreen.tap(40, 450); await sleep(400);
-  ok("tap left third -> previous", (await hash(page)) === "#m/m003", `${await hash(page)} events=${JSON.stringify(await page.evaluate(() => window.__pe))}`);
-  await page.touchscreen.tap(300, 450); await sleep(400);
+  await tapAt(page, 40, 450); await sleep(400);
+  ok("tap left third -> previous", (await hash(page)) === "#m/m003", await hash(page));
+  await tapAt(page, 300, 450); await sleep(400);
   ok("tap right -> next", (await hash(page)) === "#m/m004");
   await page.goBack(); await sleep(400);
   ok("phone back button closes the story", (await page.$(".story")) === null && (await hash(page)) === "", await hash(page));
@@ -149,6 +155,51 @@ try {
   const lib = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
   ok("membership persisted: the edited photo is now only in Friends", JSON.stringify(lib.find((m) => m.id === editId).galleries) === JSON.stringify([friendsId]), JSON.stringify(lib.find((m) => m.id === editId).galleries));
 
+  console.log("--- admin: upload in bad conditions ---");
+  const UP = path.join(SCRATCH, "e2e-uploads"); mkdirSync(UP, { recursive: true });
+  writeFileSync(path.join(UP, "q1.jpg"), await fakeJpeg({ date: "2026:03:19 10:00:00", offset: "+08:00", lat: 1.29, lng: 103.85, seed: 7 }));
+  writeFileSync(path.join(UP, "q2.jpg"), await fakeJpeg({ seed: 8, w: 1200, h: 1600 }));
+  await clickText(page, ".tabs button", "Photos"); await page.waitForSelector('[data-testid="file-input"]');
+  await page.select(".filter select", "all");   // otherwise uploads land in the filtered gallery, which is the feature
+  const before = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).length;
+  await page.setOfflineMode(true);
+  await (await page.$('[data-testid="file-input"]')).uploadFile(path.join(UP, "q1.jpg"), path.join(UP, "q2.jpg"));
+  ok("photos queued instantly while offline", await waitFor(page, () => document.querySelectorAll(".queue .tile").length === 2));
+  ok("status: offline, 2 photos, will upload later", /Offline — 2 photos/.test(await text(page, ".queue .status")), await text(page, ".queue .status"));
+  ok("thumbnails made on the device (no network involved)", await waitFor(page, () => { const im = [...document.querySelectorAll(".queue .tile img")]; return im.length === 2 && im.every((i) => i.complete && i.naturalWidth > 0); }));
+  ok("header shows Offline", /Offline/.test(await text(page, "header")));
+  await settle(page); await shot(page, `${SHOTS}/15-admin-queue-offline.png`);
+  await (await page.$(".queue .tile .pick")).tap(); await page.waitForSelector(".sheet");
+  ok("a queued photo opens in the editor, marked as waiting", /waiting to upload/.test(await text(page, ".sheet")));
+  await page.type(".sheet textarea", "Tagged before it ever left the phone");
+  await page.type('.sheet input[aria-label="Add a tag"]', "queued"); await page.keyboard.press("Enter");
+  await clickText(page, ".sheet button", "Save");
+  ok("annotation saved into the queue", await waitFor(page, () => !document.querySelector(".sheet") && /queued/.test(document.querySelector(".queue .tile .tags")?.textContent ?? "")));
+  await clickText(page, ".queue .status button", "Retry now"); await sleep(700);
+  ok("Retry while offline: still queued, still honest", (await count(page, ".queue .tile")) === 2 && /Offline/.test(await text(page, ".queue .status")), await text(page, ".queue .status"));
+  // Network back, server unreachable for a while: the queue must retry on its own.
+  proxy.state.failPattern = /\/admin\/api\/upload/;
+  await page.setOfflineMode(false);
+  ok("server unreachable: queue reports it is retrying automatically", await waitFor(page, () => /retrying|Connection trouble/.test(document.querySelector(".queue .status")?.textContent ?? ""), 20000), await text(page, ".queue .status"));
+  await settle(page); await shot(page, `${SHOTS}/16-admin-queue-retrying.png`);
+  await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".queue .tile", { timeout: 15000 });
+  ok("the queue survives a reload (IndexedDB)", (await count(page, ".queue .tile")) === 2 && /queued/.test(await text(page, ".queue .tile .tags")));
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.setOfflineMode(true); proxy.state.down = true;
+  await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".queue .tile", { timeout: 15000 });
+  ok("the admin itself opens OFFLINE: shell from the worker, library from the last copy, queue from IndexedDB", (await count(page, ".queue .tile")) === 2 && (await count(page, ".cell")) > 0 && /Offline|Saved copy/.test(await text(page, "header")));
+  ok("OFFLINE: the library really came from the worker's saved copy", (await page.evaluate(() => fetch("/admin/api/library").then((r) => r.headers.get("x-itineris-cache")))) === "fallback");
+  await settle(page); await shot(page, `${SHOTS}/17-admin-offline-reload.png`);
+  proxy.state.down = false; await page.setOfflineMode(false);
+  proxy.state.failPattern = null;
+  await clickText(page, ".queue .status button", "Retry now");
+  ok("uploads complete once the server is back", await waitFor(page, () => !document.querySelector(".queue"), 40000), await text(page, ".queue .status"));
+  const libAfter = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
+  const q = libAfter.find((m) => m.caption === "Tagged before it ever left the phone");
+  ok("arrived annotated: caption + tag from the queue, EXIF time kept", !!q && q.tags.includes("queued") && q.t === "2026-03-19T10:00:00+08:00", JSON.stringify(q && { tags: q.tags, t: q.t }));
+  ok("both queued photos are in the library, private", libAfter.length === before + 2 && libAfter.filter((m) => m.galleries.length === 0).length >= 2, `${before} -> ${libAfter.length}`);
+  ok("nothing left in the queue on a fresh load", (await page.reload({ waitUntil: "domcontentloaded" }), await page.waitForSelector(".cell"), (await page.$(".queue")) === null));
+
   console.log("--- viewer: the new gallery, as a visitor sees it ---");
   await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".tick");
@@ -158,6 +209,31 @@ try {
   await settle(page, { map: true }); await shot(page, `${SHOTS}/20-viewer-friends.png`);
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("home gallery lost the photo moved out of it", (await count(page, ".tick")) === 19, String(await count(page, ".tick")));
+  console.log("--- viewer: save for offline, then no network at all ---");
+  await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");   // now controlled by the worker
+  await settle(page, { map: true });
+  await tap(page, '[aria-label="Save for offline"]'); await page.waitForSelector(".sheet");
+  ok("sheet knows what it will fetch", /2 images/.test(await text(page, ".sheet")), await text(page, ".sheet"));
+  await clickText(page, ".sheet button", "Save for offline");
+  ok("saved: photos + map tiles", await waitFor(page, () => /Saved just now/.test(document.querySelector(".sheet")?.textContent ?? ""), 60000), await text(page, ".sheet"));
+  await settle(page); await shot(page, `${SHOTS}/21-viewer-saved-offline.png`);
+  await clickText(page, ".sheet button", "Close");
+  await page.setOfflineMode(true); nginx.kill(); await sleep(400);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".tick", { timeout: 20000 });
+  ok("OFFLINE: the gallery opens from the saved copy", (await text(page, ".brand .title")) === "Friends" && (await count(page, ".tick")) === 2);
+  ok("OFFLINE: the data really came from the worker's cache", (await page.evaluate((id) => fetch(`/data/galleries/${id}.json`).then((r) => r.headers.get("x-itineris-cache")), friendsId)) === "fallback");
+  ok("OFFLINE: it says so", /Offline|Saved copy/.test(await text(page, ".chrome .top")), await text(page, ".chrome .top"));
+  await page.waitForFunction(() => [...document.querySelectorAll(".tick img")].every((i) => i.complete), { timeout: 10000 });
+  ok("OFFLINE: thumbnails come from the cache", await page.$$eval(".tick img", (imgs) => imgs.every((i) => i.naturalWidth > 0)));
+  ok("OFFLINE: the map has its tiles", await waitFor(page, () => document.querySelector('.map[data-idle="1"]') !== null, 30000));
+  await (await page.$(".tick")).tap(); await sleep(300); await (await page.$(".tick.on")).tap(); await page.waitForSelector(".story");
+  ok("OFFLINE: the story opens with its photo", await page.$eval(".story img.media", (i) => i.complete && i.naturalWidth > 0));
+  await settle(page); await shot(page, `${SHOTS}/22-viewer-offline.png`);
+  await page.keyboard.press("Escape");
+  await page.setOfflineMode(false); nginx = await startNginx();
   const pubFriends = await (await fetch(`${V}/data/galleries/${friendsId}.json`)).json();
   ok("public gallery JSON carries no private fields", !JSON.stringify(pubFriends).match(/uploadedBy|filename|camera|original/));
   const libTry = await fetch(`${V}/library/moments.json`);
@@ -165,9 +241,11 @@ try {
 } catch (e) {
   fail++; console.log("  FAIL  exception:", e.message); await shot(page, `${SHOTS}/99-failure.png`).catch(() => {});
 } finally {
-  await browser.close(); nginx.kill(); admin.kill();
+  await browser.close(); nginx.kill(); admin.kill(); await proxy.close();
 }
-const real = problems.filter((p) => !/favicon|nope-not-real/.test(p));   // the dead-link scenario 404s on purpose
+// The dead-link scenario 404s on purpose; the bad-network scenario makes uploads 502 and
+// takes servers down on purpose.
+const real = problems.filter((p) => !/favicon|nope-not-real|\/admin\/api\/upload|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION_RESET|ERR_CONNECTION_REFUSED|status of 502|status of 503/.test(p));
 console.log(`\nbrowser problems: ${real.length}`); for (const p of real) console.log("  ! " + p);
 if (real.length) fail++;
 console.log(fail ? `\n${fail} FAILED` : "\nall passed"); console.log(`shots: ${SHOTS}`);
