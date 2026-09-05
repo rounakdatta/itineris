@@ -37,9 +37,14 @@
     const idx = trip.storyIndex;
     if (idx < 0) return;
     progress = 0;
-    let last = performance.now();
+    // `last` comes from the frame clock itself, never performance.now(): the
+    // first frame's timestamp is the frame's start, which predates the code
+    // that scheduled it, and mixing the two made the first delta negative.
+    // Clamped so a tab coming back from the background does not leap ahead.
+    let last = null;
     let raf = requestAnimationFrame(function tick(now) {
-      const dt = now - last;
+      if (last === null) last = now;
+      const dt = Math.min(100, Math.max(0, now - last));
       last = now;
       // On a slow link the timer must not run ahead of the photo.
       if (!paused && !axis && (loaded || failed)) {
