@@ -99,3 +99,8 @@ export const tagColorExpression = () => [
   ...Object.entries(TAG_COLOR).flat(),
   "#e6e6e6",
 ];
+
+// Media paths are stored relative ("media/x.webp") so the data is host-agnostic;
+// the viewer is served at / and at /g/<token>, so they must resolve from the root
+// or a gallery URL turns every thumbnail into /g/media/... -> the SPA shell.
+export const mediaUrl = (rel) => (!rel || rel.startsWith("/") || /^https?:/.test(rel) ? rel : `/${rel}`);

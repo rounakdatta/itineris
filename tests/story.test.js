@@ -19,6 +19,7 @@ describe("Story", () => {
     const d = dialog();
     expect(d).toHaveTextContent("Day 1"); expect(d).toHaveTextContent("Chinatown"); expect(d).toHaveTextContent("08:40");
     expect(d).toHaveTextContent("Kaya toast"); expect(d).toHaveTextContent("food");
+    expect(d.querySelector("img.media").getAttribute("src")).toBe("/media/a.webp");   // absolute: works under /g/<token> too
     trip.openStory("d"); await tick();
     expect(screen.getByRole("dialog").querySelector(".caption")).toBeNull();
     expect(screen.getByRole("dialog").querySelector(".tags")).toBeNull();

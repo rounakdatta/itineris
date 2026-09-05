@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey } from "../lib/data.js";
+  import { clockOf, dayKey, mediaUrl } from "../lib/data.js";
 
   const SEGMENT_MS = 5000;
   const DISMISS_PX = 110;   // drag down this far to close
@@ -49,7 +49,7 @@
   $effect(() => {
     const i = trip.storyIndex;
     if (i < 0) return;
-    for (const m of items.slice(i + 1, i + 3)) { const img = new Image(); img.src = m.media.src; }
+    for (const m of items.slice(i + 1, i + 3)) { const img = new Image(); img.src = mediaUrl(m.media.src); }
   });
 
   // Keyboard, and focus the dialog so screen readers and arrow keys land here.
@@ -147,9 +147,9 @@
     {#key current.id}
       {#if landscape}
         <!-- A landscape photo on a portrait screen: show all of it, over a blurred copy of itself. -->
-        <img class="backdrop" src={current.media.thumb ?? current.media.src} alt="" draggable="false" aria-hidden="true" />
+        <img class="backdrop" src={mediaUrl(current.media.thumb ?? current.media.src)} alt="" draggable="false" aria-hidden="true" />
       {/if}
-      <img class="media" class:contain={landscape} src={current.media.src} alt={current.caption || current.place || ""} draggable="false" />
+      <img class="media" class:contain={landscape} src={mediaUrl(current.media.src)} alt={current.caption || current.place || ""} draggable="false" />
     {/key}
 
     <footer>

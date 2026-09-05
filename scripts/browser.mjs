@@ -31,7 +31,7 @@ export function resolveBrowserEnv(scratch) {
 // `identity` adds the forward-auth header ONLY to requests for that origin --
 // a page-wide extra header would turn every cross-origin fetch (map tiles!)
 // into a CORS preflight the CDN rejects, which never happens in production.
-export async function launch({ width = 390, height = 844, mobile = true, env = process.env, identity = null } = {}) {
+export async function launch({ width = 390, height = 844, mobile = true, env = process.env, identity = null, extraArgs = [] } = {}) {
   const browser = await puppeteer.launch({
     executablePath: env.CHROMIUM,
     headless: true,
@@ -40,6 +40,7 @@ export async function launch({ width = 390, height = 844, mobile = true, env = p
       "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--hide-scrollbars",
       // WebGL via SwiftShader so MapLibre actually renders a map.
       "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist",
+      ...extraArgs,
     ],
   });
   const page = await browser.newPage();

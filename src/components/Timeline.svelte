@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dateLabel, TAG_COLOR } from "../lib/data.js";
+  import { clockOf, dateLabel, mediaUrl, TAG_COLOR } from "../lib/data.js";
 
   let strip;
 
@@ -43,7 +43,7 @@
         aria-label={`${clockOf(m.t)} ${m.place || m.caption || ""}`.trim()}
         title={trip.focusId === m.id ? "Open" : `${m.place}${m.caption ? " — " + m.caption : ""}`}
       >
-        <img src={m.media.thumb ?? m.media.src} alt="" loading="lazy" />
+        <img src={mediaUrl(m.media.thumb ?? m.media.src)} alt="" loading="lazy" />
         <span class="t">{clockOf(m.t)}</span>
         {#if trip.focusId === m.id}<span class="open" aria-hidden="true">▶</span>{/if}
       </button>

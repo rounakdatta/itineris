@@ -13,6 +13,7 @@ describe("Timeline", () => {
     await fireEvent.click(tick);
     expect(trip.focusId).toBe("a"); expect(trip.storyOpen).toBe(false);
     expect(tick).toHaveClass("on");
+    expect(tick.querySelector("img").getAttribute("src")).toBe("/media/a-t.webp");
     await fireEvent.click(tick);
     expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("a");
   });

@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey } from "../lib/data.js";
+  import { clockOf, dayKey, mediaUrl } from "../lib/data.js";
 
   // Group by the photo's own local day, so the wall reads chronologically.
   const groups = $derived(
@@ -21,7 +21,7 @@
     <div class="grid">
       {#each items as m (m.id)}
         <button class="cell" onclick={() => trip.openStory(m.id)} title={m.caption}>
-          <img src={m.media.thumb ?? m.media.src} alt={m.caption} loading="lazy" />
+          <img src={mediaUrl(m.media.thumb ?? m.media.src)} alt={m.caption} loading="lazy" />
           <span class="t">{clockOf(m.t)}</span>
         </button>
       {/each}
