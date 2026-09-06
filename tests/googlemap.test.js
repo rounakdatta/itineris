@@ -51,15 +51,13 @@ describe("GoogleMapView", () => {
     expect(FakePolyline.all).toHaveLength(2);
     expect(map.camera.some((c) => c[0] === "fitBounds")).toBe(true);
   });
-  it("tap the ring: the story opens at once; tap the chip: the place card (then the story); bare map clears", async () => {
+  it("tap the ring or the chip: the story opens at once (no place card); bare map clears", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
     const map = FakeMap.instances[0], maxwell = byTitle("Maxwell");
     click(maxwell.content.querySelector(".chip")); await tick();
-    expect(trip.focusId).toBe("b"); expect(trip.storyOpen).toBe(false);
+    expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("b"); expect(trip.focusId).toBe("b");
     expect(maxwell.content.classList.contains("on")).toBe(true); expect(maxwell.zIndex).toBe(1000);
     expect(map.camera.some((c) => c[0] === "panTo" && c[1].lat === 1.2803)).toBe(true);
-    click(maxwell.content.querySelector(".chip")); await tick();
-    expect(trip.storyMoment.id).toBe("b");
     trip.closeStory(); await tick();
     click(byTitle("Chinatown").content.querySelector(".ring")); await tick();
     expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("a");                   // straight into the story
@@ -67,7 +65,7 @@ describe("GoogleMapView", () => {
     map.fire("click", {}); await tick();
     expect(trip.focusId).toBeNull(); expect(maxwell.content.classList.contains("on")).toBe(false);
   });
-  it("a pin with no place has no chip, and a tap on it opens the story, no card first", async () => {
+  it("a pin with no place has no chip; a tap on the marker itself opens the story", async () => {
     trip.moments = [{ id: "e", t: "2026-03-15T20:00:00+08:00", lat: 1.3, lng: 103.9, place: "", caption: "", tags: [], media: { type: "photo", src: "media/e.webp", w: 1080, h: 1920, thumb: "media/e-t.webp" } }];
     render(GoogleMapView, { props: { config } }); await flush(); await tick(); await flush();
     expect(FakeMarker.all).toHaveLength(1);

@@ -26,7 +26,7 @@ try {
       ok("story header links the place to Google Maps", await page.$eval(".story header a.place", (a) => a.target === "_blank" && /(google\.com\/maps|maps\.google\.com)/.test(a.href)).catch(() => false));
     }
   }
-  // One tap on a strip thumbnail: the place card, above the strip, with its Google Maps link.
+  // One tap on a strip thumbnail: the story, straight away (no place card).
   await page.goto(base + "/", { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".tick", { timeout: 20000 });
   await page.waitForSelector('.map[data-idle="1"]', { timeout: 30000 }).catch(() => {});
@@ -41,10 +41,9 @@ try {
   const ticks = await page.$$(".tick");
   if (ticks.length) {
     await ticks[Math.min(2, ticks.length - 1)].tap(); await sleep(600);
-    ok("place card appears on the first tap", (await page.$(".place-card")) !== null);
-    ok("...with a Google Maps link that opens a new tab", await page.$eval(".place-card a.act[target=_blank]", (a) => a.target === "_blank").catch(() => false));
-    ok("...above the strip, not on it", await page.evaluate(() => { const c = document.querySelector(".place-card")?.getBoundingClientRect(); const s = document.querySelector(".strip")?.getBoundingClientRect(); return !!c && !!s && c.bottom <= s.top; }));
-    await sleep(500); const file = path.join(SCRATCH, "shots", "live-place-card.png"); await shot(page, file); console.log(`  place card   -> ${file}`);
+    ok("one tap on a thumbnail opens the story, no place card", (await page.$(".story")) !== null && (await page.$(".place-card")) === null);
+    ok("...whose header links the place to Google Maps in a new tab", await page.$eval(".story header a.place[target=_blank]", (a) => a.target === "_blank").catch(() => false));
+    await sleep(500); const file = path.join(SCRATCH, "shots", "live-story-from-strip.png"); await shot(page, file); console.log(`  story        -> ${file}`);
   }
 } finally { await browser.close(); }
 if (fail) { console.log(`\n${fail} FAILED`); process.exitCode = 1; }

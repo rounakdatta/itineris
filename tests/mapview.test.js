@@ -35,24 +35,17 @@ describe("MapView", () => {
 });
 
 describe("tapping pins", () => {
-  it("first tap focuses (place card), second opens the story; bare map clears the focus", async () => {
+  it("a tap on a pin opens its story at once; bare map clears the focus", async () => {
     trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.galleryId = "g1"; trip.status = "ready";
     render(MapView); await flush(); await tick();
     const map = maplibregl.Map.instances[0];
     const click = map.handlers.click[0];
     map.queryRenderedFeatures = () => [{ properties: { id: "b" } }];
     click({ point: { x: 10, y: 10 } });
-    expect(trip.focusId).toBe("b"); expect(trip.storyOpen).toBe(false);
-    click({ point: { x: 10, y: 10 } });
-    expect(trip.storyMoment.id).toBe("b");
+    expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("b"); expect(trip.focusId).toBe("b");
     trip.closeStory();
     map.queryRenderedFeatures = () => [];
     click({ point: { x: 200, y: 200 } });
     expect(trip.focusId).toBeNull();
-    // a pin with no place (no name, nothing from Google): one tap opens the story
-    trip.moments = [...trip.moments, { id: "e", t: "2026-03-15T20:00:00+08:00", lat: 1.3, lng: 103.9, place: "", caption: "", tags: [], media: { type: "photo", src: "media/e.webp", w: 1080, h: 1920 } }];
-    map.queryRenderedFeatures = () => [{ properties: { id: "e" } }];
-    click({ point: { x: 10, y: 10 } });
-    expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("e");
   });
 });

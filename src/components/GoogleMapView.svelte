@@ -7,7 +7,7 @@
   // to MapView when there is no connection or the script fails.
   import { onMount, untrack } from "svelte";
   import { trip } from "../lib/trip.svelte.js";
-  import { bboxOf, hasCoords, mediaUrl, MODE_COLOR, groupByPlace, placeKey, hasPlaceInfo } from "../lib/data.js";
+  import { bboxOf, hasCoords, mediaUrl, MODE_COLOR, groupByPlace, placeKey } from "../lib/data.js";
   import { allSeen } from "../lib/seen.svelte.js";
   import { loadGoogleMaps, onAuthFailure, watchMapErrors } from "../lib/gmaps.js";
 
@@ -99,9 +99,9 @@
     }
     const mk = new Marker({ map, position: { lat: group.lat, lng: group.lng }, content: el, title: group.name, zIndex: 1, gmpClickable: true });
     ring.addEventListener("click", (e) => { e.stopPropagation(); trip.openStory(group.first.id); });
-    chip?.addEventListener("click", (e) => { e.stopPropagation(); if (trip.focusId === group.first.id) trip.openStory(group.first.id); else trip.focus(group.first.id); });
+    chip?.addEventListener("click", (e) => { e.stopPropagation(); trip.openStory(group.first.id); });
     // Anything else on the pin (padding, badge): what is this place?
-    mk.addListener("click", () => (hasPlaceInfo(group.first) ? trip.focus(group.first.id) : trip.openStory(group.first.id)));
+    mk.addListener("click", () => trip.openStory(group.first.id));
     return { mk, ring, chip, sig: group.moments.map((x) => x.id).join(","), group };
   }
 

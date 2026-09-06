@@ -34,7 +34,7 @@ try {
   const f = path.join(SCRATCH, "shots", "probe-gmaps.png"); await shot(page, f); console.log(`  shot -> ${f}`);
   // Story rings open the story; rating chips open the place card.
   const chip = (await page.$$(".gpin .chip"))[0];
-  if (chip) { await chip.tap(); await sleep(600); ok("tap on a rating chip shows the place card with Google's line", (await page.$(".place-card .google")) !== null); await shot(page, path.join(SCRATCH, "shots", "probe-gmaps-card.png")); await page.keyboard.press("Escape"); }
+  if (chip) { await chip.tap(); await sleep(600); ok("tap on a rating chip opens the story (no place card)", (await page.$(".story")) !== null && (await page.$(".place-card")) === null); await page.keyboard.press("Escape"); await sleep(300); }
   const ring = (await page.$$(".gpin .ring"))[0];
   if (ring) { await ring.tap(); await sleep(800); ok("tap on a story ring opens the story", (await page.$(".story")) !== null); await page.keyboard.press("Escape"); await sleep(300); ok("...and that ring has gone quiet", (await page.$(".gpin .ring.seen")) !== null); }
 } finally {

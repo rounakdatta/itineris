@@ -53,10 +53,6 @@ export const hasAnyCoords = (moments = [], tracks = []) => moments.some(hasCoord
 
 // Phones display ~400-1200 physical px across; the 1600 tier is for big screens.
 export const isSmallScreen = () => !(globalThis.matchMedia?.("(min-width: 760px)")?.matches ?? false);
-// A photo is a *place* when it has something to say beyond itself: a name,
-// a Google place, or a Google Maps link. A bare photo (no name, nothing from
-// Google) gets no place card -- a tap opens it straight away.
-export const hasPlaceInfo = (m) => !!(m && ((m.place ?? "").trim() || m.mapsUrl || m.google?.placeId));
 export const isVideo = (media) => media?.type === "video";
 // The image the story shows: the photo's medium/large tier, or a video's poster.
 export const storySrc = (media) => mediaUrl(isVideo(media) ? media.medium ?? media.poster ?? media.thumb : isSmallScreen() ? media.medium ?? media.src : media.src);
@@ -142,6 +138,20 @@ export function placeGroup(moments, m) {
 // A photo without a name is its own place.
 // The same Google place is one pin whatever it was called; else the name; else the photo alone.
 export const placeKey = (m) => (m.google?.placeId ? `g:${m.google.placeId}` : (m.place ?? "").trim().toLowerCase() || `#${m.id}`);
+// Every moment grouped by place, in the order the places were first visited.
+// Unlike groupByPlace (pins) this keeps photos without coordinates: a story
+// must be able to reach them. A photo with no place is a group of one.
+export function placeGroups(moments) {
+  const groups = new Map();
+  for (const m of moments) {
+    const key = placeKey(m);
+    let g = groups.get(key);
+    if (!g) { g = { key, moments: [] }; groups.set(key, g); }
+    g.moments.push(m);
+  }
+  return [...groups.values()];
+}
+
 export function groupByPlace(moments) {
   const groups = new Map();
   for (const m of moments) {
