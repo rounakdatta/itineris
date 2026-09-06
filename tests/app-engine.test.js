@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render } from "@testing-library/svelte";
+import { tick } from "svelte";
 
 class FakeMap { constructor(el, opts) { this.el = el; this.opts = opts; this.h = {}; this.zoom = opts.zoom; } addListener(ev, fn) { (this.h[ev] ??= []).push(fn); } fitBounds() {} panTo() {} setZoom() {} getZoom() { return 2; } }
 class FakeMarker { constructor(o) { Object.assign(this, o); } addListener() {} }
@@ -43,6 +44,35 @@ describe("which map the app draws", () => {
 // loaded yet. The URL is the truth until the data is in; only then may the
 // state start writing the URL. (The URL-sync effect used to run first and wipe
 // the hash, so shared links opened the gallery, never the story.)
+describe("showing the visitor where they are", () => {
+  const gallery = { id: "g1", title: "T", moments: [{ id: "m1", t: "2026-03-14T09:00:00+08:00", lat: 1.28, lng: 103.85, place: "A", tags: [], media: { src: "media/a.jpg", w: 100, h: 100 } }] };
+  const site = () => vi.fn(async (url) => {
+    if (url === "/config.json") return { ok: false, status: 404 };
+    if (url === "/data/home.json") return { ok: true, status: 200, headers: new Headers(), json: async () => ({ gallery: "g1" }) };
+    if (url === "/data/galleries/g1.json") return { ok: true, status: 200, headers: new Headers(), json: async () => gallery };
+    return { ok: false, status: 404 };
+  });
+  const geo = { asked: 0, ok: null, fail: null, watchPosition(ok, fail) { geo.asked += 1; geo.ok = ok; geo.fail = fail; return 1; }, clearWatch() {} };
+  beforeEach(() => { geo.asked = 0; Object.defineProperty(navigator, "geolocation", { value: geo, configurable: true }); });
+  it("a locate button asks the browser only when tapped, and says when it is refused", async () => {
+    vi.stubGlobal("fetch", site());
+    const { container } = render(App);
+    expect(await until(() => container.querySelector(".locate"))).toBeTruthy();
+    expect(container.querySelector('[aria-label="Save for offline"]')).toBeNull();   // no download button any more
+    const btn = container.querySelector(".locate");
+    expect(btn.getAttribute("aria-pressed")).toBe("false"); expect(btn.getAttribute("aria-label")).toBe("Show my location");
+    expect(geo.asked).toBe(0);
+    btn.click(); await tick();
+    expect(geo.asked).toBe(1);
+    expect(btn.getAttribute("aria-pressed")).toBe("true"); expect(btn.getAttribute("aria-label")).toBe("Hide my location");
+    geo.ok({ coords: { latitude: 1.29, longitude: 103.86, accuracy: 20 } }); await tick();
+    expect(container.querySelector(".locate.on")).toBeTruthy();
+    geo.fail({ code: 1 }); await tick();
+    expect(container.textContent).toMatch(/Location is blocked/);
+    expect(container.querySelector(".locate").getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
 describe("a deep link on a cold load", () => {
   const gallery = { id: "g1", title: "T", moments: [
     { id: "m1", t: "2026-03-14T09:00:00+08:00", lat: 1.28, lng: 103.85, place: "A", tags: [], media: { src: "media/a.jpg", w: 100, h: 100 } },

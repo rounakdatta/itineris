@@ -5,9 +5,10 @@ import maplibregl from "maplibre-gl";
 import MapView from "../src/components/MapView.svelte";
 import { trip } from "../src/lib/trip.svelte.js";
 import { moments, tracks } from "./fixtures.js";
+import { here } from "../src/lib/here.svelte.js";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
-beforeEach(() => { maplibregl.Map.instances.length = 0; trip.moments = []; trip.tracks = []; trip.status = "loading"; trip.galleryId = null; trip.facets = []; trip.focusId = null; trip.storyIndex = -1; });
+beforeEach(() => { maplibregl.Map.instances.length = 0; trip.moments = []; trip.tracks = []; trip.status = "loading"; trip.galleryId = null; trip.facets = []; trip.focusId = null; trip.storyIndex = -1; here.stop(); });
 
 describe("MapView", () => {
   it("starts on a neutral world view, not on a particular city", async () => {
@@ -35,6 +36,20 @@ describe("MapView", () => {
 });
 
 describe("tapping pins", () => {
+  it("the visitor's position becomes a dot, and only the first fix moves the camera", async () => {
+    trip.moments = structuredClone(moments); trip.galleryId = "g1"; trip.status = "ready";
+    render(MapView); await flush(); await tick();
+    const map = maplibregl.Map.instances[0];
+    expect(map.sources.me.data.features).toEqual([]);
+    here.status = "on"; here.lat = 1.4; here.lng = 103.7; here.fixes = 1; await tick();
+    expect(map.sources.me.data.features[0].geometry.coordinates).toEqual([103.7, 1.4]);
+    const flights = map.camera.filter((c) => c[0] === "flyTo").length;
+    here.lat = 1.42; here.fixes = 2; await tick();
+    expect(map.sources.me.data.features[0].geometry.coordinates).toEqual([103.7, 1.42]);
+    expect(map.camera.filter((c) => c[0] === "flyTo")).toHaveLength(flights);
+    here.stop(); await tick();
+    expect(map.sources.me.data.features).toEqual([]);
+  });
   it("a tap on a pin opens its story at once; bare map clears the focus", async () => {
     trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.galleryId = "g1"; trip.status = "ready";
     render(MapView); await flush(); await tick();

@@ -232,9 +232,6 @@ try {
   await (await gp.$(`${pinOf("Lau Pa Sat")} .chip`)).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
   ok("a second tap on the chip opens the story too", /Lau Pa Sat/.test(await text(gp, ".story header")));
   await gp.keyboard.press("Escape"); await sleep(300);
-  await tap(gp, '[aria-label="Save for offline"]'); await gp.waitForSelector(".sheet");
-  ok("offline sheet is honest: photos only, Google's map needs a connection", /Google's map needs a connection/.test(await text(gp, ".sheet")), await text(gp, ".sheet"));
-  await clickText(gp, ".sheet button", "Close");
   await gctx.close();
   rmSync(path.join(nd, "docroot", "config.json"));
   // And with no key the same page draws MapLibre, as every other section here relies on.
@@ -447,7 +444,23 @@ try {
   await settle(page, { map: true }); await shot(page, `${SHOTS}/20-viewer-friends.png`);
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("home gallery lost the photo moved out of it", (await count(page, ".tick")) === 19, String(await count(page, ".tick")));
-  console.log("--- viewer: save for offline, then no network at all ---");
+  console.log("--- viewer: where am I ---");
+  // The browser asks nobody until the button is tapped; then a blue dot, and the
+  // camera goes there once. (There is no download button: the worker keeps
+  // whatever was actually looked at -- see the offline section below.)
+  await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
+  ok("no download button in the top bar", (await page.$('[aria-label="Save for offline"]')) === null);
+  await browser.defaultBrowserContext().overridePermissions(V, ["geolocation"]);
+  await page.setGeolocation({ latitude: 1.3521, longitude: 103.8198, accuracy: 18 });
+  ok("the locate button is there, and nothing has been asked yet", (await page.$('[aria-label="Show my location"]')) !== null && (await page.$('.map[data-me="1"]')) === null);
+  await tap(page, '[aria-label="Show my location"]');
+  ok("tapping it puts the visitor on the map", await waitFor(page, () => document.querySelector('.map[data-me="1"]') !== null, 15000));
+  ok("...and the button says so", (await page.$('[aria-label="Hide my location"]')) !== null && (await page.$(".locate.on")) !== null);
+  await settle(page, { map: true }); await shot(page, `${SHOTS}/25-viewer-my-location.png`);
+  await tap(page, '[aria-label="Hide my location"]');
+  ok("tapping again takes it off the map and forgets it", await waitFor(page, () => document.querySelector('.map[data-me="1"]') === null) && (await page.$('[aria-label="Show my location"]')) !== null);
+
+  console.log("--- viewer: no network at all, on what the visit itself cached ---");
   await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");   // now controlled by the worker
@@ -471,23 +484,21 @@ try {
   await settle(page); await shot(page, `${SHOTS}/20-viewer-update-toast.png`);
   await tap(page, "#itineris-update"); await page.waitForSelector(".tick"); await settle(page, { map: true });
   ok("reloaded onto the new version, no toast on a plain load", (await page.$("#itineris-update")) === null && (await count(page, ".tick")) === 2);
-  await tap(page, '[aria-label="Save for offline"]'); await page.waitForSelector(".sheet");
-  ok("sheet knows what it will fetch", /2 images/.test(await text(page, ".sheet")), await text(page, ".sheet"));
-  await clickText(page, ".sheet button", "Save for offline");
-  ok("saved: photos + map tiles", await waitFor(page, () => /Saved just now/.test(document.querySelector(".sheet")?.textContent ?? ""), 60000), await text(page, ".sheet"));
-  await settle(page); await shot(page, `${SHOTS}/21-viewer-saved-offline.png`);
-  await clickText(page, ".sheet button", "Close");
+  // Look at a story while there is still a network: that is what puts its photo in the cache.
+  await (await page.$(".tick")).tap(); await page.waitForSelector(".story img.media");
+  await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }).catch(() => {});
+  await page.keyboard.press("Escape"); await sleep(300); await settle(page, { map: true });
   await page.setOfflineMode(true); nginx.kill(); await sleep(400);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector(".tick", { timeout: 20000 });
-  ok("OFFLINE: the gallery opens from the saved copy", (await text(page, ".brand .title")) === "Friends" && (await count(page, ".tick")) === 2);
+  ok("OFFLINE: the gallery opens from the worker's copy", (await text(page, ".brand .title")) === "Friends" && (await count(page, ".tick")) === 2);
   ok("OFFLINE: the data really came from the worker's cache", (await page.evaluate((id) => fetch(`/data/galleries/${id}.json`).then((r) => r.headers.get("x-itineris-cache")), friendsId)) === "fallback");
   ok("OFFLINE: it says so", /Offline|Saved copy/.test(await text(page, ".chrome .top")), await text(page, ".chrome .top"));
   await page.waitForFunction(() => [...document.querySelectorAll(".tick img")].every((i) => i.complete), { timeout: 10000 });
   ok("OFFLINE: thumbnails come from the cache", await page.$$eval(".tick img", (imgs) => imgs.every((i) => i.naturalWidth > 0)));
   ok("OFFLINE: the map has its tiles", await waitFor(page, () => document.querySelector('.map[data-idle="1"]') !== null, 30000));
   await (await page.$(".tick")).tap(); await page.waitForSelector(".story");
-  ok("OFFLINE: the story opens with its photo", await page.$eval(".story img.media", (i) => i.complete && i.naturalWidth > 0));
+  ok("OFFLINE: the story we had looked at opens with its photo", await page.waitForSelector(".story img.media.loaded", { timeout: 10000 }).then(() => page.$eval(".story img.media", (i) => i.complete && i.naturalWidth > 0)).catch(() => false));
   await settle(page); await shot(page, `${SHOTS}/22-viewer-offline.png`);
   await page.keyboard.press("Escape");
   await page.setOfflineMode(false); nginx = await startNginx();

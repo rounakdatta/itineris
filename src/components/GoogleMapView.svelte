@@ -9,6 +9,7 @@
   import { trip } from "../lib/trip.svelte.js";
   import { bboxOf, hasCoords, mediaUrl, MODE_COLOR, groupByPlace, placeKey } from "../lib/data.js";
   import { allSeen } from "../lib/seen.svelte.js";
+  import { here } from "../lib/here.svelte.js";
   import { loadGoogleMaps, onAuthFailure, watchMapErrors } from "../lib/gmaps.js";
 
   let { config, onFail } = $props();
@@ -18,6 +19,7 @@
   let Marker = null;   // AdvancedMarkerElement
   let ready = $state(false);
   const lines = new Map();     // track id -> polyline
+  let mePin = null, meRing = null;   // the visitor's own position, while they ask for it
 
   onMount(() => {
     let cancelled = false;
@@ -57,6 +59,8 @@
     return () => {
       cancelled = true;
       unwatch();
+      if (mePin) { mePin.map = null; mePin = null; }
+      if (meRing) { meRing.setMap(null); meRing = null; }
       for (const p of pins.values()) p.mk.map = null;
       for (const l of lines.values()) l.setMap(null);
       pins.clear(); lines.clear(); map = null;
@@ -147,6 +151,30 @@
     if (map.getZoom() < 15) map.setZoom(15);
   });
 
+  // Where the visitor is: a blue dot, with what the browser says about its
+  // accuracy drawn around it. The camera goes there on the first fix only.
+  $effect(() => {
+    const { placed, lat, lng, accuracy, fixes } = here;
+    if (container) container.dataset.me = placed ? "1" : "0";   // test hook, like data-idle
+    if (!ready || !map) return;
+    untrack(() => {
+      if (!placed) {
+        if (mePin) { mePin.map = null; mePin = null; }
+        if (meRing) { meRing.setMap(null); meRing = null; }
+        return;
+      }
+      const at = { lat, lng };
+      if (!mePin) {
+        const el = document.createElement("div");
+        el.className = "mepin";
+        mePin = new Marker({ map, position: at, content: el, zIndex: 3000, title: "You are here" });
+      } else mePin.position = at;
+      if (!meRing && g.Circle) meRing = new g.Circle({ map, center: at, radius: 30, strokeWeight: 0, fillColor: "#4c8dff", fillOpacity: 0.14, clickable: false });
+      if (meRing) { meRing.setCenter(at); meRing.setRadius(Math.max(10, Math.min(accuracy ?? 30, 3000))); }
+      if (fixes === 1) { map.panTo(at); if (map.getZoom() < 15) map.setZoom(15); }
+    });
+  });
+
   // "Next stop": while the story hands over, the pin it is travelling to pulses.
   $effect(() => { if (container) container.classList.toggle("travel", trip.handoff); });
 
@@ -176,6 +204,7 @@
      centre sits on the spot (ring 44 + gap 4 + chip 20 = 68 tall). */
   :global(.gpin) { display: flex; flex-direction: column; align-items: center; gap: 4px; transform: translateY(22px); cursor: pointer; }
   :global(.gpin.has-chip) { transform: translateY(46px); }
+  :global(.mepin) { width: 15px; height: 15px; border-radius: 50%; background: #4c8dff; border: 2.5px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.35); }
   :global(.map.travel .gpin.on .ring) { animation: travel-pulse 900ms ease-in-out infinite; }
   @keyframes travel-pulse { 50% { scale: 1.16; } }
   :global(.gpin .ring) {

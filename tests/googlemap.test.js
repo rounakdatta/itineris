@@ -10,18 +10,21 @@ FakeMarker.all = [];
 class FakePolyline { constructor(o) { this.o = o; this.map = o.map; FakePolyline.all.push(this); } setMap(m) { this.map = m; } getMap() { return this.map; } }
 FakePolyline.all = [];
 class FakeBounds { constructor(sw, ne) { this.sw = sw; this.ne = ne; } }
-const G = { importLibrary: async (n) => (n === "maps" ? { Map: FakeMap } : { AdvancedMarkerElement: FakeMarker }), Polyline: FakePolyline, LatLngBounds: FakeBounds, event: { addListenerOnce: (m, ev, fn) => fn() } };
+class FakeCircle { constructor(o) { Object.assign(this, o); FakeCircle.all.push(this); } setCenter(c) { this.center = c; } setRadius(r) { this.radius = r; } setMap(m) { this.map = m; } }
+FakeCircle.all = [];
+const G = { importLibrary: async (n) => (n === "maps" ? { Map: FakeMap } : { AdvancedMarkerElement: FakeMarker }), Polyline: FakePolyline, LatLngBounds: FakeBounds, Circle: FakeCircle, event: { addListenerOnce: (m, ev, fn) => fn() } };
 let loadImpl;
 let mapErrorFn = null;
 vi.mock("../src/lib/gmaps.js", () => ({ loadGoogleMaps: (...a) => loadImpl(...a), onAuthFailure: vi.fn(), watchMapErrors: (fn) => { mapErrorFn = fn; return () => { mapErrorFn = null; }; } }));
 import GoogleMapView from "../src/components/GoogleMapView.svelte";
 import { trip } from "../src/lib/trip.svelte.js";
+import { here } from "../src/lib/here.svelte.js";
 import { moments, tracks } from "./fixtures.js";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const config = { googleMapsApiKey: "k", googleMapsMapId: "" };
 beforeEach(() => {
-  FakeMap.instances.length = 0; FakeMarker.all.length = 0; FakePolyline.all.length = 0;
+  FakeMap.instances.length = 0; FakeMarker.all.length = 0; FakePolyline.all.length = 0; FakeCircle.all.length = 0; here.stop();
   loadImpl = async () => G;
   trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.galleryId = "g1"; trip.facets = []; trip.focusId = null; trip.storyIndex = -1; trip.view = "map";
 });
@@ -81,6 +84,22 @@ describe("GoogleMapView", () => {
     expect(container.querySelector(".map").classList.contains("travel")).toBe(true);
     trip.handoff = false; await tick();
     expect(container.querySelector(".map").classList.contains("travel")).toBe(false);
+  });
+  it("when the visitor asks, a blue dot with its accuracy appears and the camera goes there once", async () => {
+    render(GoogleMapView, { props: { config } }); await flush(); await tick(); await flush();
+    const map = FakeMap.instances[0];
+    expect(FakeMarker.all.some((m) => m.content?.className === "mepin")).toBe(false);
+    here.status = "on"; here.lat = 1.4; here.lng = 103.7; here.accuracy = 25; here.fixes = 1; await tick();
+    const dot = FakeMarker.all.find((m) => m.content?.className === "mepin");
+    expect(dot).toBeTruthy(); expect(dot.position).toEqual({ lat: 1.4, lng: 103.7 });
+    expect(FakeCircle.all).toHaveLength(1); expect(FakeCircle.all[0].radius).toBe(25);
+    expect(map.camera.some((c) => c[0] === "panTo" && c[1].lat === 1.4)).toBe(true);
+    const moves = map.camera.filter((c) => c[0] === "panTo").length;
+    here.lat = 1.41; here.fixes = 2; await tick();
+    expect(dot.position).toEqual({ lat: 1.41, lng: 103.7 });                 // the dot follows
+    expect(map.camera.filter((c) => c[0] === "panTo")).toHaveLength(moves);   // ...the camera does not
+    here.stop(); await tick();
+    expect(dot.map).toBeNull(); expect(FakeCircle.all[0].map).toBeNull();
   });
   it("the ring goes quiet once every photo behind it has been seen", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();

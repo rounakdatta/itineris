@@ -2,7 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { trip } from "../lib/trip.svelte.js";
   import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression } from "../lib/data.js";
-  import { setTileTemplate } from "../lib/offline.js";
+  import { here } from "../lib/here.svelte.js";
 
   let container;
   let map = null;
@@ -103,17 +103,12 @@
         map.on("mouseenter", "moments-dot", () => (map.getCanvas().style.cursor = "pointer"));
         map.on("mouseleave", "moments-dot", () => (map.getCanvas().style.cursor = ""));
 
-        ready = true;
+        // The visitor's own position, when they ask for it: a soft halo under a blue dot.
+        map.addSource("me", { type: "geojson", data: EMPTY });
+        map.addLayer({ id: "me-halo", type: "circle", source: "me", paint: { "circle-radius": 18, "circle-color": "#4c8dff", "circle-opacity": 0.18 } });
+        map.addLayer({ id: "me-dot", type: "circle", source: "me", paint: { "circle-radius": 6.5, "circle-color": "#4c8dff", "circle-stroke-width": 2.5, "circle-stroke-color": "#fff" } });
 
-        // Where the tiles come from, so "Save for offline" can fetch the same URLs
-        // the map will ask for. The style names a TileJSON; resolve it once.
-        (async () => {
-          try {
-            const src = map.getStyle()?.sources?.carto;
-            const tiles = src?.tiles ?? (src?.url ? (await (await fetch(src.url)).json()).tiles : null);
-            setTileTemplate(tiles?.[0] ?? null);
-          } catch { setTileTemplate(null); }
-        })();
+        ready = true;
       });
 
     })();
@@ -147,6 +142,16 @@
       curve: 1.4,
       essential: true,
     });
+  });
+
+  // Where the visitor is: the dot follows every fix, the camera only the first
+  // one (moving it later would fight whatever they are looking at).
+  $effect(() => {
+    const { placed, lat, lng, fixes } = here;
+    if (container) container.dataset.me = placed ? "1" : "0";   // test hook, like data-idle
+    if (!ready || !map || !map.getSource?.("me")) return;
+    map.getSource("me").setData(placed ? { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: {} }] } : EMPTY);
+    if (placed && fixes === 1) map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 15), speed: 1.1, essential: true });
   });
 
   $effect(() => {

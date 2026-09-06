@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { classify, normalizeTileKey, tilesFor, fillTemplate, zoomToFit } from "../src/sw/strategies.js";
-import { planDownload, setTileTemplate } from "../src/lib/offline.js";
 import { partitionAssets } from "../scripts/lib/sw-assets.mjs";
 import { moments, tracks } from "./fixtures.js";
 
@@ -65,23 +64,5 @@ describe("tiles", () => {
     expect(zoomToFit([103.6, 1.2, 104.05, 1.47])).toBeGreaterThanOrEqual(9);
     expect(zoomToFit([103.6, 1.2, 104.05, 1.47])).toBeLessThanOrEqual(12);
     expect(zoomToFit([-180, -85, 180, 85])).toBe(0);
-  });
-});
-
-describe("planning a download", () => {
-  it("lists every image once, absolute, and no tiles without a template", () => {
-    setTileTemplate(null);
-    const plan = planDownload({ moments: [...moments, { id: "v", lat: 1, lng: 2, media: { type: "video", src: "media/v-1280.mp4", poster: "media/v-1600.webp", medium: "media/v-960.webp", thumb: "media/v-400.webp" } }], tracks });
-    expect(plan.media).toContain("/media/a.webp"); expect(plan.media).toContain("/media/a-t.webp");
-    expect(plan.media).toContain("/media/v-1280.mp4"); expect(plan.media).toContain("/media/v-960.webp"); expect(plan.media).toContain("/media/v-400.webp");   // a video: its file, poster tier and thumb
-    expect(new Set(plan.media).size).toBe(plan.media.length);
-    expect(plan.tiles).toEqual([]);
-  });
-  it("adds tiles for the area once the map told us where tiles live", () => {
-    setTileTemplate("https://tiles-b.basemaps.cartocdn.com/v/{z}/{x}/{y}.mvt");
-    const plan = planDownload({ moments, tracks });
-    expect(plan.tiles.length).toBeGreaterThan(10);
-    expect(plan.tiles.every((u) => u.startsWith("https://tiles-a."))).toBe(true);
-    expect(plan.zmax).toBe(14);
   });
 });

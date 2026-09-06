@@ -140,9 +140,18 @@ network-first with the last copy as fallback — marked `X-Itineris-Cache:
 fallback` and shown as *Saved copy* — and caches photos and map tiles as you
 browse. A new version installs in the background and, if it takes over while
 a page is open, the page offers **Updated · Reload**. Photos have 400/960/1600 px
-copies; phones get the 960 (older photos are backfilled on server start). **⤓ Save for offline** fetches every photo of a gallery
-plus its map area (to zoom 14; Carto's round-robin tile hosts are normalized to
-one cache key). The viewer is installable (`manifest.webmanifest`).
+copies; phones get the 960 (older photos are backfilled on server start). There
+is **no download button**: whatever a visitor actually looked at is what comes
+back without a signal, which is the case that happens (a shared link opened on
+the way home, then again on the plane). The viewer is installable
+(`manifest.webmanifest`).
+
+**Where am I.** The top bar's locate button asks the browser for the visitor's
+position — only on that tap, never before — and draws it as a blue dot on
+either map, with the accuracy Google reports drawn around it. The camera goes
+there on the first fix and then leaves the view alone; tapping again removes the
+dot and forgets the position, which is never sent anywhere.
+(`src/lib/here.svelte.js`; the maps expose `data-me` for tests.)
 
 **Location.** EXIF GPS is read on upload, but phones strip it from photos
 handed to a website (Android redacts location for apps without
@@ -172,10 +181,10 @@ loads a month) and the viewer draws Google's map — its streets, its shop
 labels, tappable like in the Google Maps app — with the photos as round photo
 pins and the routes drawn on top (`GoogleMapView.svelte`, same contract as the
 MapLibre `MapView`). The key reaches browsers via `/config.json` (ConfigMap →
-nginx). Google's terms forbid caching its tiles, so with Google configured
-"Save for offline" keeps photos only, and the viewer falls back to MapLibre +
-Carto whenever it is offline or Google's script fails; with no key it is
-MapLibre everywhere, as before.
+nginx). Google's terms forbid caching its tiles, so with Google
+configured the map itself needs a connection (photos and stories do not), and
+the viewer falls back to MapLibre + Carto whenever it is offline or Google's
+script fails; with no key it is MapLibre everywhere, as before.
 
 **Places as pins.** On Google's map there is one pin per place: the photo in an
 Instagram-style story ring — bright until every photo behind it has been seen
@@ -263,7 +272,7 @@ npm run test:server                      # forges JPEGs with EXIF/GPS and exerci
 npm test               # vitest + jsdom + Testing Library: store, router, gestures, admin components
 npm run test:server    # forges JPEGs with EXIF/GPS and drives every API route on a fresh, a legacy and an existing volume
 npm run test:e2e       # real headless Chromium via nix: nginx + admin server + puppeteer walking the user journey, screenshots
-npm run check:live     # production: install the worker, Save for offline, relaunch with the network unreachable, reopen from cache
+npm run check:live     # production: install the worker, look at a story, relaunch with the network unreachable, reopen from cache
 ```
 
 CI runs the first two before building any image. The e2e needs `nix`; it
