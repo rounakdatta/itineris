@@ -36,9 +36,11 @@ describe("what each request is", () => {
 
 describe("what a new worker downloads before it can take over", () => {
   it("the app, not the megabyte of MapLibre", () => {
-    const { precache, heavy } = partitionAssets(["/assets/index-a.js", "/assets/index-b.css", "/assets/maplibre-c.js", "/assets/maplibre-gl-d.css", "/assets/maplibre-gl-e.js"]);
+    const { precache, heavy } = partitionAssets(["/assets/index-a.js", "/assets/index-b.css", "/assets/maplibre-c.js", "/assets/maplibre-gl-d.css", "/assets/maplibre-gl-e.js", "/assets/playfair-latin-f.woff2", "/assets/bebasneue-latin-g.woff2"]);
     expect(precache).toEqual(["/assets/index-a.js", "/assets/index-b.css"]);
-    expect(heavy).toHaveLength(3);
+    // ...nor the five caption fonts: a gallery uses one or two, fetched when a caption needs them
+    expect(heavy).toHaveLength(5);
+    expect(heavy).toContain("/assets/playfair-latin-f.woff2");
   });
 });
 

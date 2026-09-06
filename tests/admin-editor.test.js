@@ -111,17 +111,27 @@ describe("MomentEditor: pinned to a Google place", () => {
   it("with a caption, the styler appears: a face, a pill, a nudge, and Save sends captionStyle", async () => {
     render(MomentEditor, { moment: { ...moment, caption: "Kaya toast" }, galleries, onSaved: vi.fn(), onClose: () => {} });
     expect(screen.getByTestId("caption-frame").querySelector(".cap")).toHaveTextContent("Kaya toast");
-    await fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Editorial" }));
     await fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     await fireEvent.keyDown(screen.getByRole("button", { name: /Caption\. Drag/ }), { key: "ArrowRight" });
-    expect(screen.getByRole("button", { name: "Script" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("caption-frame").querySelector(".cap").getAttribute("style")).toContain("Caveat");
+    expect(screen.getByRole("button", { name: "Editorial" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("caption-frame").querySelector(".cap").getAttribute("style")).toContain("Playfair Display");
+    // tilt: the slider and Straighten
+    await fireEvent.input(screen.getByLabelText("Tilt"), { target: { value: "-8" } });
+    expect(screen.getByTestId("caption-frame").querySelector(".cap").getAttribute("style").replace(/\s/g, "")).toContain("--cap-rot:-8deg");
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await new Promise((r) => setTimeout(r, 0));
-    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captionStyle: expect.objectContaining({ font: "script", bg: "dark", x: 0.51, y: 0.82 }) }));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captionStyle: expect.objectContaining({ font: "editorial", bg: "dark", x: 0.51, y: 0.82, rot: -8 }) }));
+  });
+  it("Straighten puts a tilted caption upright again", async () => {
+    render(MomentEditor, { moment: { ...moment, caption: "Kaya toast", captionStyle: { rot: -12 } }, galleries, onSaved: vi.fn(), onClose: () => {} });
+    expect(screen.getByLabelText("Tilt")).toHaveValue("-12");
+    await fireEvent.click(screen.getByRole("button", { name: "Straighten" }));
+    expect(screen.getByLabelText("Tilt")).toHaveValue("0");
+    expect(screen.queryByRole("button", { name: "Straighten" })).toBeNull();
   });
   it("no caption, no styler; Reset sends null so the server clears the style", async () => {
-    render(MomentEditor, { moment: { ...moment, caption: "", captionStyle: { font: "serif" } }, galleries, onSaved: vi.fn(), onClose: () => {} });
+    render(MomentEditor, { moment: { ...moment, caption: "", captionStyle: { font: "editorial" } }, galleries, onSaved: vi.fn(), onClose: () => {} });
     expect(screen.queryByTestId("caption-frame")).toBeNull();
     await fireEvent.input(screen.getByLabelText(/Caption/), { target: { value: "Now with words" } });
     expect(screen.getByTestId("caption-frame")).toBeInTheDocument();

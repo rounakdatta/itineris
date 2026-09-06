@@ -3,23 +3,35 @@
 // get. A small curated set, not a design tool: five faces, four sizes, a
 // transparent/dark/light/coloured pill, light or dark ink, and a position the
 // author drags to (fractions of the story frame).
+// Faces chosen the way a photographer would caption a print: an editorial
+// didone, an airy garamond italic, engraved gallery capitals, a modern grotesk,
+// a poster condensed -- plus the system sans and mono. The five non-system
+// faces are bundled (src/assets/fonts, OFL 1.1) so a caption looks the same on
+// every phone and offline.
+const has = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
 export const FONTS = {
-  clean:  { label: "Clean",  family: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif', weight: 600 },
-  serif:  { label: "Serif",  family: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif', weight: 500 },
-  mono:   { label: "Mono",   family: 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace', weight: 500 },
-  script: { label: "Script", family: 'Caveat, "Bradley Hand", "Segoe Script", "Comic Sans MS", cursive', weight: 700, scale: 1.3 },
-  poster: { label: "Poster", family: '"Bebas Neue", Impact, "Arial Narrow", "Roboto Condensed", sans-serif', weight: 400, upper: true, spacing: "0.05em", scale: 1.35 },
+  clean:     { label: "Clean",     family: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif', weight: 600 },
+  grotesk:   { label: "Grotesk",   family: '"Space Grotesk", "Helvetica Neue", Arial, sans-serif', weight: 500, spacing: "-0.005em" },
+  editorial: { label: "Editorial", family: '"Playfair Display", "Iowan Old Style", Georgia, "Times New Roman", serif', weight: 700, scale: 1.05 },
+  elegant:   { label: "Elegant",   family: '"Cormorant Garamond", "Palatino Linotype", Palatino, Georgia, serif', weight: 400, italic: true, scale: 1.3 },
+  caps:      { label: "Caps",      family: 'Cinzel, "Trajan Pro", "Times New Roman", serif', weight: 400, upper: true, spacing: "0.1em", scale: 1.02 },
+  poster:    { label: "Poster",    family: '"Bebas Neue", Impact, "Arial Narrow", "Roboto Condensed", sans-serif', weight: 400, upper: true, spacing: "0.05em", scale: 1.35 },
+  mono:      { label: "Mono",      family: 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace', weight: 500, scale: 0.95 },
 };
+// 0.13.0's faces, kept working: the handwriting was childish and the system
+// serif is bettered by Playfair, so both point to their replacements.
+export const LEGACY_FONTS = { script: "elegant", serif: "editorial" };
+export const fontKey = (k) => (has(FONTS, k) ? k : has(LEGACY_FONTS, k) ? LEGACY_FONTS[k] : null);
 export const SIZES = { s: 0.78, m: 1, l: 1.3, xl: 1.7 };
 export const ACCENTS = ["#ff5d73", "#ffb020", "#3ecf8e", "#4cc9f0", "#8b5cf6", "#ff8fab"];
 export const ALIGNS = ["left", "center", "right"];
 export const INKS = ["light", "dark"];
-export const DEFAULT_STYLE = Object.freeze({ x: 0.5, y: 0.82, font: "clean", size: "m", bg: "none", ink: "light", align: "center" });
+export const DEFAULT_STYLE = Object.freeze({ x: 0.5, y: 0.82, rot: 0, font: "clean", size: "m", bg: "none", ink: "light", align: "center" });
 // Where the caption's centre may sit: clear of the bars/header at the top and the tags at the bottom.
 export const X_RANGE = [0.06, 0.94];
 export const Y_RANGE = [0.12, 0.92];
+export const ROT_RANGE = [-180, 180];   // any angle: a tilted caption is half of photo captioning
 const HEX = /^#[0-9a-f]{6}$/i;
-const has = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
 export const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 export const isBg = (bg) => typeof bg === "string" && (bg === "none" || bg === "dark" || bg === "light" || HEX.test(bg));
 
@@ -30,7 +42,8 @@ export function normalizeStyle(raw) {
   return {
     x: num(s.x, DEFAULT_STYLE.x, X_RANGE),
     y: num(s.y, DEFAULT_STYLE.y, Y_RANGE),
-    font: has(FONTS, s.font) ? s.font : DEFAULT_STYLE.font,
+    rot: num(s.rot, DEFAULT_STYLE.rot, ROT_RANGE),
+    font: fontKey(s.font) ?? DEFAULT_STYLE.font,
     size: has(SIZES, s.size) ? s.size : DEFAULT_STYLE.size,
     bg: isBg(s.bg) ? s.bg.toLowerCase() : DEFAULT_STYLE.bg,
     ink: INKS.includes(s.ink) ? s.ink : DEFAULT_STYLE.ink,
@@ -48,7 +61,13 @@ export function validateStyle(raw) {
     if (typeof raw[k] !== "number" || !Number.isFinite(v) || v < 0 || v > 1) return { error: `${k} must be a number from 0 to 1` };
     out[k] = +clamp(v, k === "x" ? X_RANGE : Y_RANGE).toFixed(4);
   }
-  if ("font" in raw) { if (!has(FONTS, raw.font)) return { error: `font must be one of ${Object.keys(FONTS).join(", ")}` }; out.font = raw.font; }
+  if ("rot" in raw) {
+    const v = +raw.rot;
+    if (typeof raw.rot !== "number" || !Number.isFinite(v) || v < ROT_RANGE[0] || v > ROT_RANGE[1]) return { error: "rot must be a number of degrees from -180 to 180" };
+    out.rot = +v.toFixed(1);
+  }
+  // A legacy face name (0.13.0's script/serif) is accepted and stored as its replacement.
+  if ("font" in raw) { const k = fontKey(raw.font); if (!k) return { error: `font must be one of ${Object.keys(FONTS).join(", ")}` }; out.font = k; }
   if ("size" in raw) { if (!has(SIZES, raw.size)) return { error: `size must be one of ${Object.keys(SIZES).join(", ")}` }; out.size = raw.size; }
   if ("bg" in raw) { if (!isBg(raw.bg)) return { error: "bg must be none, dark, light or a #rrggbb colour" }; out.bg = raw.bg.toLowerCase(); }
   if ("ink" in raw) { if (!INKS.includes(raw.ink)) return { error: "ink must be light or dark" }; out.ink = raw.ink; }
@@ -84,8 +103,8 @@ export function captionVars(raw) {
     else { bg = s.bg; ink = luminance(s.bg) > 0.5 ? "#111" : "#fff"; }
   }
   return [
-    `--cap-x:${(s.x * 100).toFixed(2)}%`, `--cap-y:${(s.y * 100).toFixed(2)}%`,
-    `--cap-font:${f.family}`, `--cap-weight:${f.weight}`, `--cap-size:${(SIZES[s.size] * (f.scale ?? 1)).toFixed(3)}`,
+    `--cap-x:${(s.x * 100).toFixed(2)}%`, `--cap-y:${(s.y * 100).toFixed(2)}%`, `--cap-rot:${s.rot}deg`,
+    `--cap-font:${f.family}`, `--cap-weight:${f.weight}`, `--cap-style:${f.italic ? "italic" : "normal"}`, `--cap-size:${(SIZES[s.size] * (f.scale ?? 1)).toFixed(3)}`,
     `--cap-transform:${f.upper ? "uppercase" : "none"}`, `--cap-spacing:${f.spacing ?? "normal"}`,
     `--cap-align:${s.align}`, `--cap-bg:${bg}`, `--cap-ink:${ink}`, `--cap-shadow:${shadow}`, `--cap-pad:${pad}`,
   ].join(";");

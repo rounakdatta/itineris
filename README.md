@@ -80,17 +80,29 @@ never the whole trip's. Past its last item the next place's story begins
 in time); past the last place the viewer closes. A photo with no place is a
 story of one.
 
-**Captions, placed and styled.** A caption sits *on* the photo, not under it,
-where the author dragged it. In the admin, typing a caption brings up a
-phone-shaped preview of that photo with the caption live on it: drag it (or
-nudge with the arrow keys), pick a face — Clean, Serif, Mono, Script (Caveat)
-or Poster (Bebas Neue; both bundled under the OFL, `src/assets/fonts/`) — a
-size, a pill (none, dark, light or a colour with contrast-picked ink), light or
-dark text when there is no pill, and the alignment. The story uses the same
-renderer (`Caption.svelte`) with the same fractions and a width-relative font
-size, so the preview is exactly what visitors see. Bare text always carries a
-double shadow so it reads on any photo. The model is `server/caption.js`
-(`captionStyle` on a moment, validated on PATCH, published with the gallery).
+**Captions, placed, tilted and styled.** A caption sits *on* the photo, not
+under it, where the author put it. In the admin, typing a caption brings up a
+phone-shaped preview of that photo with the caption live on it:
+
+- **place it** — drag it anywhere, or nudge with the arrow keys (Shift for 5%);
+- **tilt it to any angle** — grab the handle above it (it snaps to tidy angles
+  unless you hold Alt), or use the slider; `[` and `]` turn it a degree at a
+  time, 15 with Shift, and Straighten puts it upright;
+- **choose a face** — Clean (the system sans), Grotesk (Space Grotesk),
+  Editorial (Playfair Display), Elegant (Cormorant Garamond italic), Caps
+  (Cinzel), Poster (Bebas Neue) or Mono. The five real faces are bundled under
+  the OFL (`src/assets/fonts/`, latin subsets, ~88 KB in total, hashed by Vite)
+  so they look the same offline and on every phone; the service worker leaves
+  them out of the install precache and fetches only the one a caption uses;
+- **size, alignment, and a pill** — none, dark, light or a colour whose ink is
+  picked by luminance; light or dark text when there is no pill.
+
+The story uses the same renderer (`Caption.svelte`) with the same fractions and
+a width-relative font size, so the preview is exactly what visitors see. Bare
+text always carries a double shadow so it reads on any photo. The model is
+`server/caption.js` (`captionStyle` on a moment, validated on PATCH, published
+with the gallery; 0.13.0's `script`/`serif` names still work and are rewritten
+to their replacements on the next save).
 
 **Next stop.** Crossing from one place to the next is shown, not silent: the
 story shrinks to a postcard at the top of the screen, the map beneath glides to
