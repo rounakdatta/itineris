@@ -113,6 +113,17 @@ you upload from where you shot), a **place search** (OpenStreetMap Nominatim,
 one request per search) that also fills the place name, a neighbour's location,
 tapping the map, or coordinates. Desktop uploads keep their GPS.
 
+**Google Maps as the map.** Set `googleMaps.apiKey` in the chart values (a
+Maps JavaScript API key restricted to the site's hostname; 10,000 free map
+loads a month) and the viewer draws Google's map — its streets, its shop
+labels, tappable like in the Google Maps app — with the photos as round photo
+pins and the routes drawn on top (`GoogleMapView.svelte`, same contract as the
+MapLibre `MapView`). The key reaches browsers via `/config.json` (ConfigMap →
+nginx). Google's terms forbid caching its tiles, so with Google configured
+"Save for offline" keeps photos only, and the viewer falls back to MapLibre +
+Carto whenever it is offline or Google's script fails; with no key it is
+MapLibre everywhere, as before.
+
 **Google Maps, both ways.** Nobody has to leave the maps they use. In: paste
 or share a Google Maps link (the admin is a Web Share Target — Google Maps →
 Share → itineris) and the place's name, coordinates and exact link are read

@@ -11,3 +11,6 @@ dist-admin/
 seed/
 public/data/
 public/media/
+
+# Local runtime settings for `vite dev` (a Google Maps key); production gets them from the chart
+public/config.json

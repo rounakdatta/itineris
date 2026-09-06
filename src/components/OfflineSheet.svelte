@@ -39,7 +39,7 @@
     {:else}
       <p>Downloads every photo{#if plan?.tiles.length}{" "}and the map of the area ({plan.tiles.length} tiles){/if} to this device, so the gallery works on a plane or abroad without data.</p>
     {/if}
-    {#if plan && !info}<p class="muted small">{plan.media.length} images{#if !getTileTemplate()} · map not yet ready, photos only{/if}</p>{/if}
+    {#if plan && !info}<p class="muted small">{plan.media.length} images{#if trip.mapEngine === "google"} · photos only — Google's map needs a connection{:else if !getTileTemplate()} · map not yet ready, photos only{/if}</p>{/if}
     {#if progress}
       <div class="bar" role="progressbar" aria-valuenow={progress.done} aria-valuemax={progress.total}><div class="fill" style:width="{progress.total ? (progress.done / progress.total) * 100 : 0}%"></div></div>
       <p class="muted small">{progress.done} / {progress.total} · {fmtBytes(progress.bytes)}</p>
