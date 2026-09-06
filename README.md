@@ -118,6 +118,27 @@ touch — the postcard expands into that place's story. (`HANDOFF_MS` in
 | hold / `space` | pause |
 | swipe down / `esc` | close |
 
+## The mark
+
+![the itineris mark](brand/itineris-mark.png)
+
+A walking figure drawn out of an italic *it* — the dot of the **i** its head,
+the **t** its stride — with an orange backpack. `brand/itineris-mark.png` is
+the master; every size the site serves comes from it:
+
+```sh
+node scripts/make-icons.mjs   # favicon.ico (16/32/48), favicon-16/32.png,
+                              # icon-192/512.png, icon-maskable-512.png,
+                              # apple-touch-icon.png, og-card.png
+```
+
+Each output trims the master's white air and puts back only what its slot
+wants: tight at 16 px so the backpack still reads, roomier for a home-screen
+tile, roomiest for `maskable` (Android crops to a circle, so the art stays
+inside the safe 80%). Outputs are committed to `public/` and `admin/public/`,
+so a build never needs sharp for this. The service worker precaches only the
+small ones; the 512s and the share card are fetched if something asks.
+
 ## Offline
 
 The traveler is the person most likely to have no signal, and whoever gets a

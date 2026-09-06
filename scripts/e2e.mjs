@@ -507,6 +507,13 @@ try {
   ok("public gallery JSON carries no private fields", !JSON.stringify(pubFriends).match(/uploadedBy|filename|camera|original/));
   const libTry = await fetch(`${V}/library/moments.json`);
   ok("manifest served as application/manifest+json", ((await fetch(`${V}/manifest.webmanifest`)).headers.get("content-type") ?? "").includes("manifest+json"));
+  // The mark: every slot the head and the manifest name has to be there, and be an image.
+  const icons = ["/favicon.ico", "/favicon-16.png", "/favicon-32.png", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png", "/og-card.png"];
+  const served = await Promise.all(icons.map(async (u) => { const r = await fetch(`${V}${u}`); return `${u} ${r.status} ${(r.headers.get("content-type") ?? "").split(";")[0]} ${(await r.arrayBuffer()).byteLength}B`; }));
+  ok("the mark is served in every size the page and the manifest ask for", served.every((s) => / 200 image\/(png|x-icon|vnd\.microsoft\.icon) [1-9]/.test(s)), served.join(" | "));
+  const mani = await (await fetch(`${V}/manifest.webmanifest`)).json();
+  ok("...and the manifest offers a maskable one for Android's circle", mani.icons.some((i) => i.purpose === "maskable" && i.sizes === "512x512") && mani.icons.every((i) => icons.includes(i.src)), JSON.stringify(mani.icons.map((i) => `${i.src} ${i.purpose}`)));
+  ok("the page points at the mark, not at a leftover placeholder", await page.evaluate(() => { const hrefs = [...document.querySelectorAll('link[rel*="icon"]')].map((l) => l.getAttribute("href")); return hrefs.length >= 3 && hrefs.every((h) => /favicon|apple-touch/.test(h)) && !hrefs.some((h) => /icon\.svg/.test(h)); }), await page.evaluate(() => [...document.querySelectorAll('link[rel*="icon"]')].map((l) => l.getAttribute("href")).join(",")));
   ok("the library itself is not reachable publicly", (await fetch(`${V}/data/moments.json`)).status === 404 && !(libTry.headers.get("content-type") ?? "").includes("json") && !(await libTry.text()).includes("uploadedBy"));
 } catch (e) {
   fail++; console.log("  FAIL  exception:", e.message); await shot(page, `${SHOTS}/99-failure.png`).catch(() => {});
