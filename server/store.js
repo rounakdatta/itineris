@@ -54,6 +54,8 @@ export const pub = (m) => ({
     type: m.media?.type ?? "photo", src: m.media?.src, w: m.media?.w, h: m.media?.h,
     ...(m.media?.medium ? { medium: m.media.medium } : {}),
     ...(m.media?.thumb ? { thumb: m.media.thumb } : {}),
+    ...(m.media?.poster ? { poster: m.media.poster } : {}),
+    ...(Number.isFinite(m.media?.duration) ? { duration: m.media.duration } : {}),
   },
 });
 

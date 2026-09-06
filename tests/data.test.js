@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, placeLink, placeGroup, groupByPlace, placeKey } from "../src/lib/data.js";
+import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, storyBytes, fmtDuration, placeLink, placeGroup, groupByPlace, placeKey } from "../src/lib/data.js";
 import { moments, tracks } from "./fixtures.js";
 
 describe("time helpers never touch the host zone", () => {
@@ -88,5 +88,14 @@ describe("one pin per place", () => {
   });
   it("Google's own place link wins over everything", () => {
     expect(placeLink({ ...moments[0], mapsUrl: "https://maps.google.com/?cid=5", google: { placeId: "x", mapsUri: "https://maps.google.com/?cid=777" } })).toBe("https://maps.google.com/?cid=777");
+  });
+});
+
+describe("videos", () => {
+  const video = { type: "video", src: "media/v-1280.mp4", poster: "media/v-1600.webp", medium: "media/v-960.webp", thumb: "media/v-400.webp", duration: 75.4 };
+  it("the story shows the poster tier and streams the file itself", () => {
+    expect(storySrc(video)).toBe("/media/v-960.webp");
+    expect(storyBytes(video)).toBe("/media/v-1280.mp4");
+    expect(fmtDuration(75.4)).toBe("1:15"); expect(fmtDuration(5)).toBe("0:05"); expect(fmtDuration(undefined)).toBe("");
   });
 });

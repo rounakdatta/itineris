@@ -19,6 +19,7 @@
       {#each items as m (m.id)}
         <button class="cell" onclick={() => trip.openStory(m.id)} title={m.caption}>
           <img src={mediaUrl(m.media.thumb ?? m.media.src)} alt={m.caption} loading="lazy" />
+          {#if m.media.type === "video"}<span class="vid" aria-hidden="true">▶</span>{/if}
           <span class="t">{clockOf(m.t)}</span>
         </button>
       {/each}
@@ -76,4 +77,5 @@
     font-variant-numeric: tabular-nums;
   }
   .empty { color: var(--muted); padding: 40px 4px; }
+  .vid { position: absolute; right: 6px; top: 6px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 9px; display: grid; place-items: center; }
 </style>

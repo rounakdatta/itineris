@@ -64,6 +64,12 @@ describe("Outbox UI", () => {
     await fireEvent.click(screen.getByRole("button", { name: /Yamo/ }));
     expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ placeId: "ChIJyamo", name: "Yamo", lat: 37.7619 }));
   });
+  it("a queued video shows as one, and the long server-side step is named", () => {
+    render(Outbox, { outbox: fakeOutbox(), queue: { items: [{ ...item({ id: "v", state: "uploading", progress: 1 }), type: "video/mp4", name: "clip.mp4" }, item({ id: "b" })], blocked: false, flushing: true, online: true } });
+    expect(screen.getByRole("status")).toHaveTextContent("Uploading 1 of 2 · 100% · processing the video…");
+    expect(document.querySelectorAll(".tile .vid")).toHaveLength(1);
+    expect(screen.getByText("🎬")).toBeInTheDocument();
+  });
   it("no queue, no panel", () => {
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true } });
     expect(screen.queryByRole("status")).toBeNull();

@@ -20,6 +20,7 @@
   // is downloaded for nothing.
   let config = $state(null);
   let engine = $state(null);
+  let routed = $state(false);   // the initial hash has been applied (see the URL effect below)
   function useMapLibre(why) { if (why) console.warn("Google Maps unavailable, drawing with MapLibre:", why); engine = "maplibre"; trip.mapEngine = "maplibre"; }
 
   onMount(() => {
@@ -30,6 +31,7 @@
       // open on the wall. The hash can still override.
       if (!hasAnyCoords(trip.moments, trip.tracks)) trip.view = "wall";
       applyHash(trip, location.hash);
+      routed = true;
     });
     const onPop = () => applyHash(trip, location.hash);
     const up = () => { online = true; if (trip.fromCache) trip.load(); }, down = () => (online = false);
@@ -37,8 +39,12 @@
     return () => { window.removeEventListener("popstate", onPop); window.removeEventListener("online", up); window.removeEventListener("offline", down); };
   });
 
-  // Keep the URL honest about what is on screen (see router.js).
-  $effect(() => { if (trip.loaded) syncHash(trip); });
+  // Keep the URL honest about what is on screen (see router.js) -- but only
+  // once the URL has been read. Until the initial hash is applied the URL is
+  // the truth and the state is not: a shared "#m/<id>" link arrives before the
+  // gallery has loaded, and the first flush after loading would otherwise see
+  // "no story open" and write that back over the link.
+  $effect(() => { if (routed && trip.loaded) syncHash(trip); });
 
   $effect(() => {
     document.title = trip.title ? `${trip.title} · itineris` : "itineris";

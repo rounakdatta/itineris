@@ -5,7 +5,7 @@ import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Store, token, TOKEN_RE } from "./store.js";
-import { ingestPhoto, backfillMedium, MEDIUM } from "./ingest.js";
+import { ingestMedia, backfillMedium, MEDIUM } from "./ingest.js";
 import { isLocalIso } from "./time.js";
 import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
 import { lookupPlace, needsLookup, searchPlaces, fetchPlaceDetails, isStale, isPlaceId } from "./places.js";
@@ -120,7 +120,7 @@ app.post("/admin/api/upload", bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => {
   const created = [], duplicates = [], errors = [];
   for (const f of files) {
     try {
-      const r = await ingestPhoto(Buffer.from(await f.arrayBuffer()), f.name, { dataDir: DATA_DIR, email: c.get("email") });
+      const r = await ingestMedia(Buffer.from(await f.arrayBuffer()), f.name, f.type, { dataDir: DATA_DIR, email: c.get("email") });
       if (r.duplicate) duplicates.push({ id: r.id, filename: f.name });
       else created.push({ ...r.moment, ...upd, tz: upd.t ? "manual" : r.moment.tz });
     } catch (e) {
@@ -272,7 +272,7 @@ app.delete("/admin/api/moments/:id", async (c) => {
   await store.updateMoments((list) => list.filter((m) => (m.id === id ? ((gone = m), false) : true)));
   if (!gone) return c.json({ error: "not found" }, 404);
   await store.updateGalleries((gs) => gs.map((g) => ((g.momentIds ?? []).includes(id) ? { ...g, momentIds: g.momentIds.filter((x) => x !== id), updatedAt: new Date().toISOString() } : g)));
-  await store.removeFiles([gone.media?.src, gone.media?.medium, gone.media?.thumb].filter((p) => p && p.startsWith("media/")));
+  await store.removeFiles([gone.media?.src, gone.media?.medium, gone.media?.thumb, gone.media?.poster].filter((p) => p && p.startsWith("media/")));
   return c.json({ deleted: id, originalKept: gone.media?.original ?? null });
 });
 

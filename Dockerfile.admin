@@ -14,6 +14,8 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+# Videos: ffprobe/ffmpeg (H.264 via libx264, AAC; decodes what phones record, HEVC included).
+RUN apk add --no-cache ffmpeg
 COPY server ./server
 COPY --from=builder /app/dist-admin ./dist-admin
 # The same seed the public image carries (library + demo gallery + media), so

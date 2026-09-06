@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink } from "../lib/data.js";
+  import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink, isVideo, fmtDuration } from "../lib/data.js";
   import { markSeen } from "../lib/seen.svelte.js";
 
   const SEGMENT_MS = 5000;
@@ -19,6 +19,10 @@
   let loadedId = $state(null);
   let failedId = $state(null);
   let dialog = $state(null);
+  // Videos start muted (that is what browsers allow without a gesture); one tap
+  // on the speaker turns sound on for the rest of the session.
+  let muted = $state(true);
+  let video = $state(null);
 
   let down = null;
   let holdTimer = null;
@@ -29,6 +33,8 @@
   const dateStr = $derived(current ? dateLabel(dayKey(current.t)) : "");   // "14 Mar": the date, minimally
   const thumbUrl = $derived(current ? mediaUrl(current.media.thumb ?? current.media.src) : "");
   const fullUrl = $derived(current ? storySrc(current.media) : "");
+  const video_ = $derived(!!current && isVideo(current.media));
+  const videoUrl = $derived(video_ ? mediaUrl(current.media.src) : "");
   const loaded = $derived(!!current && loadedId === current.id);
   const failed = $derived(!!current && failedId === current.id);
   const link = $derived(placeLink(current));
@@ -50,8 +56,9 @@
       if (last === null) last = now;
       const dt = Math.min(100, Math.max(0, now - last));
       last = now;
-      // On a slow link the timer must not run ahead of the photo.
-      if (!paused && !axis && (loaded || failed)) {
+      // On a slow link the timer must not run ahead of the photo. A video
+      // drives the bar itself (see ontimeupdate) and advances when it ends.
+      if (!paused && !axis && (loaded || failed) && !(video_ && !failed)) {
         progress += dt / SEGMENT_MS;
         if (progress >= 1) {
           if (!trip.step(1)) trip.closeStory();
@@ -63,12 +70,17 @@
     return () => cancelAnimationFrame(raf);
   });
 
-  // Preload the next two so a tap never lands on a blank frame.
+  // Preload the next two so a tap never lands on a blank frame (a video's poster, not the video).
   $effect(() => {
     const i = trip.storyIndex;
     if (i < 0) return;
     for (const m of items.slice(i + 1, i + 3)) { const img = new Image(); img.src = storySrc(m.media); }
   });
+
+  // Hold-to-pause and the space bar pause the video too; the speaker button
+  // is applied to the element directly (a fresh <video> per photo needs it again).
+  $effect(() => { if (!video) return; if (paused || axis) video.pause(); else video.play?.()?.catch?.(() => {}); });
+  $effect(() => { if (video) video.muted = muted; });
 
   // Keyboard, and focus the dialog so screen readers and arrow keys land here.
   $effect(() => {
@@ -177,10 +189,27 @@
       <!-- The thumbnail is already on the device (it is in the strip): show it
            sharp at once, and fade the full-size image in over it when it lands. -->
       <img class="placeholder" class:contain={landscape} src={thumbUrl} alt="" draggable="false" aria-hidden="true" />
-      <img class="media" class:contain={landscape} class:loaded src={fullUrl} alt={current.caption || current.place || ""} draggable="false"
-        onload={() => (loadedId = id)} onerror={() => (failedId = id)} />
-      {#if !loaded && !failed}<span class="loading" aria-label="Loading photo" role="status"></span>{/if}
-      {#if failed}<p class="failed" role="alert">Couldn't load this photo</p>{/if}
+      {#if video_}
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video class="media" class:contain={landscape} class:loaded bind:this={video} src={videoUrl} poster={fullUrl} playsinline autoplay muted preload="auto"
+          onloadeddata={() => (loadedId = id)} onerror={() => (failedId = id)}
+          ontimeupdate={(e) => { const v = e.currentTarget; if (v.duration > 0) progress = Math.min(1, v.currentTime / v.duration); }}
+          onended={() => next()}></video>
+        <!-- Drawn, not an emoji: every phone (and headless Chromium) has a different speaker glyph, or none. -->
+        <button class="sound" onclick={(e) => { e.stopPropagation(); muted = !muted; }} onpointerdown={(e) => e.stopPropagation()} aria-label={muted ? "Turn sound on" : "Turn sound off"} aria-pressed={!muted}>
+          {#if muted}
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3zm13.6 3 2.7-2.7-1.4-1.4-2.7 2.7-2.7-2.7-1.4 1.4 2.7 2.7-2.7 2.7 1.4 1.4 2.7-2.7 2.7 2.7 1.4-1.4-2.7-2.7z"/></svg>
+          {:else}
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3zm11.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 14.5 12zM12 3.23v2.06a6.99 6.99 0 0 1 0 13.42v2.06A9 9 0 0 0 12 3.23z"/></svg>
+          {/if}
+        </button>
+        {#if Number.isFinite(current.media.duration)}<span class="dur" aria-hidden="true">{fmtDuration(current.media.duration)}</span>{/if}
+      {:else}
+        <img class="media" class:contain={landscape} class:loaded src={fullUrl} alt={current.caption || current.place || ""} draggable="false"
+          onload={() => (loadedId = id)} onerror={() => (failedId = id)} />
+      {/if}
+      {#if !loaded && !failed}<span class="loading" aria-label={video_ ? "Loading video" : "Loading photo"} role="status"></span>{/if}
+      {#if failed}<p class="failed" role="alert">Couldn't load this {video_ ? "video" : "photo"}</p>{/if}
     {/key}
 
     <footer>
@@ -219,6 +248,14 @@
   .media { z-index: 2; object-fit: cover; opacity: 0; transition: opacity 260ms ease; }
   .media.loaded { opacity: 1; }
   .media.contain { object-fit: contain; }
+  /* No background on the video: a landscape clip is letterboxed, and the blurred
+     backdrop must show through those bands exactly as it does behind a photo. */
+  .sound {
+    grid-row: 2; grid-column: 1; z-index: 5; justify-self: end; align-self: start; margin: 60px 14px 0 0;
+    width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, 0.45); color: #fff; cursor: pointer; pointer-events: auto;
+    display: grid; place-items: center; padding: 0;
+  }
+  .dur { grid-row: 4; grid-column: 1; z-index: 5; justify-self: end; align-self: end; margin: 0 18px 22px 0; font-size: 11px; color: rgba(255, 255, 255, 0.7); font-variant-numeric: tabular-nums; }
   .loading {
     grid-row: 1 / -1; grid-column: 1; place-self: center; z-index: 3; pointer-events: none;
     width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.25); border-top-color: #fff;

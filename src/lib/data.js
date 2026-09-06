@@ -53,7 +53,12 @@ export const hasAnyCoords = (moments = [], tracks = []) => moments.some(hasCoord
 
 // Phones display ~400-1200 physical px across; the 1600 tier is for big screens.
 export const isSmallScreen = () => !(globalThis.matchMedia?.("(min-width: 760px)")?.matches ?? false);
-export const storySrc = (media) => mediaUrl(isSmallScreen() ? media.medium ?? media.src : media.src);
+export const isVideo = (media) => media?.type === "video";
+// The image the story shows: the photo's medium/large tier, or a video's poster.
+export const storySrc = (media) => mediaUrl(isVideo(media) ? media.medium ?? media.poster ?? media.thumb : isSmallScreen() ? media.medium ?? media.src : media.src);
+// The bytes a story needs: a photo's displayed tier, or the video file itself.
+export const storyBytes = (media) => mediaUrl(isVideo(media) ? media.src : isSmallScreen() ? media.medium ?? media.src : media.src);
+export const fmtDuration = (s) => { if (!Number.isFinite(s)) return ""; const m = Math.floor(s / 60), r = Math.round(s % 60); return `${m}:${String(r).padStart(2, "0")}`; };
 
 export function bboxOf(moments, tracks) {
   const pts = [

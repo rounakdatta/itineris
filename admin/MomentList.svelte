@@ -29,6 +29,7 @@
           {#if m.galleries?.length === 0}<i class="flag private" title="not in any gallery — private">🔒</i>{/if}
           {#if m.tags.length === 0}<i class="flag" title="untagged">#</i>{/if}
           {#if m.lat === null || m.lng === null}<i class="flag" title="no location">⌖</i>{/if}
+          {#if m.media?.type === "video"}<i class="flag vid" title="video">▶</i>{/if}
           {#if m.tz === "unknown"}<i class="flag" title="time zone unknown">⏱</i>{/if}
         </span>
         {#if selectMode}<span class="check" aria-hidden="true">{selection?.has(m.id) ? "✓" : ""}</span>{/if}
