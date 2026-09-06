@@ -7,7 +7,7 @@ import { moments, tracks } from "./fixtures.js";
 
 beforeEach(() => {
   trip.moments = [...structuredClone(moments), { ...structuredClone(moments[0]), id: "a2", t: "2026-03-14T09:10:00+08:00", caption: "Second round", tags: ["food", "coffee"] }];
-  trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.view = "map"; trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1;
+  trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.view = "map"; trip.facets = []; trip.focusId = null; trip.storyIndex = -1;
 });
 
 describe("PlaceCard", () => {
@@ -16,7 +16,7 @@ describe("PlaceCard", () => {
     expect(screen.queryByRole("complementary")).toBeNull();
     trip.focus("a"); await tick();
     const card = screen.getByRole("complementary", { name: "Place: Chinatown" });
-    expect(card).toHaveTextContent("Day 1"); expect(card).toHaveTextContent("08:40–09:10"); expect(card).toHaveTextContent("2 photos");
+    expect(card).toHaveTextContent("14 Mar"); expect(card).toHaveTextContent("08:40–09:10"); expect(card).toHaveTextContent("2 photos");
     expect(card).toHaveTextContent("food"); expect(card).toHaveTextContent("coffee");
     expect(card.querySelectorAll(".thumb")).toHaveLength(2);
     const link = screen.getByRole("link", { name: /Google Maps/ });

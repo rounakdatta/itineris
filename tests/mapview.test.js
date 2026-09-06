@@ -7,7 +7,7 @@ import { trip } from "../src/lib/trip.svelte.js";
 import { moments, tracks } from "./fixtures.js";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
-beforeEach(() => { maplibregl.Map.instances.length = 0; trip.moments = []; trip.tracks = []; trip.status = "loading"; trip.galleryId = null; trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1; });
+beforeEach(() => { maplibregl.Map.instances.length = 0; trip.moments = []; trip.tracks = []; trip.status = "loading"; trip.galleryId = null; trip.facets = []; trip.focusId = null; trip.storyIndex = -1; });
 
 describe("MapView", () => {
   it("starts on a neutral world view, not on a particular city", async () => {

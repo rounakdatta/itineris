@@ -3,13 +3,13 @@
   // the place's photos, when, what kind, and hands off to the story or to
   // Google Maps. A second tap (or the card's own button) opens the story.
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey, mediaUrl, placeLink, placeGroup, TAG_COLOR } from "../lib/data.js";
+  import { clockOf, dayKey, dateLabel, mediaUrl, placeLink, placeGroup, TAG_COLOR } from "../lib/data.js";
 
   const m = $derived(trip.focused);
   const shown = $derived(placeGroup(trip.visibleMoments, m));
   const title = $derived(m ? m.place?.trim() || m.caption?.trim() || "Photo" : "");
   const link = $derived(placeLink(m));
-  const day = $derived(m ? trip.days.find((d) => d.key === dayKey(m.t))?.label ?? "" : "");
+  const day = $derived(m ? dateLabel(dayKey(m.t)) : "");
   const times = $derived.by(() => {
     if (!shown.length) return "";
     const a = clockOf(shown[0].t), b = clockOf(shown[shown.length - 1].t);
@@ -61,7 +61,7 @@
 
 <style>
   .place-card {
-    position: absolute; left: 12px; right: 12px; bottom: 188px; z-index: 22;
+    position: absolute; left: 12px; right: 12px; bottom: 112px; z-index: 22;
     margin: 0 auto; max-width: 440px; padding: 10px 12px 12px;
     display: grid; gap: 10px;
     background: rgba(14, 17, 22, 0.94); backdrop-filter: blur(16px);
@@ -94,5 +94,5 @@
     border: 1px solid var(--line); background: rgba(255, 255, 255, 0.06); color: #fff; text-decoration: none; cursor: pointer;
   }
   .act.primary { background: #fff; color: #0b0d10; border-color: #fff; }
-  @media (min-width: 760px) { .place-card { left: 16px; right: auto; width: 380px; bottom: 190px; } }
+  @media (min-width: 760px) { .place-card { left: 16px; right: auto; width: 380px; bottom: 114px; } }
 </style>

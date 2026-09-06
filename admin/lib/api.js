@@ -15,6 +15,7 @@ export const api = {
   bulk: (ids, body) => fetch("/admin/api/moments", json("PATCH", { ids, ...body })).then(J),
   resolveLink: (url) => fetch(`/admin/api/resolve-link?url=${encodeURIComponent(url)}`).then(J),
   refreshGoogle: (id) => fetch(`/admin/api/moments/${id}/google`, { method: "POST" }).then(J),
+  searchPlaces: (q, bias) => fetch(`/admin/api/places/search?q=${encodeURIComponent(q)}${bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lng) ? `&lat=${bias.lat}&lng=${bias.lng}` : ""}`).then(J),
   remove: (id) => fetch(`/admin/api/moments/${id}`, { method: "DELETE" }).then(J),
   createGallery: (body) => fetch("/admin/api/galleries", json("POST", body)).then(J),
   patchGallery: (id, body) => fetch(`/admin/api/galleries/${id}`, json("PATCH", body)).then(J),

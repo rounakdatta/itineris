@@ -1,21 +1,17 @@
 <script>
   import { onMount } from "svelte";
-  import { searchPlaces, currentPosition } from "./lib/geo.js";
-  import { extractMapsUrl } from "../server/links.js";
-  import { api } from "./lib/api.js";
+  import { currentPosition } from "./lib/geo.js";
+  import PlaceSearch from "./PlaceSearch.svelte";
 
-  // Tap or drag to place the photo; or search a place by name; or use where
-  // the device is right now. `hint` centres the map somewhere sensible when
-  // the photo has no coordinates yet -- usually a neighbour's location.
-  // `onPlace` (optional) receives the chosen place's name; `onLink` the exact
-  // Google Maps URL when the spot came from a pasted Google Maps link (null
-  // whenever the spot is chosen any other way, so a stale link never lingers).
-  let { lat = null, lng = null, hint = null, onChange, onPlace, onLink } = $props();
+  // Where a photo is: pick a place (PlaceSearch: your places, Google or OSM
+  // search, a pasted link), use the device's position, or tap/drag the map.
+  // `hint` centres the map when the photo has no coordinates yet.
+  // Callbacks: onChange(lat, lng); onPlace(name); onLink(mapsUrl|null);
+  // onPick(place|null) -- the whole picked place (with its Google Place ID), or
+  // null when the spot was chosen by hand, so a stale pin never lingers.
+  let { lat = null, lng = null, hint = null, known = [], placesEnabled = false, onChange, onPlace, onLink, onPick } = $props();
   let container;
   let map, marker;
-  let q = $state("");
-  let results = $state([]);
-  let searching = $state(false);
   let locating = $state(false);
   let note = $state(null);
 
@@ -29,8 +25,9 @@
     map = new maplibregl.Map({ container, style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json", center, zoom: has || hint ? 14 : 10, attributionControl: { compact: true } });
     marker = new maplibregl.Marker({ draggable: true, color: "#7aa2f7" });
     if (has) marker.setLngLat(center).addTo(map);
-    marker.on("dragend", () => { const p = marker.getLngLat(); onLink?.(null); onChange?.(+p.lat.toFixed(6), +p.lng.toFixed(6)); });
-    map.on("click", (e) => { marker.setLngLat(e.lngLat).addTo(map); onLink?.(null); onChange?.(+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6)); });
+    const byHand = (a, b) => { onLink?.(null); onPick?.(null); onChange?.(+a.toFixed(6), +b.toFixed(6)); };
+    marker.on("dragend", () => { const p = marker.getLngLat(); byHand(p.lat, p.lng); });
+    map.on("click", (e) => { marker.setLngLat(e.lngLat).addTo(map); byHand(e.lngLat.lat, e.lngLat.lng); });
     })();
     return () => { cancelled = true; map?.remove(); };
   });
@@ -42,76 +39,37 @@
     else marker.remove();
   });
 
-  async function search() {
-    if (!q.trim() || searching) return;
-    searching = true; note = null;
-    try {
-      const link = extractMapsUrl(q);
-      if (link) {
-        // A shared Google Maps link: the exact place, no guessing.
-        const r = await api.resolveLink(link);
-        if (!Number.isFinite(r.lat)) { note = r.name ? `Found “${r.name}” but no coordinates in that link — search its name instead` : "That link has no place in it"; return; }
-        results = []; q = r.name ?? "";
-        onLink?.(r.mapsUrl ?? link);
-        onChange?.(r.lat, r.lng);
-        if (r.name) onPlace?.(r.name);
-        note = `From Google Maps${r.name ? `: ${r.name}` : ""}`;
-        map?.easeTo({ center: [r.lng, r.lat], zoom: 16, duration: 400 });
-        return;
-      }
-      results = await searchPlaces(q);
-      if (!results.length) note = `Nothing found for “${q.trim()}”`;
-    }
-    catch (e) { note = e.message; }
-    finally { searching = false; }
-  }
-  function choose(r) {
-    results = []; q = r.name;
-    onLink?.(null);
-    onChange?.(r.lat, r.lng);
-    onPlace?.(r.name);
-    map?.easeTo({ center: [r.lng, r.lat], zoom: 15, duration: 400 });
+  function picked(p) {
+    note = null;
+    onLink?.(p.mapsUrl ?? null);
+    onPick?.(p);
+    onChange?.(p.lat, p.lng);
+    if (p.name) onPlace?.(p.name);
+    map?.easeTo({ center: [p.lng, p.lat], zoom: p.placeId ? 16 : 15, duration: 400 });
   }
   async function locate() {
     if (locating) return;
     locating = true; note = null;
-    try { const p = await currentPosition(); onLink?.(null); onChange?.(p.lat, p.lng); note = `Your location, ±${p.accuracy} m — drag the pin if it's off.`; map?.easeTo({ center: [p.lng, p.lat], zoom: 16, duration: 400 }); }
+    try { const p = await currentPosition(); onLink?.(null); onPick?.(null); onChange?.(p.lat, p.lng); note = `Your location, ±${p.accuracy} m — drag the pin if it's off.`; map?.easeTo({ center: [p.lng, p.lat], zoom: 16, duration: 400 }); }
     catch (e) { note = e.message; }
     finally { locating = false; }
   }
 </script>
 
 <div class="pick">
+  <PlaceSearch {known} {placesEnabled} bias={Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : hint ? { lat: hint.lat, lng: hint.lng } : null} onPick={picked} />
   <div class="tools">
-    <input class="q" type="search" bind:value={q} placeholder="Search a place, or paste a Google Maps link" aria-label="Search a place"
-      onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(); } }} />
-    <button type="button" class="btn tiny" onclick={search} disabled={searching || !q.trim()}>{searching ? "…" : "Search"}</button>
     <button type="button" class="btn tiny" onclick={locate} disabled={locating} title="Use this device's current position">{locating ? "Locating…" : "📍 My location"}</button>
+    {#if note}<span class="muted note" role="status">{note}</span>{/if}
   </div>
-  {#if results.length}
-    <ul class="results" role="listbox" aria-label="Places found">
-      {#each results as r (r.label)}
-        <li><button type="button" role="option" aria-selected="false" onclick={() => choose(r)}><strong>{r.name}</strong><span class="muted">{r.label}</span></button></li>
-      {/each}
-    </ul>
-    <p class="muted credit">Search by OpenStreetMap Nominatim</p>
-  {/if}
-  {#if note}<p class="muted note" role="status">{note}</p>{/if}
   <div class="picker" bind:this={container} role="application" aria-label="Map: tap to set the location"></div>
 </div>
 
 <style>
   .pick { display: grid; gap: 8px; }
-  .tools { display: flex; gap: 6px; align-items: center; }
-  .tools .q { flex: 1; min-width: 0; width: auto; max-width: none; padding: 7px 10px; }
+  .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .btn.tiny { padding: 6px 9px; font-size: 12px; white-space: nowrap; }
-  .results { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 190px; overflow: auto; }
-  .results button { width: 100%; text-align: left; display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: inherit; font: inherit; cursor: pointer; }
-  .results button:hover, .results button:focus-visible { border-color: var(--accent); }
-  .results strong { font-size: 13px; }
-  .results .muted { font-size: 11px; line-height: 1.35; }
-  .credit { margin: -2px 0 0; font-size: 10px; }
-  .note { margin: 0; font-size: 12px; }
+  .note { font-size: 12px; }
   .picker { height: 220px; border-radius: 12px; overflow: hidden; background: #0b0d10; border: 1px solid var(--line); }
   .picker :global(.maplibregl-ctrl-attrib) { font-size: 9px; background: rgba(11, 13, 16, 0.7); }
 </style>

@@ -5,7 +5,7 @@ import { moments, tracks } from "./fixtures.js";
 beforeEach(() => {
   trip.moments = structuredClone(moments);
   trip.tracks = structuredClone(tracks);
-  trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1; trip.view = "map";
+  trip.facets = []; trip.focusId = null; trip.storyIndex = -1; trip.view = "map";
 });
 
 describe("one selection, every renderer", () => {
@@ -15,13 +15,6 @@ describe("one selection, every renderer", () => {
     expect(trip.visibleTracks.map((t) => t.id)).toEqual(["t1", "t2"]);
     trip.toggleFacet("activities");
     expect(trip.visibleMoments.length).toBe(4);
-  });
-  it("day narrows both, and toggling the same day clears it", () => {
-    trip.setDay("2026-03-15");
-    expect(trip.visibleMoments.map((m) => m.id)).toEqual(["c", "d"]);
-    expect(trip.visibleTracks.map((t) => t.id)).toEqual(["t1"]);
-    trip.setDay("2026-03-15");
-    expect(trip.day).toBeNull();
   });
 });
 

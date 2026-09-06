@@ -163,7 +163,6 @@
   // cached style can make the map ready before the gallery JSON has landed.
   $effect(() => {
     trip.facets;
-    trip.day;
     trip.loaded;
     trip.galleryId;
     if (!ready || !map) return;
@@ -172,7 +171,7 @@
       if (!box) return;
       map.fitBounds(
         [[box[0], box[1]], [box[2], box[3]]],
-        { padding: { top: 90, bottom: 190, left: 40, right: 40 }, maxZoom: 15, duration: 900 }
+        { padding: { top: 90, bottom: 130, left: 40, right: 40 }, maxZoom: 15, duration: 900 }
       );
     });
   });
@@ -191,8 +190,8 @@
     background: rgba(11, 13, 16, 0.7);
   }
   /* Keep Traefik-free chrome clear of the dock: the attribution sits above the timeline. */
-  .map :global(.maplibregl-ctrl-bottom-right) { bottom: 150px; }
-  .map :global(.maplibregl-ctrl-bottom-left) { bottom: 150px; }
+  .map :global(.maplibregl-ctrl-bottom-right) { bottom: 100px; }
+  .map :global(.maplibregl-ctrl-bottom-left) { bottom: 100px; }
   .map :global(.maplibregl-ctrl-attrib a) { color: #8b9dc3; }
   .map :global(.maplibregl-ctrl-group) {
     background: rgba(20, 24, 30, 0.9);

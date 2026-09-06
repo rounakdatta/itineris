@@ -46,7 +46,7 @@ describe("BulkBar", () => {
     const selection = new SvelteSet(["a", "b"]);
     render(BulkBar, { selection, galleries, onDone: () => {}, onExit: () => {} });
     await fireEvent.click(screen.getByRole("button", { name: "Location" }));
-    expect(screen.getByText(/Phones strip GPS/)).toBeInTheDocument();
+    expect(screen.getByText(/Pin all 2 to one place/)).toBeInTheDocument();
     await fireEvent.input(screen.getByLabelText("Latitude"), { target: { value: "37.7749" } });
     await fireEvent.input(screen.getByLabelText("Longitude"), { target: { value: "-122.4194" } });
     await fireEvent.click(screen.getByRole("button", { name: "Apply to 2" }));

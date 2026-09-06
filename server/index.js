@@ -8,7 +8,7 @@ import { Store, token, TOKEN_RE } from "./store.js";
 import { ingestPhoto, backfillMedium, MEDIUM } from "./ingest.js";
 import { isLocalIso } from "./time.js";
 import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
-import { lookupPlace, needsLookup } from "./places.js";
+import { lookupPlace, needsLookup, searchPlaces, fetchPlaceDetails, isStale, isPlaceId } from "./places.js";
 
 const env = (k, d) => process.env[k] ?? d;
 const PORT = +env("ITINERIS_PORT", 8080);
@@ -45,6 +45,8 @@ const NUM_OR_NULL = (v) => (v === null || v === "" ? null : Number.isFinite(+v) 
 const IDS = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === "string"))] : null);
 // A Google Maps link for the exact place, or null to clear; undefined = invalid.
 const LINK = (v) => (v === null || v === "" ? null : typeof v === "string" && v.trim().length <= 600 && isGoogleMapsUrl(v.trim()) ? v.trim() : undefined);
+// A Google Place ID (photos pinned to one Google place share one pin), or null to unpin; undefined = invalid.
+const PLACE_ID = (v) => (v === null || v === "" ? null : isPlaceId(String(v).trim()) ? String(v).trim() : undefined);
 const cleanTags = (arr) => [...new Set(arr.map((t) => STR(t, 40)).filter(Boolean).map((t) => t.toLowerCase()))];
 const withGalleries = (moments, galleries) => {
   const idx = new Map();
@@ -87,6 +89,11 @@ function momentPatch(patch, email) {
     const link = LINK(patch.mapsUrl);
     if (link === undefined) return { error: "mapsUrl must be a Google Maps link" };
     upd.mapsUrl = link;
+  }
+  if ("placeId" in patch) {
+    const id = PLACE_ID(patch.placeId);
+    if (id === undefined) return { error: "placeId must be a Google Place ID" };
+    upd.placeId = id;
   }
   return { upd: { ...upd, editedBy: email, editedAt: new Date().toISOString() } };
 }
@@ -140,20 +147,31 @@ let placesQueue = Promise.resolve();
 function enrichPlaces(filter = () => true) {
   if (!PLACES_KEY) return Promise.resolve(0);
   const run = placesQueue.then(async () => {
-    const todo = (await store.moments()).filter((m) => filter(m) && needsLookup(m));
+    const all = await store.moments();
+    const todo = all.filter((m) => filter(m) && needsLookup(m));
     let n = 0;
     for (const m of todo) {
       let g;
       try {
-        g = (await lookupPlace({ name: m.place, lat: m.lat, lng: m.lng }, { key: PLACES_KEY })) ?? { placeId: null, fetchedAt: new Date().toISOString() };
+        if (isPlaceId(m.placeId)) {
+          // Pinned to a Google place: another photo on the same pin already
+          // knows it (no request), else ask Google by id.
+          const sibling = all.find((x) => x.id !== m.id && x.google?.placeId === m.placeId && !isStale(x.google));
+          g = sibling ? { ...sibling.google } : (await fetchPlaceDetails(m.placeId, { key: PLACES_KEY })) ?? { placeId: null, fetchedAt: new Date().toISOString() };
+        } else {
+          g = (await lookupPlace({ name: m.place, lat: m.lat, lng: m.lng }, { key: PLACES_KEY })) ?? { placeId: null, fetchedAt: new Date().toISOString() };
+        }
         placesStatus.lastError = null;
       } catch (e) {
         placesStatus.lastError = e.message; console.error(`places ${m.id} (${m.place}): ${e.message}`);
         if (e.status === 400 || e.status === 403 || e.status === 429) break;   // key/API/quota trouble: the rest would fail the same way
         continue;
       }
-      await store.updateMoments((ms) => ms.map((x) => (x.id === m.id ? { ...x, google: g } : x)));
-      n++; placesStatus.lookedUp++;
+      // A pinned photo without a name or spot of its own takes Google's.
+      const fill = g.placeId && m.placeId ? { ...(!(m.place ?? "").trim() && g.name ? { place: g.name } : {}), ...(!Number.isFinite(m.lat) && Number.isFinite(g.lat) ? { lat: g.lat, lng: g.lng } : {}) } : {};
+      const { lat: _l, lng: _g, address: _a, ...google } = g;
+      await store.updateMoments((ms) => ms.map((x) => (x.id === m.id ? { ...x, ...fill, google } : x)));
+      n++; if (!(m.placeId && all.some((x) => x.id !== m.id && x.google?.placeId === m.placeId))) placesStatus.lookedUp++;
       await new Promise((r) => setTimeout(r, 150));
     }
     placesStatus.lastRunAt = new Date().toISOString();
@@ -163,7 +181,7 @@ function enrichPlaces(filter = () => true) {
   return run;
 }
 // A changed name or spot invalidates what Google said about the old one.
-const forgetGoogle = (m, upd) => ("place" in upd || "lat" in upd || "lng" in upd ? (({ google, ...rest }) => rest)(m) : m);
+const forgetGoogle = (m, upd) => ("place" in upd || "lat" in upd || "lng" in upd || "placeId" in upd ? (({ google, ...rest }) => rest)(m) : m);
 
 app.patch("/admin/api/moments/:id", async (c) => {
   const id = c.req.param("id");
@@ -176,6 +194,17 @@ app.patch("/admin/api/moments/:id", async (c) => {
   enrichPlaces((m) => m.id === id);
   const galleries = await store.galleries();
   return c.json(withGalleries([result], galleries)[0]);
+});
+
+// The admin's place search: Google Places when the server has a key.
+app.get("/admin/api/places/search", async (c) => {
+  if (!PLACES_KEY) return c.json({ error: "no Google Places key configured on the server" }, 409);
+  const q = c.req.query("q") ?? "", lat = NUM_OR_NULL(c.req.query("lat")), lng = NUM_OR_NULL(c.req.query("lng"));
+  try {
+    const places = await searchPlaces(q, { lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null }, { key: PLACES_KEY });
+    placesStatus.lastError = null;
+    return c.json({ places });
+  } catch (e) { placesStatus.lastError = e.message; return c.json({ error: e.message }, e.status && e.status >= 400 && e.status < 600 ? e.status : 502); }
 });
 
 // Ask Google again about this one place, now.
@@ -211,15 +240,19 @@ app.patch("/admin/api/moments", async (c) => {
   let link;
   if ("mapsUrl" in body) { link = LINK(body.mapsUrl); if (link === undefined) return c.json({ error: "mapsUrl must be a Google Maps link" }, 400); }
   if (loc && link === undefined) link = null;
+  // Pin the whole selection to one Google place: one pin, shared details.
+  let pid;
+  if ("placeId" in body) { pid = PLACE_ID(body.placeId); if (pid === undefined) return c.json({ error: "placeId must be a Google Place ID" }, 400); }
+  if (loc && pid === undefined) pid = null;
   const set = new Set(ids); let n = 0;
   await store.updateMoments((list) => list.map((m) => {
     if (!set.has(m.id)) return m;
     n++;
     const tags = [...new Set([...(m.tags ?? []).filter((t) => !remove.includes(t)), ...add])];
-    const base = place !== undefined || loc ? (({ google, ...rest }) => rest)(m) : m;
-    return { ...base, tags, ...(place !== undefined ? { place } : {}), ...(loc ?? {}), ...(link !== undefined ? { mapsUrl: link } : {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
+    const base = place !== undefined || loc || pid !== undefined ? (({ google, ...rest }) => rest)(m) : m;
+    return { ...base, tags, ...(place !== undefined ? { place } : {}), ...(loc ?? {}), ...(link !== undefined ? { mapsUrl: link } : {}), ...(pid !== undefined ? { placeId: pid } : {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
   }));
-  if (place !== undefined || loc) enrichPlaces((m) => set.has(m.id));
+  if (place !== undefined || loc || pid !== undefined) enrichPlaces((m) => set.has(m.id));
   return c.json({ updated: n });
 });
 
@@ -314,6 +347,12 @@ app.use("/media/*", serveStatic({ root: DATA_DIR }));
 app.use("/data/*", serveStatic({ root: DATA_DIR }));
 
 const how = await store.init(SEED_DIR);
+// Seeds before 0.9 carried their own `placeId` (an internal key like "chinatown");
+// the field now means a Google Place ID. Drop anything that is not one.
+{
+  const legacy = (await store.moments()).filter((m) => m.placeId !== undefined && m.placeId !== null && !isPlaceId(m.placeId));
+  if (legacy.length) { await store.updateMoments((ms) => ms.map((m) => (m.placeId !== undefined && m.placeId !== null && !isPlaceId(m.placeId) ? (({ placeId, ...rest }) => rest)(m) : m))); console.log(`dropped ${legacy.length} legacy placeId field${legacy.length === 1 ? "" : "s"}`); }
+}
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(`itineris admin on :${PORT}  data=${DATA_DIR} (${how})  ui=${UI_DIR}  allowlist=${ALLOWED.length ? ALLOWED.join(",") : "(tinyauth only)"}`);
 });

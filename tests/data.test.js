@@ -77,12 +77,14 @@ describe("Google Maps links out", () => {
 });
 
 describe("one pin per place", () => {
-  it("groups located photos by name, keeps the first spot and thumbnail, and any Google details", () => {
-    const ms = [...moments, { ...moments[0], id: "a2", t: "2026-03-14T09:10:00+08:00", google: { placeId: "ChIJx", rating: 4.5 } }, { ...moments[3], id: "e", lat: 1.29, lng: 103.86, place: "" }];
+  it("groups located photos by Google place first, then by name; keeps the first spot, thumbnail and Google details", () => {
+    const ms = [...moments, { ...moments[0], id: "a2", t: "2026-03-14T09:10:00+08:00" }, { ...moments[3], id: "e", lat: 1.29, lng: 103.86, place: "" },
+      { ...moments[1], id: "b2", place: "Maxwell Hawker", google: { placeId: "ChIJmax", rating: 4.4 } }, { ...moments[1], id: "b3", place: "", google: { placeId: "ChIJmax", rating: 4.4 } }];
     const g = groupByPlace(ms);
-    expect(g.map((x) => [x.key, x.moments.length])).toEqual([["chinatown", 2], ["maxwell", 1], ["merlion", 1], ["#e", 1]]);   // d has no coords: no pin
-    expect(g[0].first.id).toBe("a"); expect(g[0].google).toMatchObject({ placeId: "ChIJx" }); expect(g[1].google).toBeNull();
+    expect(g.map((x) => [x.key, x.moments.length])).toEqual([["chinatown", 2], ["maxwell", 1], ["merlion", 1], ["#e", 1], ["g:ChIJmax", 2]]);   // d has no coords: no pin
+    expect(g[0].first.id).toBe("a"); expect(g[4].google).toMatchObject({ placeId: "ChIJmax" }); expect(g[4].name).toBe("Maxwell Hawker");
     expect(placeKey({ place: "  Lau Pa Sat ", id: "z" })).toBe("lau pa sat"); expect(placeKey({ place: "", id: "z" })).toBe("#z");
+    expect(placeKey({ place: "Anything", google: { placeId: "ChIJx" }, id: "y" })).toBe("g:ChIJx");
   });
   it("Google's own place link wins over everything", () => {
     expect(placeLink({ ...moments[0], mapsUrl: "https://maps.google.com/?cid=5", google: { placeId: "x", mapsUri: "https://maps.google.com/?cid=777" } })).toBe("https://maps.google.com/?cid=777");

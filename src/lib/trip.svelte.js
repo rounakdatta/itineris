@@ -1,4 +1,4 @@
-import { daysOf, dayKey, momentMatches, trackMatches } from "./data.js";
+import { momentMatches, trackMatches } from "./data.js";
 
 const GALLERY_PATH = /^\/g\/([a-z0-9-]{4,40})\/?$/;
 
@@ -18,26 +18,19 @@ class Trip {
 
   // --- selection ---
   facets = $state([]);      // active facet ids; empty means "everything"
-  day = $state(null);       // dayKey string, or null for the whole trip
   view = $state("map");     // "map" | "wall"
   focusId = $state(null);   // moment the map is centred on
   storyIndex = $state(-1);  // -1 means the story viewer is closed
 
   loaded = $derived(this.status === "ready");
-  days = $derived(daysOf(this.moments));
 
   visibleMoments = $derived(
     this.moments
       .filter((m) => momentMatches(m, this.facets))
-      .filter((m) => (this.day ? dayKey(m.t) === this.day : true))
       .sort((a, b) => (a.t < b.t ? -1 : 1))
   );
 
-  visibleTracks = $derived(
-    this.tracks
-      .filter((t) => trackMatches(t, this.facets))
-      .filter((t) => (this.day ? dayKey(t.t0) === this.day : true))
-  );
+  visibleTracks = $derived(this.tracks.filter((t) => trackMatches(t, this.facets)));
 
   focused = $derived(this.moments.find((m) => m.id === this.focusId) ?? null);
   storyMoment = $derived(this.visibleMoments[this.storyIndex] ?? null);
@@ -86,12 +79,6 @@ class Trip {
   clearFacets() {
     const anchor = this.storyMoment?.id;
     this.facets = [];
-    this.restoreStory(anchor);
-  }
-
-  setDay(key) {
-    const anchor = this.storyMoment?.id;
-    this.day = this.day === key ? null : key;
     this.restoreStory(anchor);
   }
 

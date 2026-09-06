@@ -67,7 +67,7 @@ try {
   ok("gallery title in the top bar", (await text(page, ".brand .title")) === "Singapore, March 2026", await text(page, ".brand .title"));
   ok("20 photos in the strip", (await count(page, ".tick")) === 20, String(await count(page, ".tick")));
   ok("facet chips with counts", /Spots\s*17/.test(await text(page, ".chrome nav")) && /Activities\s*7/.test(await text(page, ".chrome nav")), await text(page, ".chrome nav"));
-  ok("day chips carry dates", /Day 1\s*14 Mar/.test(await text(page, ".days")), await text(page, ".days"));
+  ok("no day chips: the strip is the whole dock", (await page.$(".days")) === null && !/Whole trip/.test(await text(page, ".dock")));
   ok("no desktop zoom buttons on a phone", (await count(page, ".maplibregl-ctrl-zoom-in")) === 0);
   await settle(page, { map: true }); await shot(page, `${SHOTS}/01-viewer-home.png`);
 
@@ -81,7 +81,7 @@ try {
   await (await page.$(".tick.on")).tap();
   await page.waitForSelector(".story");
   ok("second tap opens the story, URL carries it", (await hash(page)) === "#m/m003", await hash(page));
-  ok("story header: day + place + clock", /Day 1/.test(await text(page, ".story header")) && /Maxwell/.test(await text(page, ".story header")), await text(page, ".story header"));
+  ok("story header: the date, minimally, + place + clock", /14 Mar/.test(await text(page, ".story header")) && !/Day 1/.test(await text(page, ".story header")) && /Maxwell/.test(await text(page, ".story header")), await text(page, ".story header"));
   ok("the place in the story header is a Google Maps link", await page.$eval(".story header a.place", (a) => a.target === "_blank" && /google\.com\/maps/.test(a.href)));
   ok("story: thumbnail placeholder at once, full image fades in", (await page.$(".story img.placeholder")) !== null && (await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }).then(() => true).catch(() => false)));
   await settle(page); await shot(page, `${SHOTS}/02-story.png`);
@@ -184,27 +184,30 @@ try {
   await gp.waitForSelector('.map[data-engine="google"] .gpin', { timeout: 20000 });
   ok("Google Maps is the map, loaded with the configured key", !!gmapsRequested && gmapsRequested.includes("key=e2e-fake-key") && gmapsRequested.includes("libraries=maps,marker"), gmapsRequested ?? "(not requested)");
   const pub = JSON.parse(readFileSync(path.join(nd, "docroot", "data", "galleries", "sg2026demo.json"), "utf8"));
-  const key = (m) => (m.place || "").trim().toLowerCase() || "#" + m.id;
+  const key = (m) => (m.google?.placeId ? "g:" + m.google.placeId : (m.place || "").trim().toLowerCase() || "#" + m.id);   // how the app keys pins
+  const pinOf = (name) => `.gpin[data-place="${key(pub.moments.find((m) => m.place === name))}"]`;
   const perPlace = pub.moments.filter((m) => m.lat != null).reduce((acc, m) => acc.set(key(m), (acc.get(key(m)) || 0) + 1), new Map());
   const rated = new Set(pub.moments.filter((m) => m.lat != null && m.google?.rating).map(key));
   ok("one story-ring pin per PLACE, none of MapLibre", (await count(gp, ".gpin")) === perPlace.size && (await gp.$(".maplibregl-canvas")) === null, `${await count(gp, ".gpin")} pins for ${perPlace.size} places`);
-  ok("a rating chip where Google knows the place, reading like 4.4★", (await count(gp, ".gpin .chip")) === rated.size && (await gp.$$eval(".gpin .chip", (cs) => cs.every((c) => /^\d\.\d★$/.test(c.textContent)))), `${await count(gp, ".gpin .chip")} chips for ${rated.size} rated places`);
+  const named = new Set(pub.moments.filter((m) => m.lat != null && (m.place || "").trim()).map(key));
+  ok("every named place wears its name on the chip; Google's rating follows where it is known", (await count(gp, ".gpin .chip")) === named.size && (await gp.$$eval(".gpin .chip", (cs) => cs.every((c) => c.querySelector(".nm")?.textContent.length > 0))) && (await gp.$$eval(".gpin .chip", (cs) => cs.filter((c) => /\d\.\d★$/.test(c.textContent)).length)) === rated.size, `${await count(gp, ".gpin .chip")} chips, ${named.size} named, ${rated.size} rated`);
+  ok("...e.g. the Maxwell pin reads its name and rating", (await text(gp, `${pinOf("Maxwell Food Centre")} .chip`)) === "Maxwell Food Centre4.4★", await text(gp, `${pinOf("Maxwell Food Centre")} .chip`));
   ok("a count badge where several photos share the place", (await count(gp, ".gpin .ring .n")) === [...perPlace.values()].filter((n) => n > 1).length);
   ok("every ring is bright: nothing seen yet", (await count(gp, ".gpin .ring.seen")) === 0 && (await count(gp, ".gpin .ring")) === perPlace.size);
   ok("the pins are the photos", await gp.$eval(".gpin .ring img", (i) => /\/media\//.test(i.getAttribute("src"))));
   // Instagram: tap the ring and the story opens, at once.
-  await (await gp.$('.gpin[data-place="maxwell food centre"] .ring')).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
+  await (await gp.$(`${pinOf("Maxwell Food Centre")} .ring`)).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
   ok("tap the ring: the story opens straight away", /Maxwell/.test(await text(gp, ".story header")), await text(gp, ".story header"));
   ok("...with Google's rating beside the place name", (await text(gp, ".story header .rate")) === "4.4★", await text(gp, ".story header .rate"));
   await gp.keyboard.press("Escape"); await sleep(400);
-  ok("that ring has gone quiet: seen on this device", await gp.$eval('.gpin[data-place="maxwell food centre"] .ring', (r) => r.classList.contains("seen")));
+  ok("that ring has gone quiet: seen on this device", await gp.$eval(`${pinOf("Maxwell Food Centre")} .ring`, (r) => r.classList.contains("seen")));
   ok("the others are still bright", (await count(gp, ".gpin .ring.seen")) === 1);
   // Claude.ai-style: tap the chip and the place card shows what Google says.
-  await (await gp.$('.gpin[data-place="lau pa sat"] .chip')).tap(); await sleep(450);
+  await (await gp.$(`${pinOf("Lau Pa Sat")} .chip`)).tap(); await sleep(450);
   ok("tap the chip: the place card, with rating, count and kind of place", (await gp.$(".place-card")) !== null && (await text(gp, ".place-card .google")).replace(/\s+/g, "") === "4.3★(24,154)·Hawkercentre", await text(gp, ".place-card .google"));
-  ok("...and that pin is the dark, chosen one", await gp.$eval('.gpin[data-place="lau pa sat"]', (el) => el.classList.contains("on")));
+  ok("...and that pin is the dark, chosen one", await gp.$eval(pinOf("Lau Pa Sat"), (el) => el.classList.contains("on")));
   await settle(gp); await shot(gp, `${SHOTS}/06-google-maps.png`);
-  await (await gp.$('.gpin[data-place="lau pa sat"] .chip')).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
+  await (await gp.$(`${pinOf("Lau Pa Sat")} .chip`)).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
   ok("a second tap on the chip opens the story too", /Lau Pa Sat/.test(await text(gp, ".story header")));
   await gp.keyboard.press("Escape"); await sleep(300);
   await tap(gp, '[aria-label="Save for offline"]'); await gp.waitForSelector(".sheet");
@@ -272,12 +275,18 @@ try {
   ok("the exact Google Maps link and the place name were saved", lib.find((m) => m.id === editId).mapsUrl === GMAPS_CID && lib.find((m) => m.id === editId).place === "Lau Pa Sat", JSON.stringify([lib.find((m) => m.id === editId).mapsUrl, lib.find((m) => m.id === editId).place]));
 
   console.log("--- admin: a Google Maps link pasted for the next photos ---");
-  await page.$eval('input[aria-label="Google Maps link"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);
-  await page.focus('input[aria-label="Google Maps link"]'); await page.keyboard.press("Enter");
+  await page.$eval('.drop input[aria-label="Search a place"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);
+  await page.focus('.drop input[aria-label="Search a place"]'); await page.keyboard.press("Enter");
   ok("the place banner appears and the upload button targets it", await waitFor(page, () => /Lau Pa Sat/.test(document.querySelector(".shared")?.textContent ?? "") && /Add photos at “Lau Pa Sat”/.test(document.querySelector(".drop .btn.primary")?.textContent ?? "")), await text(page, ".shared"));
   await settle(page); await shot(page, `${SHOTS}/14c-admin-shared-place.png`);
   await tap(page, '.shared button[aria-label="Dismiss place"]'); await sleep(200);
   ok("dismissed: back to plain uploads", (await page.$(".shared")) === null && /^Add photos/.test(await text(page, ".drop .btn.primary")) && !/Lau Pa Sat/.test(await text(page, ".drop .btn.primary")));
+  // Your places: one tap pins the next photos to a place already in the journal.
+  ok("your places are offered on the upload surface", (await count(page, ".drop .kchip")) > 0, String(await count(page, ".drop .kchip")));
+  const kname = await page.$eval(".drop .kchip .nm", (el) => el.textContent);
+  await (await page.$(".drop .kchip")).tap(); await sleep(300);
+  ok("one tap pins the next photos to that place", new RegExp(kname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(await text(page, ".shared")) && (await text(page, ".drop .btn.primary")).includes(kname), await text(page, ".shared"));
+  await tap(page, '.shared button[aria-label="Dismiss place"]'); await sleep(200);
 
   console.log("--- admin: upload in bad conditions ---");
   const UP = path.join(SCRATCH, "e2e-uploads"); mkdirSync(UP, { recursive: true });

@@ -4,7 +4,7 @@ import FacetBar from "../src/components/FacetBar.svelte";
 import { trip } from "../src/lib/trip.svelte.js";
 import { moments, tracks } from "./fixtures.js";
 
-beforeEach(() => { trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.facets = []; trip.day = null; });
+beforeEach(() => { trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.facets = []; });
 
 describe("FacetBar", () => {
   it("renders a chip per facet with counts that ignore the facet filter", async () => {

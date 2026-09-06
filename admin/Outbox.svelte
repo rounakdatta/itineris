@@ -3,11 +3,11 @@
   // somebody else's problem, handled by the Outbox in the background.
   // NB: not named `state` -- a prop called state turns `$state(...)` into a store subscription.
   import { currentPosition } from "./lib/geo.js";
+  import PlaceSearch from "./PlaceSearch.svelte";
 
-  // `location`: a place (from a shared/pasted Google Maps link) every photo
-  // added now is placed at. `onLink` hands a pasted link up to be resolved.
-  let { outbox, queue, gallery = null, location = null, onEdit, onLink } = $props();
-  let linkDraft = $state("");
+  // `location`: the place every photo added now is pinned to (picked below, or
+  // shared in from Google Maps). `onPick` hands a picked place up to App.
+  let { outbox, queue, gallery = null, location = null, known = [], placesEnabled = false, onEdit, onPick } = $props();
   let input;
   let over = $state(false);
   let urls = $state(new Map());
@@ -82,12 +82,10 @@
   <button class="btn primary" onclick={() => input.click()}>{location ? `Add photos at “${location.name || "this place"}”` : gallery ? `Add photos to “${gallery.title}”` : "Add photos"}</button>
   <p class="muted hint">or drop them here · works offline — photos queue on this device and upload when they can{gallery ? "" : " · new photos stay private until they're in a gallery"}</p>
   {#if !location}
-    <p class="muted hint small">Phones usually strip GPS from photos picked in a browser. Photos without a location show ⌖ — set it in the editor, or select several and use <em>Set location</em>.</p>
-    <p class="linkrow">
-      <input class="link" type="url" bind:value={linkDraft} placeholder="Paste a Google Maps link — the next photos land there" aria-label="Google Maps link"
-        onkeydown={(e) => { if (e.key === "Enter" && linkDraft.trim()) { e.preventDefault(); onLink?.(linkDraft.trim()); linkDraft = ""; } }}
-        onpaste={(e) => { const t = e.clipboardData?.getData("text") ?? ""; if (/https?:\/\//.test(t)) { e.preventDefault(); onLink?.(t.trim()); linkDraft = ""; } }} />
-    </p>
+    <p class="muted hint small">Phones usually strip GPS from photos picked in a browser. Pin the next photos to a place first — they all land on that one pin.</p>
+    <div class="pinrow">
+      <PlaceSearch compact {known} {placesEnabled} onPick={(p) => onPick?.(p)} />
+    </div>
   {/if}
 
   {#if status}
@@ -137,8 +135,7 @@
   .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
   .hint { margin: 10px 0 0; font-size: 13px; }
   .hint.small { margin-top: 6px; font-size: 12px; }
-  .linkrow { margin: 10px auto 0; max-width: 420px; }
-  .linkrow .link { width: 100%; font-size: 13px; padding: 8px 12px; }
+  .pinrow { margin: 10px auto 0; max-width: 460px; }
   .queue { margin-top: 16px; text-align: left; }
   .status { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 14px; }
   .status .text { flex: 1; }

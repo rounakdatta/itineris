@@ -81,14 +81,19 @@
     ring.appendChild(img);
     if (group.moments.length > 1) { const n = document.createElement("span"); n.className = "n"; n.textContent = String(group.moments.length); ring.appendChild(n); }
     el.appendChild(ring);
+    // The chip says which place this is -- "Yamo" -- and, when Google knows it, how it is rated.
     let chip = null;
-    if (Number.isFinite(group.google?.rating)) {
+    const rated = Number.isFinite(group.google?.rating);
+    if (group.name || rated) {
       chip = document.createElement("button");
       chip.type = "button"; chip.className = "chip";
-      chip.setAttribute("aria-label", `${group.name}: ${group.google.rating.toFixed(1)} stars on Google`);
-      const b = document.createElement("b"); b.textContent = group.google.rating.toFixed(1);
-      const star = document.createElement("i"); star.textContent = "★"; star.setAttribute("aria-hidden", "true");
-      chip.append(b, star);
+      chip.setAttribute("aria-label", `${group.name || "Place"}${rated ? `: ${group.google.rating.toFixed(1)} stars on Google` : ""}`);
+      if (group.name) { const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = group.name; chip.appendChild(nm); }
+      if (rated) {
+        const b = document.createElement("b"); b.textContent = group.google.rating.toFixed(1);
+        const star = document.createElement("i"); star.textContent = "★"; star.setAttribute("aria-hidden", "true");
+        chip.append(b, star);
+      }
       el.appendChild(chip); el.classList.add("has-chip");
     }
     const mk = new Marker({ map, position: { lat: group.lat, lng: group.lng }, content: el, title: group.name, zIndex: 1, gmpClickable: true });
@@ -144,7 +149,6 @@
   // Filter changed, or data arrived -> refit (inputs only, like MapView).
   $effect(() => {
     trip.facets;
-    trip.day;
     trip.loaded;
     trip.galleryId;
     if (!ready || !map) return;
@@ -162,7 +166,7 @@
 
 <style>
   /* Ends above the timeline dock so Google's logo and terms stay visible (they must). */
-  .map { position: absolute; inset: 0 0 150px 0; background: #e5e3df; }
+  .map { position: absolute; inset: 0 0 100px 0; background: #e5e3df; }
   /* Pins are DOM nodes Google positions; they live outside Svelte's scoping.
      The marker anchors at the content's bottom centre: shift so the RING's
      centre sits on the spot (ring 44 + gap 4 + chip 20 = 68 tall). */
@@ -185,6 +189,8 @@
     background: #fff; color: #111; font: 700 11px/20px system-ui, -apple-system, sans-serif; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
     transition: background 160ms, color 160ms;
   }
+  :global(.gpin .chip .nm) { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  :global(.gpin .chip b) { font-weight: 800; }
   :global(.gpin .chip i) { font-style: normal; color: #f4b400; font-size: 10px; }
   :global(.gpin.on .ring) { transform: scale(1.18); }
   :global(.gpin.on .chip) { background: #111; color: #fff; }

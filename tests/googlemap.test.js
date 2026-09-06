@@ -23,7 +23,7 @@ const config = { googleMapsApiKey: "k", googleMapsMapId: "" };
 beforeEach(() => {
   FakeMap.instances.length = 0; FakeMarker.all.length = 0; FakePolyline.all.length = 0;
   loadImpl = async () => G;
-  trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.galleryId = "g1"; trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1; trip.view = "map";
+  trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.galleryId = "g1"; trip.facets = []; trip.focusId = null; trip.storyIndex = -1; trip.view = "map";
 });
 
 import { resetSeen, markSeen } from "../src/lib/seen.svelte.js";
@@ -43,9 +43,10 @@ describe("GoogleMapView", () => {
     expect(chinatown.position).toEqual({ lat: 1.28, lng: 103.84 });
     expect(chinatown.content.querySelector(".ring img").getAttribute("src")).toBe("/media/a-t.webp");
     expect(chinatown.content.querySelector(".ring .n").textContent).toBe("2");
-    expect(chinatown.content.querySelector(".chip")).toBeNull();
-    expect(maxwell.content.querySelector(".chip").textContent).toBe("4.4★");
-    expect(maxwell.content.classList.contains("has-chip")).toBe(true);
+    expect(chinatown.content.querySelector(".chip").textContent).toBe("Chinatown");            // the name, always
+    expect(maxwell.content.querySelector(".chip").textContent).toBe("Maxwell4.4★");            // plus the rating when Google knows it
+    expect(maxwell.content.querySelector(".chip .nm").textContent).toBe("Maxwell");
+    expect(chinatown.content.classList.contains("has-chip")).toBe(true);
     expect(maxwell.content.querySelector(".ring").classList.contains("seen")).toBe(false);
     expect(FakePolyline.all).toHaveLength(2);
     expect(map.camera.some((c) => c[0] === "fitBounds")).toBe(true);

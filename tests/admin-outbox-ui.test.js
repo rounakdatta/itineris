@@ -52,17 +52,17 @@ describe("Outbox UI", () => {
     expect(outbox.updateMeta).toHaveBeenCalledWith("c", { lat: 37.7614, lng: -122.4118, locEdited: true });
     expect(screen.getByText(/Placed 2 photos at your location \(±9 m\)/)).toBeInTheDocument();
   });
-  it("a shared place renames the button; a pasted link is handed up", async () => {
-    const onLink = vi.fn();
-    const { unmount } = render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true }, location: { name: "Zahrat Lebnan", lat: 1, lng: 2 }, onLink });
+  it("a pinned place renames the button; without one, your places are offered and a pick is handed up", async () => {
+    const onPick = vi.fn();
+    const known = [{ key: "g:ChIJyamo", name: "Yamo", lat: 37.7619, lng: -122.4194, placeId: "ChIJyamo", mapsUrl: null, google: { placeId: "ChIJyamo", rating: 4.5 }, count: 2 }];
+    const { unmount } = render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true }, location: { name: "Zahrat Lebnan", lat: 1, lng: 2 }, known, onPick });
     expect(screen.getByRole("button", { name: "Add photos at “Zahrat Lebnan”" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Google Maps link")).toBeNull();
+    expect(screen.queryByLabelText("Search a place")).toBeNull();
     unmount();
-    render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true }, onLink });
-    const box = screen.getByLabelText("Google Maps link");
-    await fireEvent.input(box, { target: { value: "https://maps.app.goo.gl/AbC" } });
-    await fireEvent.keyDown(box, { key: "Enter" });
-    expect(onLink).toHaveBeenCalledWith("https://maps.app.goo.gl/AbC");
+    render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true }, known, onPick });
+    expect(screen.getByLabelText("Search a place")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: /Yamo/ }));
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ placeId: "ChIJyamo", name: "Yamo", lat: 37.7619 }));
   });
   it("no queue, no panel", () => {
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true } });

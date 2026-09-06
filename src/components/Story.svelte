@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey, mediaUrl, storySrc, placeLink } from "../lib/data.js";
+  import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink } from "../lib/data.js";
   import { markSeen } from "../lib/seen.svelte.js";
 
   const SEGMENT_MS = 5000;
@@ -26,7 +26,7 @@
   const items = $derived(trip.visibleMoments);
   const current = $derived(trip.storyMoment);
   const landscape = $derived(!!current && current.media.w > current.media.h);
-  const dayLabel = $derived(current ? trip.days.find((d) => d.key === dayKey(current.t))?.label : "");
+  const dateStr = $derived(current ? dateLabel(dayKey(current.t)) : "");   // "14 Mar": the date, minimally
   const thumbUrl = $derived(current ? mediaUrl(current.media.thumb ?? current.media.src) : "");
   const fullUrl = $derived(current ? storySrc(current.media) : "");
   const loaded = $derived(!!current && loadedId === current.id);
@@ -155,7 +155,7 @@
 
     <header>
       <div class="meta">
-        {#if dayLabel}<span class="day">{dayLabel}</span>{/if}
+        {#if dateStr}<span class="day">{dateStr}</span>{/if}
         {#if current.place && link}
           <!-- The place name opens Google Maps; it must not read as a tap on the story. -->
           <span class="placerow"><a class="place" href={link} target="_blank" rel="noopener noreferrer" title="Open in Google Maps"

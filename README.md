@@ -126,8 +126,14 @@ MapLibre everywhere, as before.
 
 **Places as pins.** On Google's map there is one pin per place: the photo in an
 Instagram-style story ring — bright until every photo behind it has been seen
-on this device, a count badge when there are several — and, when Google knows
-the place, a small rating chip under it (`4.6 ★`), Claude.ai-style. Tap the
+on this device, a count badge when there are several — and under it a small
+chip with the place's **name** and, when Google knows the place, its rating
+(`Yamo 4.6 ★`), Claude.ai-style. Photos are **pinned to a Google place** in the
+admin: pick one of *your places* (already in the journal), search Google Maps,
+paste a link, or tap the map — for the next uploads, a selection, or one photo
+in the editor. Pinned photos carry the Place ID, share one pin whatever they
+were called, and inherit the place's details from their siblings without
+another lookup. No day chips: the date shows, minimally, where a photo is open. Tap the
 ring and the story opens; tap the chip and the place card shows rating, review
 count and kind of place. Those details are looked up **server-side**, once per
 place (Places API (New) Text Search biased to the photo's spot, matched only
