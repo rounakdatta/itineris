@@ -4,6 +4,7 @@ import { tick } from "svelte";
 import Story from "../src/components/Story.svelte";
 import { trip } from "../src/lib/trip.svelte.js";
 import { moments, tracks } from "./fixtures.js";
+import { seen, resetSeen } from "../src/lib/seen.svelte.js";
 
 beforeEach(() => { trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1; });
 const dialog = () => { const d = screen.getByRole("dialog"); d.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 844, right: 390, bottom: 844 }); return d; };
@@ -35,6 +36,16 @@ describe("Story", () => {
     expect(trip.storyMoment.id).toBe("a");                        // not a tap: still on the same photo
     trip.openStory("b"); await tick();
     expect(screen.getByRole("link", { name: /Maxwell/ })).toHaveAttribute("href", "https://www.google.com/maps/search/Maxwell/@1.2803,103.8449,17z");
+  });
+  it("shows Google's rating next to the place, and marks each photo seen as it is shown", async () => {
+    resetSeen();
+    trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, google: { placeId: "x", rating: 4.6, ratingCount: 2005 } } : m));
+    trip.openStory("a"); render(Story);
+    expect(dialog().querySelector(".rate")).toHaveTextContent("4.6★");
+    expect(seen.has("a")).toBe(true); expect(seen.has("b")).toBe(false);
+    trip.step(1); await tick();
+    expect(seen.has("b")).toBe(true);
+    expect(dialog().querySelector(".rate")).toBeNull();
   });
   it("a landscape photo is shown whole over a blurred copy", async () => {
     trip.openStory("b"); render(Story);

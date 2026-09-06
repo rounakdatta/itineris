@@ -48,6 +48,8 @@ export const pub = (m) => ({
   lat: Number.isFinite(m.lat) ? m.lat : null, lng: Number.isFinite(m.lng) ? m.lng : null,
   place: m.place ?? "", caption: m.caption ?? "", tags: m.tags ?? [],
   ...(m.mapsUrl ? { mapsUrl: m.mapsUrl } : {}),
+  // What Google says about the place, looked up server-side (see places.js).
+  ...(m.google?.placeId ? { google: { placeId: m.google.placeId, rating: m.google.rating ?? null, ratingCount: m.google.ratingCount ?? null, type: m.google.type ?? null, mapsUri: m.google.mapsUri ?? null } } : {}),
   media: {
     type: m.media?.type ?? "photo", src: m.media?.src, w: m.media?.w, h: m.media?.h,
     ...(m.media?.medium ? { medium: m.media.medium } : {}),

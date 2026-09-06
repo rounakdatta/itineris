@@ -57,6 +57,10 @@ googleMaps:
   existingSecret: ""
   # Optional Map ID (Cloud-based map styling). Google's demo id is used when empty.
   mapId: ""
+  # The admin also uses the key server-side for Places API (New) lookups --
+  # rating, review count, kind of place -- once per place, refreshed monthly
+  # (1,000 free a month). If the browser key is referrer-restricted, add a
+  # second, server-only key as `placesApiKey` in the same Secret.
 
 # Upload + tagging UI and API, served under /admin on the same host. The chart
 # ships no Ingress: the deployment repo puts THIS service behind tinyauth and

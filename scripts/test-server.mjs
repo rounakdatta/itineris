@@ -2,6 +2,8 @@
 // through the HTTP API, curates galleries, and checks what lands on disk --
 // in the private library AND in the public projections nginx would serve.
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
+import { FIELD_MASK } from "../server/places.js";
 import { mkdtemp, readFile, writeFile, access, rm, mkdir, cp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,9 +20,9 @@ const j = async (r) => ({ status: r.status, body: r.headers.get("content-type")?
 const readJson = async (p) => JSON.parse(await readFile(p, "utf8"));
 
 // Starts a server on a fresh data dir (optionally pre-populated), returns helpers.
-async function startServer({ port, dataDir, seedDir = "seed" }) {
+async function startServer({ port, dataDir, seedDir = "seed", env = {} }) {
   const server = spawn(process.execPath, ["server/index.js"], {
-    env: { ...process.env, ITINERIS_PORT: String(port), ITINERIS_DATA_DIR: dataDir, ITINERIS_SEED_DIR: seedDir, ITINERIS_ADMIN_UI_DIR: "dist-admin" },
+    env: { ...process.env, ITINERIS_PORT: String(port), ITINERIS_DATA_DIR: dataDir, ITINERIS_SEED_DIR: seedDir, ITINERIS_ADMIN_UI_DIR: "dist-admin", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let log = ""; server.stdout.on("data", (d) => (log += d)); server.stderr.on("data", (d) => (log += d));
@@ -36,12 +38,29 @@ async function startServer({ port, dataDir, seedDir = "seed" }) {
   return { server, BASE, api, upload, log: () => log };
 }
 
+// A stand-in for Places API (New) Text Search: a place 30 m from the bias
+// centre (or nothing, or a refusal, depending on the name); records every ask.
+const placesLog = [];
+const fakePlaces = createServer((req, res) => {
+  let body = ""; req.on("data", (d) => (body += d)); req.on("end", () => {
+    const q = JSON.parse(body || "{}"); placesLog.push({ mask: req.headers["x-goog-fieldmask"], key: req.headers["x-goog-api-key"], q });
+    if (/refuse/i.test(q.textQuery ?? "")) { res.writeHead(403, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: { message: "Places API (New) has not been used in project test before or it is disabled." } })); }
+    const c = q.locationBias?.circle?.center ?? { latitude: 0, longitude: 0 };
+    const places = /nowhere/i.test(q.textQuery ?? "") ? [] : [{ id: `ChIJfake${(q.textQuery ?? "").replace(/\W/g, "")}`, displayName: { text: q.textQuery }, rating: 4.3, userRatingCount: 24154, primaryTypeDisplayName: { text: "Hawker centre" }, googleMapsUri: "https://maps.google.com/?cid=4242", location: { latitude: c.latitude + 0.00027, longitude: c.longitude } }];
+    res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ places }));
+  });
+});
+await new Promise((r) => fakePlaces.listen(4329, "127.0.0.1", r));
+const PLACES_ENV = { ITINERIS_GOOGLE_PLACES_KEY: "test-places", ITINERIS_PLACES_ENDPOINT: "http://127.0.0.1:4329/searchText" };
+let askedBefore = 0;   // how many times Google was asked while the keyed server ran
+const until = async (fn, ms = 15000) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, 100)); } return v; };
+
 const root = await mkdtemp(path.join(process.env.SCRATCH ?? tmpdir(), "itineris-test-"));
 try {
   // =========================================================================
   console.log("--- fresh volume, seeded ---");
   const d1 = path.join(root, "fresh");
-  const s1 = await startServer({ port: 4322, dataDir: d1 });
+  const s1 = await startServer({ port: 4322, dataDir: d1, env: PLACES_ENV });
   try {
     ok("server up, seeded from seed/", s1.log().includes("(seeded)"), s1.log().trim().split("\n").pop());
     ok("no identity -> 401", (await fetch(`${s1.BASE}/admin/api/me`)).status === 401);
@@ -145,6 +164,30 @@ try {
     ok("bulk sets spot + link + name together", bl2.body.updated === 1 && (await s1.api("GET", "/admin/api/moments")).body.find((m) => m.id === b.id).mapsUrl === CID_URL);
     ok("bulk rejects a non-Google link", (await s1.api("PATCH", "/admin/api/moments", { ids: [b.id], mapsUrl: "https://example.com/" })).status === 400);
 
+    // --- Google Places: what Google says about a place, looked up server-side, published, refreshed ---
+    const booted = await until(async () => { const me = (await s1.api("GET", "/admin/api/me")).body; return me.places?.lookedUp >= 13 ? me : null; });
+    ok("boot looked up every named, placed seed photo whose Google details were stale", !!booted, JSON.stringify((await s1.api("GET", "/admin/api/me")).body.places));
+    ok("...asking only for the fields we publish, with the server's key", placesLog.length >= 13 && placesLog.every((l) => l.mask === FIELD_MASK && l.key === "test-places"));
+    const asked = placesLog.length;
+    await s1.api("PATCH", `/admin/api/moments/${b.id}`, { place: "Lau Pa Sat", lat: 1.2807, lng: 103.8504 });
+    const enriched = await until(async () => { const m = (await s1.api("GET", "/admin/api/moments")).body.find((x) => x.id === b.id); return m.google?.placeId ? m : null; });
+    ok("a newly named place is looked up right after it is saved", !!enriched && enriched.google.rating === 4.3 && enriched.google.ratingCount === 24154 && enriched.google.type === "Hawker centre" && enriched.google.mapsUri === "https://maps.google.com/?cid=4242", JSON.stringify(enriched?.google));
+    ok("...biased to the photo's spot", placesLog.length > asked && placesLog[placesLog.length - 1].q.locationBias.circle.center.latitude === 1.2807);
+    gf = await readJson(path.join(d1, "data", "galleries", `${gid}.json`));
+    const pubB = gf.moments.find((m) => m.id === b.id);
+    ok("...and published with the gallery: rating, count, kind, Google's link -- not the bookkeeping", JSON.stringify(Object.keys(pubB.google).sort()) === JSON.stringify(["mapsUri", "placeId", "rating", "ratingCount", "type"]), JSON.stringify(pubB.google));
+    await s1.api("PATCH", `/admin/api/moments/${b.id}`, { place: "Nowhere Cafe" });
+    const nothing = await until(async () => { const m = (await s1.api("GET", "/admin/api/moments")).body.find((x) => x.id === b.id); return m.google && m.google.placeId === null ? m : null; });
+    ok("renaming forgets the old details; 'nothing nearby' is remembered, not published", !!nothing && !(await readJson(path.join(d1, "data", "galleries", `${gid}.json`))).moments.find((m) => m.id === b.id).google);
+    const refused = await s1.api("POST", `/admin/api/moments/${b.id}/google`);
+    ok("↻ asks again and reports nothing found", refused.status === 200 && refused.body.google?.placeId === null && !refused.body.placesError, JSON.stringify(refused.body.google));
+    await s1.api("PATCH", `/admin/api/moments/${b.id}`, { place: "Refuse Me Kopitiam" });
+    const err = await until(async () => (await s1.api("GET", "/admin/api/me")).body.places.lastError);
+    ok("an API refusal (not enabled, bad key) is surfaced to the admin, not swallowed", /not been used/.test(err ?? ""), err);
+    await s1.api("PATCH", `/admin/api/moments/${b.id}`, { place: "Lau Pa Sat" });
+    await until(async () => ((await s1.api("GET", "/admin/api/moments")).body.find((x) => x.id === b.id).google?.placeId ? true : null));
+    askedBefore = placesLog.length;
+
     // --- delete: moment leaves every gallery; gallery delete keeps photos ---
     const del = await s1.api("DELETE", `/admin/api/moments/${c.id}`);
     ok("DELETE moment keeps original, removes derivatives", del.status === 200 && (await exists(path.join(d1, c.media.original))) && !(await exists(path.join(d1, c.media.src))) && !(await exists(path.join(d1, c.media.medium))));
@@ -179,6 +222,7 @@ try {
     ok("one home gallery with everything", gs.length === 1 && gs[0].home && gs[0].count === 5 && gs[0].trackCount === 3 && /^[a-z0-9]{12}$/.test(gs[0].id), JSON.stringify(gs.map((g) => [g.id, g.count])));
     ok("home.json points at it; its public file has the 5", (await readJson(path.join(d2, "data", "home.json"))).gallery === gs[0].id && (await readJson(path.join(d2, "data", "galleries", `${gs[0].id}.json`))).moments.length === 5);
   } finally { s2.server.kill(); }
+  ok("a server without a Places key never asks Google", placesLog.length === askedBefore, `${placesLog.length} asks, ${askedBefore} before`);
 
   // =========================================================================
   console.log("--- restart on an existing 0.3 volume: nothing changes, stale public files heal ---");
@@ -208,12 +252,15 @@ try {
     ok("...and the files exist", files.length === nPhotos && files.every(Boolean));
     const meta = await sharp(path.join(d1, photos(ms)[0].media.medium)).metadata();
     ok("...at most 960px on the long side", Math.max(meta.width, meta.height) <= 960 && Math.max(meta.width, meta.height) >= 600, `${meta.width}x${meta.height}`);
-    const pubs = await Promise.all((await readdir(path.join(d1, "data", "galleries"))).map((f) => readJson(path.join(d1, "data", "galleries", f))));
-    ok("...visible in the public galleries", pubs.flatMap((g) => g.moments).filter((m) => /\.webp$/.test(m.media.src)).every((m) => m.media.medium));
-    ok("server said so", s4.log().includes(`backfilled 960px copies for ${nPhotos} photos`), s4.log().trim().split("\n").pop());
+    // The library is written before the public files are re-materialised: wait for them.
+    const pubOk = await until(async () => { const pubs = await Promise.all((await readdir(path.join(d1, "data", "galleries"))).map((f) => readJson(path.join(d1, "data", "galleries", f)))); return pubs.flatMap((g) => g.moments).filter((m) => /\.webp$/.test(m.media.src)).every((m) => m.media.medium) ? true : null; });
+    ok("...visible in the public galleries", !!pubOk);
+    const said = await until(async () => (s4.log().includes(`backfilled 960px copies for ${nPhotos} photos`) ? true : null));
+    ok("server said so", !!said, s4.log().trim().split("\n").pop());
   } finally { s4.server.kill(); }
 } finally {
   await rm(root, { recursive: true, force: true });
+  fakePlaces.close();
 }
 console.log(fail ? `\n${fail} FAILED` : "\nall passed");
 process.exit(fail ? 1 : 0);

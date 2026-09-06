@@ -21,6 +21,15 @@
   let error = $state(null);
   let confirmDelete = $state(false);
   let showMap = $state(false);
+  let google = $state(moment.google ?? null);
+  let googleBusy = $state(false);
+  let googleNote = $state(null);
+  async function refreshGoogle() {
+    googleBusy = true; googleNote = null;
+    try { const r = await api.refreshGoogle(moment.id); google = r.google ?? null; if (r.placesError) googleNote = r.placesError; else if (!google?.placeId) googleNote = "Google has nothing by that name near this spot."; onSaved?.(r); }
+    catch (e) { googleNote = e.message; }
+    finally { googleBusy = false; }
+  }
 
   const t = $derived(local && offset ? joinIso({ local, seconds: local === t0.local ? t0.seconds : ":00", offset }) : moment.t);
   const offsets = $derived(OFFSETS.includes(offset) ? OFFSETS : [...OFFSETS, offset].sort());
@@ -86,6 +95,18 @@
       {#if moment.tz === "unknown"}<span class="badge warn">time zone unknown — check the time</span>{/if}
       {#if moment.lat === null}<span class="badge warn">no GPS — set a location</span>{/if}
       {#if viewerLink && !pending}<a class="small" href={viewerLink} target="_blank" rel="noopener">open in viewer ↗</a>{/if}
+      {#if !pending}
+        <div class="google small">
+          {#if google?.placeId}
+            <span class="muted">Google:</span> <b>{Number.isFinite(google.rating) ? google.rating.toFixed(1) : "–"}</b><span class="star" aria-hidden="true">★</span>{#if google.ratingCount}<span class="muted"> ({google.ratingCount.toLocaleString("en")})</span>{/if}{#if google.type}<span class="muted"> · {google.type}</span>{/if}
+            {#if google.mapsUri}<a href={google.mapsUri} target="_blank" rel="noopener">↗</a>{/if}
+          {:else}
+            <span class="muted">Google: {googleNote ?? "not looked up yet"}</span>
+          {/if}
+          <button type="button" class="btn tiny" disabled={googleBusy} onclick={refreshGoogle} title="Ask Google about this place again">{googleBusy ? "…" : "↻"}</button>
+        </div>
+        {#if googleNote && google?.placeId}<div class="muted small">{googleNote}</div>{/if}
+      {/if}
     </div>
   </div>
 
@@ -187,5 +208,8 @@
   .actions { display: flex; gap: 8px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
   .spacer { flex: 1; }
   .linked { margin: 6px 2px 0; display: flex; align-items: center; gap: 8px; }
+  .google { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .google .star { color: #f4b400; font-size: 11px; }
+  .google a { text-decoration: none; }
   .linked a { color: var(--accent, #7aa2f7); }
 </style>

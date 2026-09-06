@@ -124,6 +124,19 @@ nginx). Google's terms forbid caching its tiles, so with Google configured
 Carto whenever it is offline or Google's script fails; with no key it is
 MapLibre everywhere, as before.
 
+**Places as pins.** On Google's map there is one pin per place: the photo in an
+Instagram-style story ring — bright until every photo behind it has been seen
+on this device, a count badge when there are several — and, when Google knows
+the place, a small rating chip under it (`4.6 ★`), Claude.ai-style. Tap the
+ring and the story opens; tap the chip and the place card shows rating, review
+count and kind of place. Those details are looked up **server-side**, once per
+place (Places API (New) Text Search biased to the photo's spot, matched only
+within 300 m), stored with the photo, published with the gallery and refreshed
+monthly (Google allows 30 days of caching; place IDs forever). Visitors never
+call Google for them; 1,000 lookups a month are free. The admin shows the
+Google line per photo with a ↻ to ask again. The same Secret's `apiKey` is used
+unless a server-only `placesApiKey` is present.
+
 **Google Maps, both ways.** Nobody has to leave the maps they use. In: paste
 or share a Google Maps link (the admin is a Web Share Target — Google Maps →
 Share → itineris) and the place's name, coordinates and exact link are read

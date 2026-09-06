@@ -8,6 +8,7 @@ import { Store, token, TOKEN_RE } from "./store.js";
 import { ingestPhoto, backfillMedium, MEDIUM } from "./ingest.js";
 import { isLocalIso } from "./time.js";
 import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
+import { lookupPlace, needsLookup } from "./places.js";
 
 const env = (k, d) => process.env[k] ?? d;
 const PORT = +env("ITINERIS_PORT", 8080);
@@ -17,6 +18,10 @@ const UI_DIR = path.resolve(env("ITINERIS_ADMIN_UI_DIR", "dist-admin"));
 // Optional second gate behind tinyauth's own whitelist. Empty = trust tinyauth.
 const ALLOWED = env("ITINERIS_ADMIN_EMAILS", "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const MAX_UPLOAD = 200 * 1024 * 1024;
+// Google Places lookups (ratings on the map). A dedicated server key when the
+// browser key is referrer-restricted; else the same key. Empty = no lookups.
+const PLACES_KEY = env("ITINERIS_GOOGLE_PLACES_KEY", "") || env("ITINERIS_GOOGLE_MAPS_KEY", "");
+const placesStatus = { configured: !!PLACES_KEY, lastError: null, lastRunAt: null, lookedUp: 0 };
 
 const store = new Store(DATA_DIR);
 const app = new Hono();
@@ -49,7 +54,7 @@ const withGalleries = (moments, galleries) => {
 const galleryView = (g) => ({ ...g, count: (g.momentIds ?? []).length, trackCount: (g.trackIds ?? []).length });
 
 // ---- read ----------------------------------------------------------------
-app.get("/admin/api/me", (c) => c.json({ email: c.get("email") }));
+app.get("/admin/api/me", (c) => c.json({ email: c.get("email"), places: placesStatus }));
 app.get("/admin/api/library", async (c) => {
   const [moments, tracks, galleries] = await Promise.all([store.moments(), store.tracks(), store.galleries()]);
   return c.json({ moments: withGalleries(moments, galleries), tracks, galleries: galleries.map(galleryView) });
@@ -122,11 +127,43 @@ app.post("/admin/api/upload", bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => {
     });
   }
   const touched = [...created.map((m) => m.id), ...duplicates.map((d) => d.id)];
+  if (created.length) { const ids = new Set(created.map((m) => m.id)); enrichPlaces((m) => ids.has(m.id)); }
   if (wanted.size && touched.length) {
     await store.updateGalleries((gs) => gs.map((g) => (wanted.has(g.id) ? { ...g, momentIds: [...new Set([...(g.momentIds ?? []), ...touched])], updatedAt: new Date().toISOString() } : g)));
   }
   return c.json({ created, duplicates, errors }, errors.length && !created.length ? 422 : 200);
 });
+
+// One lookup queue: a new place is looked up right after it is saved, the
+// rest (backfill, monthly refresh) trickles behind it. Never throws.
+let placesQueue = Promise.resolve();
+function enrichPlaces(filter = () => true) {
+  if (!PLACES_KEY) return Promise.resolve(0);
+  const run = placesQueue.then(async () => {
+    const todo = (await store.moments()).filter((m) => filter(m) && needsLookup(m));
+    let n = 0;
+    for (const m of todo) {
+      let g;
+      try {
+        g = (await lookupPlace({ name: m.place, lat: m.lat, lng: m.lng }, { key: PLACES_KEY })) ?? { placeId: null, fetchedAt: new Date().toISOString() };
+        placesStatus.lastError = null;
+      } catch (e) {
+        placesStatus.lastError = e.message; console.error(`places ${m.id} (${m.place}): ${e.message}`);
+        if (e.status === 400 || e.status === 403 || e.status === 429) break;   // key/API/quota trouble: the rest would fail the same way
+        continue;
+      }
+      await store.updateMoments((ms) => ms.map((x) => (x.id === m.id ? { ...x, google: g } : x)));
+      n++; placesStatus.lookedUp++;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    placesStatus.lastRunAt = new Date().toISOString();
+    return n;
+  });
+  placesQueue = run.catch(() => {});
+  return run;
+}
+// A changed name or spot invalidates what Google said about the old one.
+const forgetGoogle = (m, upd) => ("place" in upd || "lat" in upd || "lng" in upd ? (({ google, ...rest }) => rest)(m) : m);
 
 app.patch("/admin/api/moments/:id", async (c) => {
   const id = c.req.param("id");
@@ -134,10 +171,23 @@ app.patch("/admin/api/moments/:id", async (c) => {
   const { upd, error } = momentPatch(patch, c.get("email"));
   if (error) return c.json({ error }, 400);
   let result = null;
-  await store.updateMoments((list) => list.map((m) => (m.id === id ? (result = { ...m, ...upd }) : m)));
+  await store.updateMoments((list) => list.map((m) => (m.id === id ? (result = { ...forgetGoogle(m, upd), ...upd }) : m)));
   if (!result) return c.json({ error: "not found" }, 404);
+  enrichPlaces((m) => m.id === id);
   const galleries = await store.galleries();
   return c.json(withGalleries([result], galleries)[0]);
+});
+
+// Ask Google again about this one place, now.
+app.post("/admin/api/moments/:id/google", async (c) => {
+  const id = c.req.param("id");
+  if (!PLACES_KEY) return c.json({ error: "no Google Places key configured on the server" }, 409);
+  let found = false;
+  await store.updateMoments((list) => list.map((m) => (m.id === id ? (found = true, (({ google, ...rest }) => rest)(m)) : m)));
+  if (!found) return c.json({ error: "not found" }, 404);
+  await enrichPlaces((m) => m.id === id);
+  const m = (await store.moments()).find((x) => x.id === id);
+  return c.json({ ...withGalleries([m], await store.galleries())[0], placesError: placesStatus.lastError });
 });
 
 // Bulk: tag a whole selection, set a place, in one atomic write.
@@ -166,8 +216,10 @@ app.patch("/admin/api/moments", async (c) => {
     if (!set.has(m.id)) return m;
     n++;
     const tags = [...new Set([...(m.tags ?? []).filter((t) => !remove.includes(t)), ...add])];
-    return { ...m, tags, ...(place !== undefined ? { place } : {}), ...(loc ?? {}), ...(link !== undefined ? { mapsUrl: link } : {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
+    const base = place !== undefined || loc ? (({ google, ...rest }) => rest)(m) : m;
+    return { ...base, tags, ...(place !== undefined ? { place } : {}), ...(loc ?? {}), ...(link !== undefined ? { mapsUrl: link } : {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
   }));
+  if (place !== undefined || loc) enrichPlaces((m) => set.has(m.id));
   return c.json({ updated: n });
 });
 
@@ -268,4 +320,8 @@ serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
 // Photos uploaded before the phone-sized tier existed get one now, in the background.
 backfillMedium(store, DATA_DIR)
   .then((n) => { if (n) console.log(`backfilled ${MEDIUM}px copies for ${n} photo${n === 1 ? "" : "s"}`); })
-  .catch((e) => console.error("backfill failed:", e));
+  .catch((e) => console.error("backfill failed:", e))
+  // Then what Google knows about every named place: new ones now, stale ones monthly.
+  .then(() => enrichPlaces())
+  .then((n) => { if (n) console.log(`looked up ${n} place${n === 1 ? "" : "s"} on Google`); });
+if (PLACES_KEY) setInterval(() => enrichPlaces().catch(() => {}), 6 * 3600e3).unref();

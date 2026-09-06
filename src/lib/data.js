@@ -114,6 +114,7 @@ export const mediaUrl = (rel) => (!rel || rel.startsWith("/") || /^https?:/.test
 // shared Google Maps URL gave us, else a search that lands on the spot.
 export function placeLink(m) {
   if (!m) return null;
+  if (m.google?.mapsUri) return m.google.mapsUri;   // Google's own canonical link for the place
   if (m.mapsUrl) return m.mapsUrl;
   const name = (m.place ?? "").trim();
   if (hasCoords(m)) return name ? `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${m.lat},${m.lng},17z` : `https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}`;
@@ -125,4 +126,21 @@ export function placeGroup(moments, m) {
   const name = (m.place ?? "").trim();
   const g = name ? moments.filter((x) => (x.place ?? "").trim() === name) : [m];
   return g.length ? g : [m];
+}
+
+// One pin per PLACE on the map: photos sharing a name collapse into a group
+// (first photo's spot and thumbnail, count, whatever Google said about it).
+// A photo without a name is its own place.
+export const placeKey = (m) => ((m.place ?? "").trim().toLowerCase() || `#${m.id}`);
+export function groupByPlace(moments) {
+  const groups = new Map();
+  for (const m of moments) {
+    if (!hasCoords(m)) continue;
+    const key = placeKey(m);
+    let g = groups.get(key);
+    if (!g) { g = { key, name: (m.place ?? "").trim(), lat: m.lat, lng: m.lng, first: m, moments: [], google: null }; groups.set(key, g); }
+    g.moments.push(m);
+    if (!g.google && m.google?.placeId) g.google = m.google;
+  }
+  return [...groups.values()];
 }

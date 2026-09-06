@@ -183,14 +183,29 @@ try {
   await gp.goto(`${V}/`, { waitUntil: "domcontentloaded" });
   await gp.waitForSelector('.map[data-engine="google"] .gpin', { timeout: 20000 });
   ok("Google Maps is the map, loaded with the configured key", !!gmapsRequested && gmapsRequested.includes("key=e2e-fake-key") && gmapsRequested.includes("libraries=maps,marker"), gmapsRequested ?? "(not requested)");
-  ok("one photo pin per located photo, none of MapLibre", (await count(gp, ".gpin")) === 20 && (await gp.$(".maplibregl-canvas")) === null, String(await count(gp, ".gpin")));
-  ok("pins are the photos, ringed in the tag colour", await gp.$eval(".gpin img", (i) => /\/media\//.test(i.getAttribute("src"))) && (await gp.$eval(".gpin", (el) => getComputedStyle(el).borderTopColor !== "")));
-  const gpins = await gp.$$(".gpin");
-  await gpins[2].tap(); await sleep(400);
-  ok("first tap on a pin: place card, pin grows", (await gp.$(".place-card")) !== null && (await gp.$eval(".gpin.on", () => true).catch(() => false)));
+  const pub = JSON.parse(readFileSync(path.join(nd, "docroot", "data", "galleries", "sg2026demo.json"), "utf8"));
+  const key = (m) => (m.place || "").trim().toLowerCase() || "#" + m.id;
+  const perPlace = pub.moments.filter((m) => m.lat != null).reduce((acc, m) => acc.set(key(m), (acc.get(key(m)) || 0) + 1), new Map());
+  const rated = new Set(pub.moments.filter((m) => m.lat != null && m.google?.rating).map(key));
+  ok("one story-ring pin per PLACE, none of MapLibre", (await count(gp, ".gpin")) === perPlace.size && (await gp.$(".maplibregl-canvas")) === null, `${await count(gp, ".gpin")} pins for ${perPlace.size} places`);
+  ok("a rating chip where Google knows the place, reading like 4.4★", (await count(gp, ".gpin .chip")) === rated.size && (await gp.$$eval(".gpin .chip", (cs) => cs.every((c) => /^\d\.\d★$/.test(c.textContent)))), `${await count(gp, ".gpin .chip")} chips for ${rated.size} rated places`);
+  ok("a count badge where several photos share the place", (await count(gp, ".gpin .ring .n")) === [...perPlace.values()].filter((n) => n > 1).length);
+  ok("every ring is bright: nothing seen yet", (await count(gp, ".gpin .ring.seen")) === 0 && (await count(gp, ".gpin .ring")) === perPlace.size);
+  ok("the pins are the photos", await gp.$eval(".gpin .ring img", (i) => /\/media\//.test(i.getAttribute("src"))));
+  // Instagram: tap the ring and the story opens, at once.
+  await (await gp.$('.gpin[data-place="maxwell food centre"] .ring')).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
+  ok("tap the ring: the story opens straight away", /Maxwell/.test(await text(gp, ".story header")), await text(gp, ".story header"));
+  ok("...with Google's rating beside the place name", (await text(gp, ".story header .rate")) === "4.4★", await text(gp, ".story header .rate"));
+  await gp.keyboard.press("Escape"); await sleep(400);
+  ok("that ring has gone quiet: seen on this device", await gp.$eval('.gpin[data-place="maxwell food centre"] .ring', (r) => r.classList.contains("seen")));
+  ok("the others are still bright", (await count(gp, ".gpin .ring.seen")) === 1);
+  // Claude.ai-style: tap the chip and the place card shows what Google says.
+  await (await gp.$('.gpin[data-place="lau pa sat"] .chip')).tap(); await sleep(450);
+  ok("tap the chip: the place card, with rating, count and kind of place", (await gp.$(".place-card")) !== null && (await text(gp, ".place-card .google")).replace(/\s+/g, "") === "4.3★(24,154)·Hawkercentre", await text(gp, ".place-card .google"));
+  ok("...and that pin is the dark, chosen one", await gp.$eval('.gpin[data-place="lau pa sat"]', (el) => el.classList.contains("on")));
   await settle(gp); await shot(gp, `${SHOTS}/06-google-maps.png`);
-  await (await gp.$(".gpin.on")).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
-  ok("second tap opens the story", (await gp.$(".story")) !== null);
+  await (await gp.$('.gpin[data-place="lau pa sat"] .chip')).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
+  ok("a second tap on the chip opens the story too", /Lau Pa Sat/.test(await text(gp, ".story header")));
   await gp.keyboard.press("Escape"); await sleep(300);
   await tap(gp, '[aria-label="Save for offline"]'); await gp.waitForSelector(".sheet");
   ok("offline sheet is honest: photos only, Google's map needs a connection", /Google's map needs a connection/.test(await text(gp, ".sheet")), await text(gp, ".sheet"));

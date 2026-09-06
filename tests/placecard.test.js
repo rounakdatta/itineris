@@ -24,6 +24,15 @@ describe("PlaceCard", () => {
     expect(link).toHaveAttribute("target", "_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
   });
+  it("shows what Google says about the place, Claude.ai-style, and prefers Google's own link", async () => {
+    trip.moments = trip.moments.map((m) => (m.id === "b" ? { ...m, google: { placeId: "ChIJmax", rating: 4.4, ratingCount: 12873, type: "Hawker centre", mapsUri: "https://maps.google.com/?cid=9" } } : m));
+    render(PlaceCard); trip.focus("b"); await tick();
+    const card = screen.getByRole("complementary");
+    expect(card.querySelector(".google")).toHaveTextContent("4.4★(12,873)·Hawker centre");
+    expect(screen.getByRole("link", { name: /Google Maps/ })).toHaveAttribute("href", "https://maps.google.com/?cid=9");
+    trip.focus("a"); await tick();
+    expect(screen.getByRole("complementary").querySelector(".google")).toBeNull();
+  });
   it("uses the exact link when the photo has one", async () => {
     trip.moments = trip.moments.map((m) => (m.id === "b" ? { ...m, mapsUrl: "https://maps.google.com/?cid=42" } : m));
     render(PlaceCard); trip.focus("b"); await tick();
