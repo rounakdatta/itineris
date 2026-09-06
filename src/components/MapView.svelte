@@ -1,7 +1,7 @@
 <script>
   import { onMount, untrack } from "svelte";
   import { trip } from "../lib/trip.svelte.js";
-  import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression, hasPlaceInfo } from "../lib/data.js";
+  import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression } from "../lib/data.js";
   import { setTileTemplate } from "../lib/offline.js";
 
   let container;
@@ -91,11 +91,9 @@
             { layers: ["moments-dot"] }
           );
           const id = hits?.[0]?.properties?.id;
-          // Like the strip: first tap says what this is (place card), the
-          // second opens it. A tap on bare map puts the card away.
+          // A tap on a pin opens its story; a tap on bare map clears the focus.
           if (!id) trip.focusId = null;
-          else if (trip.focusId === id || !hasPlaceInfo(trip.visibleMoments.find((x) => x.id === id))) trip.openStory(id);
-          else trip.focus(id);
+          else trip.openStory(id);
         });
         // Test hook: tiles loaded and nothing pending. Screenshots wait for it.
         map.on("idle", () => { container.dataset.idle = "1"; });

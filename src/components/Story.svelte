@@ -27,7 +27,7 @@
   let down = null;
   let holdTimer = null;
 
-  const items = $derived(trip.visibleMoments);
+  const items = $derived(trip.storyGroup);   // this place's photos: its bars, its count
   const current = $derived(trip.storyMoment);
   const landscape = $derived(!!current && current.media.w > current.media.h);
   const dateStr = $derived(current ? dateLabel(dayKey(current.t)) : "");   // "14 Mar": the date, minimally
@@ -74,7 +74,7 @@
   $effect(() => {
     const i = trip.storyIndex;
     if (i < 0) return;
-    for (const m of items.slice(i + 1, i + 3)) { const img = new Image(); img.src = storySrc(m.media); }
+    for (const m of trip.upcoming(1, 2)) { const img = new Image(); img.src = storySrc(m.media); }
   });
 
   // Hold-to-pause and the space bar pause the video too; the speaker button
@@ -160,7 +160,7 @@
     <div class="bars" aria-hidden="true">
       {#each items as m, i (m.id)}
         <div class="bar">
-          <div class="fill" style:width={i < trip.storyIndex ? "100%" : i === trip.storyIndex ? `${progress * 100}%` : "0%"}></div>
+          <div class="fill" style:width={i < trip.storyPos ? "100%" : i === trip.storyPos ? `${progress * 100}%` : "0%"}></div>
         </div>
       {/each}
     </div>
@@ -197,11 +197,15 @@
           onended={() => next()}></video>
         <!-- Drawn, not an emoji: every phone (and headless Chromium) has a different speaker glyph, or none. -->
         <button class="sound" onclick={(e) => { e.stopPropagation(); muted = !muted; }} onpointerdown={(e) => e.stopPropagation()} aria-label={muted ? "Turn sound on" : "Turn sound off"} aria-pressed={!muted}>
-          {#if muted}
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3zm13.6 3 2.7-2.7-1.4-1.4-2.7 2.7-2.7-2.7-1.4 1.4 2.7 2.7-2.7 2.7 1.4 1.4 2.7-2.7 2.7 2.7 1.4-1.4-2.7-2.7z"/></svg>
-          {:else}
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3zm11.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 14.5 12zM12 3.23v2.06a6.99 6.99 0 0 1 0 13.42v2.06A9 9 0 0 0 12 3.23z"/></svg>
-          {/if}
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M12 4.5 7 8.5H3.5v7H7l5 4z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+            {#if muted}
+              <path d="M4 3.5 20.5 20" stroke="rgba(0,0,0,0.65)" stroke-width="5" stroke-linecap="round" />
+              <path d="M4 3.5 20.5 20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            {:else}
+              <path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.5 6.2a8.2 8.2 0 0 1 0 11.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            {/if}
+          </svg>
         </button>
         {#if Number.isFinite(current.media.duration)}<span class="dur" aria-hidden="true">{fmtDuration(current.media.duration)}</span>{/if}
       {:else}
@@ -217,7 +221,7 @@
       {#if current.tags.length}
         <div class="tags">{#each current.tags as t (t)}<span class="tag">{t}</span>{/each}</div>
       {/if}
-      <div class="hint">{trip.storyIndex + 1} / {items.length}{paused ? " · paused" : ""}</div>
+      <div class="hint">{trip.storyPos + 1} / {items.length}{paused ? " · paused" : ""}</div>
     </footer>
   </div>
 {/if}
@@ -252,7 +256,7 @@
      backdrop must show through those bands exactly as it does behind a photo. */
   .sound {
     grid-row: 2; grid-column: 1; z-index: 5; justify-self: end; align-self: start; margin: 60px 14px 0 0;
-    width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, 0.45); color: #fff; cursor: pointer; pointer-events: auto;
+    width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, 0.45); color: #fff; cursor: pointer; pointer-events: auto;
     display: grid; place-items: center; padding: 0;
   }
   .dur { grid-row: 4; grid-column: 1; z-index: 5; justify-self: end; align-self: end; margin: 0 18px 22px 0; font-size: 11px; color: rgba(255, 255, 255, 0.7); font-variant-numeric: tabular-nums; }

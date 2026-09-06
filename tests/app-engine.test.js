@@ -64,13 +64,27 @@ describe("a deep link on a cold load", () => {
     expect(location.hash).toBe("#m/m2");
     expect(container.querySelector(".story")).toBeTruthy();
   });
-  it("#wall opens the wall, and stays #wall", async () => {
+  it("an old #wall link is ignored: the map is the view, and the URL is cleaned", async () => {
     history.replaceState(null, "", "#wall");
     vi.stubGlobal("fetch", site());
-    render(App);
+    const { container } = render(App);
+    expect(await until(() => trip.loaded)).toBeTruthy();
+    expect(await until(() => location.hash === "")).toBeTruthy();
+    expect(trip.view).toBe("map"); expect(container.querySelector(".wall")).toBeNull();
+    expect(container.querySelector(".chrome .toggle")).toBeNull();   // no Wall/Map toggle any more
+  });
+  it("a gallery where nothing has a location opens on the photo wall instead of an empty globe", async () => {
+    const bare = { ...gallery, id: "g2", moments: gallery.moments.map((m) => ({ ...m, lat: null, lng: null })) };
+    vi.stubGlobal("fetch", vi.fn(async (url) => {
+      if (url === "/data/home.json") return { ok: true, status: 200, headers: new Headers(), json: async () => ({ gallery: "g2" }) };
+      if (url === "/data/galleries/g2.json") return { ok: true, status: 200, headers: new Headers(), json: async () => bare };
+      return { ok: false, status: 404 };
+    }));
+    const { container } = render(App);
     expect(await until(() => trip.loaded && trip.view === "wall")).toBeTruthy();
-    await new Promise((r) => setTimeout(r, 30));
-    expect(location.hash).toBe("#wall");
+    expect(await until(() => container.querySelector(".wall .cell"))).toBeTruthy();
+    expect(container.textContent).toMatch(/No locations yet/);
+    expect(location.hash).toBe("");
   });
   it("a link to a photo that is not in this gallery just opens the gallery, with a clean URL", async () => {
     history.replaceState(null, "", "#m/nope");

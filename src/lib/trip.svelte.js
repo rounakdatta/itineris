@@ -1,4 +1,4 @@
-import { momentMatches, trackMatches } from "./data.js";
+import { momentMatches, trackMatches, placeGroups } from "./data.js";
 
 const GALLERY_PATH = /^\/g\/([a-z0-9-]{4,40})\/?$/;
 
@@ -35,6 +35,13 @@ class Trip {
   focused = $derived(this.moments.find((m) => m.id === this.focusId) ?? null);
   storyMoment = $derived(this.visibleMoments[this.storyIndex] ?? null);
   storyOpen = $derived(this.storyIndex >= 0 && this.storyIndex < this.visibleMoments.length);
+  // A story is ONE place's photos and videos, like one account's stories: its
+  // bars, its count. Stepping past its last item starts the next place's story
+  // (places in the order they were first visited); past the last place, the
+  // viewer closes. A photo with no place is a story of one.
+  storyPlaces = $derived(placeGroups(this.visibleMoments));
+  storyGroup = $derived(this.storyMoment ? (this.storyPlaces.find((g) => g.moments.some((m) => m.id === this.storyMoment.id))?.moments ?? [this.storyMoment]) : []);
+  storyPos = $derived(this.storyMoment ? this.storyGroup.findIndex((m) => m.id === this.storyMoment.id) : -1);
 
   // Which gallery to show comes from the URL: /g/<token>, or whatever
   // data/home.json nominates for "/". The full library is never fetched --
@@ -100,11 +107,29 @@ class Trip {
 
   // Returns false when there is nowhere left to go, so the viewer can close itself.
   step(delta) {
-    const next = this.storyIndex + delta;
-    if (next < 0 || next >= this.visibleMoments.length) return false;
-    this.storyIndex = next;
-    this.focusId = this.visibleMoments[next].id;
+    const target = this.upcoming(delta)[0] ?? null;
+    if (!target) return false;
+    this.storyIndex = this.visibleMoments.indexOf(target);
+    this.focusId = target.id;
     return true;
+  }
+
+  // The next `n` moments in story order (delta > 0), or the previous ones
+  // (delta < 0): the rest of this place, then the next place from its start
+  // -- or the previous place from its end.
+  upcoming(delta = 1, n = 1) {
+    if (!this.storyMoment) return [];
+    const places = this.storyPlaces;
+    const pi = places.findIndex((g) => g.moments.some((m) => m.id === this.storyMoment.id));
+    const seq = [];
+    if (delta > 0) {
+      seq.push(...this.storyGroup.slice(this.storyPos + 1));
+      for (let i = pi + 1; i < places.length && seq.length < n; i++) seq.push(...places[i].moments);
+    } else {
+      seq.push(...this.storyGroup.slice(0, this.storyPos).reverse());
+      for (let i = pi - 1; i >= 0 && seq.length < n; i--) seq.push(...[...places[i].moments].reverse());
+    }
+    return seq.slice(0, n);
   }
 
   // Filtering while the story is open would otherwise strand the index on

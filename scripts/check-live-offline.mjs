@@ -60,10 +60,9 @@ let google = false;
     await page.waitForFunction(() => [...document.querySelectorAll(".tick img")].filter((i) => i.getBoundingClientRect().left < window.innerWidth).every((i) => i.complete), { timeout: 15000 }).catch(() => {});
     ok("NO NETWORK: visible thumbnails come from cache", await visibleImgsLoaded(page));
     if (google) {
-      // Google's map cannot come back without a network; the photos must.
-      await page.click(".chrome .toggle"); await sleep(300);
-      ok("NO NETWORK: the wall shows every photo (Google's map itself needs a connection, by Google's terms)", (await page.waitForSelector(".wall .cell", { timeout: 15000 }).then(() => true).catch(() => false)) && (await count(page, ".wall .cell")) === 20, String(await count(page, ".wall .cell").catch(() => 0)));
-      await page.click(".chrome .toggle"); await sleep(300);
+      // Google's map cannot come back without a network (its tiles may not be
+      // cached); the strip and the stories must, and do -- checked below.
+      console.log("  skip  NO NETWORK: map tiles (Google's map needs a connection, by Google's terms)");
     } else {
       ok("NO NETWORK: the map renders from cached tiles", await page.waitForSelector('.map[data-idle="1"]', { timeout: 30000 }).then(() => true).catch(() => false));
     }

@@ -108,11 +108,17 @@ describe("Story", () => {
     trip.openStory("a"); render(Story);
     expect(dialog().querySelector("img.media").getAttribute("src")).toBe("/media/a-960.webp");
   });
-  it("progress bars: one per visible photo, earlier ones full", () => {
-    trip.openStory("c"); render(Story);
-    const fills = [...screen.getByRole("dialog").querySelectorAll(".fill")].map((f) => f.style.width);
-    expect(fills.length).toBe(4);
-    expect(fills[0]).toBe("100%"); expect(fills[1]).toBe("100%"); expect(fills[3]).toBe("0%");
+  it("progress bars: one per photo AT THIS PLACE (not the whole trip), earlier ones full; the count says so too", async () => {
+    // Chinatown twice, with Maxwell in between in time: the story is Chinatown's two, in order.
+    trip.moments = [...trip.moments, { ...structuredClone(moments[0]), id: "a2", t: "2026-03-14T13:00:00+08:00", caption: "Back for more" }];
+    trip.openStory("a2"); render(Story);
+    const d = screen.getByRole("dialog");
+    const fills = [...d.querySelectorAll(".fill")].map((f) => f.style.width);
+    expect(fills.length).toBe(2);
+    expect(fills[0]).toBe("100%"); expect(fills[1]).toBe("0%");
+    expect(d.querySelector(".hint")).toHaveTextContent("2 / 2");
+    trip.closeStory(); trip.openStory("c"); await tick();
+    expect([...d.querySelectorAll(".fill")]).toHaveLength(1);   // a place with one photo: one bar, no other shop's pointer
   });
 });
 
@@ -134,7 +140,7 @@ describe("Story: videos", () => {
     Object.defineProperty(v, "duration", { value: 10, configurable: true }); Object.defineProperty(v, "currentTime", { value: 5, configurable: true, writable: true });
     await fireEvent.timeUpdate(v); await tick();
     const fills = [...d.querySelectorAll(".fill")];
-    expect(fills[trip.storyIndex].style.width).toBe("50%");                    // the video's own progress, not a 5 s timer
+    expect(fills[trip.storyPos].style.width).toBe("50%");                      // the video's own progress, not a 5 s timer
     await fireEvent.click(screen.getByRole("button", { name: "Turn sound on" })); await tick();
     expect(screen.getByRole("button", { name: "Turn sound off" })).toBeInTheDocument();   // the state toggled
     expect(v.muted).toBe(false);                                                            // ...and reached the element

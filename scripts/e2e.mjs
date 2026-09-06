@@ -73,14 +73,9 @@ try {
 
   console.log("--- viewer: story by tap, swipe, back button ---");
   const ticks = await page.$$(".tick");
-  await ticks[2].tap(); await sleep(300);
-  ok("first tap focuses (no story yet)", (await page.$eval(".tick.on", (el) => el.dataset.id)) === "m003" && (await page.$(".story")) === null);
-  ok("...and shows the place card: name, photos, Story, Google Maps", (await page.$(".place-card")) !== null && /Maxwell/.test(await text(page, ".place-card h2")) && (await page.$eval(".place-card a[href*='google.com/maps']", (a) => a.target === "_blank" && /Maxwell/.test(decodeURIComponent(a.href)))), await text(page, ".place-card"));
-  ok("the card sits above the strip, not on it", await page.evaluate(() => document.querySelector(".place-card").getBoundingClientRect().bottom <= document.querySelector(".strip").getBoundingClientRect().top));
-  await settle(page); await shot(page, `${SHOTS}/01b-place-card.png`);
-  await (await page.$(".tick.on")).tap();
+  await ticks[2].tap();
   await page.waitForSelector(".story");
-  ok("second tap opens the story, URL carries it", (await hash(page)) === "#m/m003", await hash(page));
+  ok("ONE tap on a thumbnail opens the story (no card in between), URL carries it", (await hash(page)) === "#m/m003" && (await page.$(".place-card")) === null, await hash(page));
   ok("story header: the date, minimally, + place + clock", /14 Mar/.test(await text(page, ".story header")) && !/Day 1/.test(await text(page, ".story header")) && /Maxwell/.test(await text(page, ".story header")), await text(page, ".story header"));
   ok("the place in the story header is a Google Maps link", await page.$eval(".story header a.place", (a) => a.target === "_blank" && /google\.com\/maps/.test(a.href)));
   ok("story: thumbnail placeholder at once, full image fades in", (await page.$(".story img.placeholder")) !== null && (await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }).then(() => true).catch(() => false)));
@@ -108,7 +103,7 @@ try {
   await setNetwork(browser, page, { offline: false, latency: 300, downloadThroughput: 1500, uploadThroughput: 1500 }, V);
   const slowTick = (await page.$$(".tick"))[12];   // m013: a real raster photo (400/960/1600 copies)
   ok("slow: the photo under test is a real photo, not a placeholder", (await slowTick.evaluate((el) => el.dataset.id)) === "m013" && (await slowTick.$eval("img", (i) => i.getAttribute("src"))) === "/media/m013-400.webp", await slowTick.$eval("img", (i) => i.getAttribute("src")));
-  await slowTick.tap(); await sleep(250); await (await page.$(".tick.on")).tap(); await page.waitForSelector(".story");
+  await slowTick.tap(); await page.waitForSelector(".story");
   await sleep(1500);
   // "Immediately" = well inside a second, while the photo itself takes several on this link (a cached image can still report `complete` a frame late).
   ok("slow: the sharp thumbnail is on screen immediately", await waitFor(page, () => { const i = document.querySelector(".story img.placeholder"); return !!i && i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity === "1"; }, 1500));
@@ -147,16 +142,20 @@ try {
   // chat, not a same-document hash change on a page that is already running.
   await page.goto("about:blank"); await page.goto(`${V}/#m/m010`, { waitUntil: "domcontentloaded" });
   ok("a shared story link opens that story on a cold load, URL intact", await page.waitForSelector(".story", { timeout: 15000 }).then(() => true).catch(() => false) && /Spectra|Marina Bay Sands/.test(await text(page, ".story")) && (await hash(page)) === "#m/m010", `${await hash(page)} ${(await text(page, ".story header").catch(() => "")).slice(0, 60)}`);
+  ok("a story is ONE place's: Marina Bay Sands has two photos, so two bars and 2 / 2 -- no other shop's pointer", (await count(page, ".story .bars .bar")) === 2 && /2 \/ 2/.test(await text(page, ".story .hint")), `${await count(page, ".story .bars .bar")} bars, ${await text(page, ".story .hint")}`);
   await page.keyboard.press("Escape"); await sleep(300);
-  await tap(page, ".chrome .toggle"); await page.waitForSelector(".wall");
-  ok("wall view, URL #wall", (await hash(page)) === "#wall" && (await count(page, ".wall .cell")) === 20);
-  await settle(page); await shot(page, `${SHOTS}/03-wall.png`);
-  await (await page.$$(".wall .cell"))[5].tap(); await page.waitForSelector(".story");
-  await page.goBack(); await sleep(400);
-  ok("back from a wall story returns to the wall", (await page.$(".story")) === null && (await hash(page)) === "#wall" && (await page.$(".wall")) !== null);
-  await page.goto("about:blank"); await page.goto(`${V}/#wall`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".wall .cell", { timeout: 15000 });
-  ok("a shared wall link opens the wall on a cold load, URL intact", (await hash(page)) === "#wall" && (await count(page, ".wall .cell")) === 20, await hash(page));
-  await tap(page, ".chrome .toggle"); await sleep(300);
+  // Gardens by the Bay (m008 10:20, m009 13:00) is interleaved in time with Marina Bay Sands (m007 07:05, m010 19:50):
+  // its story is its own two photos, then the NEXT place begins -- not m010.
+  await page.goto(`${V}/#m/m008`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story");
+  ok("...Gardens by the Bay: 1 / 2 of its own two", (await count(page, ".story .bars .bar")) === 2 && /1 \/ 2/.test(await text(page, ".story .hint")), await text(page, ".story .hint"));
+  await swipe(page, [300, 450], [70, 455]); await sleep(400);
+  ok("...swipe: its second photo", (await hash(page)) === "#m/m009", await hash(page));
+  await swipe(page, [300, 450], [70, 455]); await sleep(400);
+  ok("...swipe past its end: the next place's story starts (East Coast Park), bars reset", (await hash(page)) === "#m/m011" && (await count(page, ".story .bars .bar")) === 3 && /1 \/ 3/.test(await text(page, ".story .hint")), `${await hash(page)} ${await text(page, ".story .hint")}`);
+  await page.keyboard.press("Escape"); await sleep(300);
+  ok("no Wall/Map toggle: the map is the view", (await page.$(".chrome .toggle")) === null && (await page.$(".wall")) === null);
+  await page.goto("about:blank"); await page.goto(`${V}/#wall`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick", { timeout: 15000 }); await sleep(300);
+  ok("an old #wall link is ignored and cleaned up", (await hash(page)) === "" && (await page.$(".wall")) === null, await hash(page));
   await clickText(page, ".chrome nav .chip", "Activities"); await sleep(400);
   ok("facet narrows the strip to runs and rides", (await count(page, ".tick")) === 4, String(await count(page, ".tick")));
   await settle(page, { map: true }); await shot(page, `${SHOTS}/04-facet-activities.png`);
@@ -206,9 +205,10 @@ try {
   await gp.keyboard.press("Escape"); await sleep(400);
   ok("that ring has gone quiet: seen on this device", await gp.$eval(`${pinOf("Maxwell Food Centre")} .ring`, (r) => r.classList.contains("seen")));
   ok("the others are still bright", (await count(gp, ".gpin .ring.seen")) === 1);
-  // Claude.ai-style: tap the chip and the place card shows what Google says.
-  await (await gp.$(`${pinOf("Lau Pa Sat")} .chip`)).tap(); await sleep(450);
-  ok("tap the chip: the place card, with rating, count and kind of place", (await gp.$(".place-card")) !== null && (await text(gp, ".place-card .google")).replace(/\s+/g, "") === "4.3★(24,154)·Hawkercentre", await text(gp, ".place-card .google"));
+  // The chip (name + rating) opens the story too: what Google says is on the pin and in the story header, no card.
+  await (await gp.$(`${pinOf("Lau Pa Sat")} .chip`)).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
+  ok("tap the chip: the story opens, no place card", /Lau Pa Sat/.test(await text(gp, ".story header")) && (await text(gp, ".story header .rate")) === "4.3★" && (await gp.$(".place-card")) === null, await text(gp, ".story header"));
+  await gp.keyboard.press("Escape"); await sleep(400);
   ok("...and that pin is the dark, chosen one", await gp.$eval(pinOf("Lau Pa Sat"), (el) => el.classList.contains("on")));
   await settle(gp); await shot(gp, `${SHOTS}/06-google-maps.png`);
   await (await gp.$(`${pinOf("Lau Pa Sat")} .chip`)).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
@@ -217,8 +217,6 @@ try {
   await tap(gp, '[aria-label="Save for offline"]'); await gp.waitForSelector(".sheet");
   ok("offline sheet is honest: photos only, Google's map needs a connection", /Google's map needs a connection/.test(await text(gp, ".sheet")), await text(gp, ".sheet"));
   await clickText(gp, ".sheet button", "Close");
-  await clickText(gp, ".toggle", "Wall"); await sleep(300);
-  ok("wall still overlays the map", (await count(gp, ".cell")) > 0);
   await gctx.close();
   rmSync(path.join(nd, "docroot", "config.json"));
   // And with no key the same page draws MapLibre, as every other section here relies on.
@@ -378,9 +376,8 @@ try {
   ok("gallery of one unplaced photo created", await waitFor(page, () => [...document.querySelectorAll(".filter option")].some((o) => /Nowhere in particular \(1\)/.test(o.textContent))));
   const nowhere = (await (await fetch(`${A}/admin/api/galleries`, { headers: { "remote-email": WHO } })).json()).find((g) => g.title === "Nowhere in particular");
   await page.goto(`${V}/g/${nowhere.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".wall .cell", { timeout: 20000 });
-  ok("a gallery with no locations opens on the wall", (await hash(page)) === "#wall");
-  await tap(page, ".chrome .toggle"); await sleep(400);
-  ok("...and its map says why it is empty (no city pretends to be the place)", /No locations yet/.test(await text(page, ".chrome .top")), await text(page, ".chrome .top"));
+  ok("a gallery with no locations opens on the wall (the one case the map is not the view), clean URL", (await page.$(".wall .cell")) !== null && (await hash(page)) === "" && (await page.$(".chrome .toggle")) === null, await hash(page));
+  ok("...and says why there is no map (no city pretends to be the place)", /No locations yet/.test(await text(page, ".chrome .top")), await text(page, ".chrome .top"));
   await settle(page); await shot(page, `${SHOTS}/23-viewer-no-locations.png`);
   await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
   await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
@@ -446,7 +443,7 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll(".tick img")].every((i) => i.complete), { timeout: 10000 });
   ok("OFFLINE: thumbnails come from the cache", await page.$$eval(".tick img", (imgs) => imgs.every((i) => i.naturalWidth > 0)));
   ok("OFFLINE: the map has its tiles", await waitFor(page, () => document.querySelector('.map[data-idle="1"]') !== null, 30000));
-  await (await page.$(".tick")).tap(); await sleep(300); await (await page.$(".tick.on")).tap(); await page.waitForSelector(".story");
+  await (await page.$(".tick")).tap(); await page.waitForSelector(".story");
   ok("OFFLINE: the story opens with its photo", await page.$eval(".story img.media", (i) => i.complete && i.naturalWidth > 0));
   await settle(page); await shot(page, `${SHOTS}/22-viewer-offline.png`);
   await page.keyboard.press("Escape");

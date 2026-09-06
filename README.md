@@ -1,7 +1,9 @@
 # itineris
 
-A travel journal you can look at from several angles at once: a map, a timeline,
-a photo wall, and a full-screen story viewer — all rendering the *same* selection.
+A travel journal you can look at from several angles at once: a map, a timeline
+strip, and a full-screen story viewer — all rendering the *same* selection. (A
+photo wall stands in for the map only when nothing in a gallery has a location;
+there is no toggle — the data decides.)
 
 ## The idea
 
@@ -70,6 +72,13 @@ derived by slicing the string, never by parsing into a `Date`. The host
 timezone never enters the picture.
 
 ## Story viewer controls
+
+A story is **one place's** photos and videos, like one account's stories on
+Instagram: the bars at the top and the `2 / 3` count are that place's alone,
+never the whole trip's. Past its last item the next place's story begins
+(places in the order they were first visited, however their photos interleave
+in time); past the last place the viewer closes. A photo with no place is a
+story of one.
 
 | | |
 |---|---|
@@ -147,9 +156,8 @@ paste a link, or tap the map — for the next uploads, a selection, or one photo
 in the editor. Pinned photos carry the Place ID, share one pin whatever they
 were called, and inherit the place's details from their siblings without
 another lookup. No day chips: the date shows, minimally, where a photo is open. Tap the
-ring and the story opens; tap the chip and the place card shows rating, review
-count and kind of place. A photo with no place at all (no name, nothing from
-Google, no link) gets no card — one tap on its pin or thumbnail opens it. Those details are looked up **server-side**, once per
+ring or the chip and the story opens at once — there is no place card: what
+Google says is on the pin, and again in the story header while you watch. Those details are looked up **server-side**, once per
 place (Places API (New) Text Search biased to the photo's spot, matched only
 within 300 m), stored with the photo, published with the gallery and refreshed
 monthly (Google allows 30 days of caching; place IDs forever). Visitors never
@@ -164,9 +172,8 @@ from the URL (`server/links.js`; short `maps.app.goo.gl` links are followed by
 the server, and only Google Maps hosts are ever fetched). Photos added while a
 shared place is active land there; a selection can be moved there. Out: every
 placed photo carries a **Google Maps ↗** link — the exact place when it came
-from a link, else a search that lands on the spot — in the story header and in
-the place card that one tap on a placed pin or thumbnail opens (the place's
-photos, when, what kind, ▶ Story). No Google API key, no quota, nothing to pay: these
+from a link, else a search that lands on the spot — on the place name in the
+story header. No Google API key, no quota, nothing to pay: these
 are plain Google Maps URLs.
 
 **Admin.** The same worker under `/admin/`: it opens offline with the last
@@ -191,8 +198,9 @@ gallery under `data/galleries/<token>.json` using a **whitelist** projection
 path can't leak without someone adding them there on purpose. Media is served by
 content hash, so a photo not linked from any gallery you hold is not discoverable.
 
-Deep links: `#m/<id>` opens a story, `#wall` the wall. Opening a story pushes
-one history entry, so the phone's back button closes it instead of leaving.
+Deep links: `#m/<id>` opens a story (an old `#wall` link is ignored and cleaned
+up). Opening a story pushes one history entry, so the phone's back button
+closes it instead of leaving.
 
 ## Admin (uploads and tagging)
 

@@ -9,7 +9,6 @@
   import Timeline from "./components/Timeline.svelte";
   import Story from "./components/Story.svelte";
   import OfflineSheet from "./components/OfflineSheet.svelte";
-  import PlaceCard from "./components/PlaceCard.svelte";
   import GoogleMapView from "./components/GoogleMapView.svelte";
   import { loadConfig, chooseMapEngine } from "./lib/config.js";
 
@@ -27,8 +26,9 @@
     loadConfig().then((c) => { config = c; engine = chooseMapEngine(c, navigator.onLine !== false); trip.mapEngine = engine; });
     trip.load().then(() => {
       if (!trip.loaded) return;
-      // No photo or route has a location: the map would be an empty globe, so
-      // open on the wall. The hash can still override.
+      // The map is the view. Only when no photo or route has a location -- the
+      // map would be an empty globe -- does the photo wall stand in for it.
+      // (There is no toggle: the data decides.)
       if (!hasAnyCoords(trip.moments, trip.tracks)) trip.view = "wall";
       applyHash(trip, location.hash);
       routed = true;
@@ -72,19 +72,12 @@
       <div class="top">
         <h1 class="brand"><span class="word">itineris</span>{#if trip.title}<span class="sep" aria-hidden="true">·</span><span class="title">{trip.title}</span>{/if}</h1>
         {#if !online || trip.fromCache}<span class="pill" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
-        {#if trip.view === "map" && !hasAnyCoords(trip.moments, trip.tracks)}<span class="pill muted" role="status">No locations yet</span>{/if}
+        {#if !hasAnyCoords(trip.moments, trip.tracks)}<span class="pill muted" role="status">No locations yet</span>{/if}
         <OfflineSheet />
-        <button
-          class="toggle"
-          onclick={() => (trip.view = trip.view === "map" ? "wall" : "map")}
-          aria-pressed={trip.view === "wall"}
-          aria-label={trip.view === "map" ? "Show photo wall" : "Show map"}
-        >{trip.view === "map" ? "Wall" : "Map"}</button>
       </div>
       <FacetBar />
     </div>
     <Timeline />
-    <PlaceCard />
   {/if}
 
   {#if trip.status === "loading"}
@@ -133,7 +126,6 @@
     flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
     background: var(--panel); backdrop-filter: blur(12px); color: var(--text); cursor: pointer;
   }
-  .toggle[aria-pressed="true"] { background: rgba(255, 255, 255, 0.16); color: #fff; }
   .pill { flex: 0 0 auto; font-size: 11px; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }
   .pill.muted { background: rgba(255, 255, 255, 0.08); color: var(--muted); }
 

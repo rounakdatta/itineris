@@ -18,6 +18,27 @@ describe("one selection, every renderer", () => {
   });
 });
 
+describe("a story is one place's photos", () => {
+  // Chinatown at 08:40 and again at 13:00, with Maxwell (12:10) in between:
+  // Chinatown's story is its two photos back to back, then Maxwell's begins.
+  beforeEach(() => { trip.moments = [...structuredClone(moments), { ...structuredClone(moments[0]), id: "a2", t: "2026-03-14T13:00:00+08:00", caption: "Back for more" }]; });
+  it("groups the story by place, in the order places were first visited", () => {
+    trip.openStory("a");
+    expect(trip.storyGroup.map((m) => m.id)).toEqual(["a", "a2"]); expect(trip.storyPos).toBe(0);
+    expect(trip.step(1)).toBe(true); expect(trip.storyMoment.id).toBe("a2"); expect(trip.storyPos).toBe(1);   // same place, skipping Maxwell in time
+    expect(trip.step(1)).toBe(true); expect(trip.storyMoment.id).toBe("b");    // next place starts
+    expect(trip.storyGroup.map((m) => m.id)).toEqual(["b"]);
+    expect(trip.step(-1)).toBe(true); expect(trip.storyMoment.id).toBe("a2");  // back lands on the previous place's LAST photo
+    expect(trip.upcoming(1, 3).map((m) => m.id)).toEqual(["b", "c", "d"]);
+  });
+  it("a photo with no place is a story of one; the last place's end closes", () => {
+    trip.openStory("d");
+    expect(trip.storyGroup.map((m) => m.id)).toEqual(["d"]);
+    expect(trip.step(1)).toBe(false);
+    expect(trip.step(-1)).toBe(true); expect(trip.storyMoment.id).toBe("c");
+  });
+});
+
 describe("story navigation", () => {
   it("opens on a visible moment and steps within bounds", () => {
     trip.openStory("b");
