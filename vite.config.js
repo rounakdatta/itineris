@@ -4,10 +4,13 @@ import { readFileSync } from "node:fs";
 
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
+// index.html says which build it is, so a deploy can be checked with one curl.
+export const stampVersion = (v) => ({ name: "itineris-stamp-version", transformIndexHtml: (html) => html.replaceAll("%APP_VERSION%", v) });
+
 // Absolute base: gallery URLs live at /g/<token>, so assets and data must not
 // resolve relative to that path.
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte(), stampVersion(version)],
   base: "/",
   define: { __APP_VERSION__: JSON.stringify(version) },
   build: {

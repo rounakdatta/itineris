@@ -150,6 +150,7 @@
 
 <header>
   <div class="brand">
+    <img class="mark" src="/admin/mark-96.png" alt="" width="20" height="20" decoding="async" />
     <strong>itineris</strong> <span class="muted">admin</span>
     {#if me}<span class="muted who">· {me.email}</span>{/if}
     {#if !online || fromCache}<span class="pill offline" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
@@ -237,6 +238,9 @@
     background: rgba(11, 13, 16, 0.92); backdrop-filter: blur(12px);
   }
   header a { text-decoration: none; }
+  .brand { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+  /* The mark is drawn on white, so it wears a small white chip on the dark bar. */
+  .brand .mark { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 5px; background: #fff; }
   .who { font-size: 13px; }
   .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: var(--muted); }
   .pill.offline { background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }

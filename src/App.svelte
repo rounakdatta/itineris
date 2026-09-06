@@ -72,7 +72,7 @@
   {#if trip.loaded}
     <div class="chrome" class:hidden={trip.storyOpen} class:wall={trip.view === "wall"}>
       <div class="top">
-        <h1 class="brand"><span class="word">itineris</span>{#if trip.title}<span class="sep" aria-hidden="true">·</span><span class="title">{trip.title}</span>{/if}</h1>
+        <h1 class="brand"><img class="mark" src="/mark-96.png" alt="" width="22" height="22" decoding="async" /><span class="word">itineris</span>{#if trip.title}<span class="sep" aria-hidden="true">·</span><span class="title">{trip.title}</span>{/if}</h1>
         {#if !online || trip.fromCache}<span class="pill" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
         {#if !hasAnyCoords(trip.moments, trip.tracks)}<span class="pill muted" role="status">No locations yet</span>{/if}
         {#if here.status === "denied"}<span class="pill muted" role="status">Location is blocked for this site</span>
@@ -138,7 +138,9 @@
   /* The worker's "Updated · Reload" pill: above the timeline dock, not on it. */
   :global(#itineris-update) { bottom: 112px !important; }
   .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 12px 2px 14px; }
-  .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .brand { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  /* The mark is drawn on white, so it wears a small white chip on the dark bar. */
+  .brand .mark { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 6px; background: #fff; }
   .word { color: #fff; }
   .sep { color: var(--muted); font-weight: 400; }
   .title { color: var(--muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
