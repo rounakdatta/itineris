@@ -32,6 +32,13 @@ describe("Story", () => {
     const style = cap.getAttribute("style").replace(/\s/g, "");
     expect(style).toContain("--cap-x:25.00%"); expect(style).toContain("--cap-y:30.00%"); expect(style).toContain("BebasNeue"); expect(style).toContain("--cap-bg:#ffb020"); expect(style).toContain("--cap-ink:#111"); expect(style).toContain("--cap-align:left");
     expect(cap.classList.contains("animate")).toBe(true); expect(cap.getAttribute("role")).toBeNull();   // visitors cannot drag it
+    expect(cap.querySelector(".turn")).toBeNull();                                                        // ...or tilt it
+  });
+  it("a tilted caption carries its angle into the story", async () => {
+    trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, captionStyle: { rot: -8.5, font: "editorial" } } : m));
+    trip.openStory("a"); render(Story);
+    const style = dialog().querySelector(".cap-host .cap").getAttribute("style").replace(/\s/g, "");
+    expect(style).toContain("--cap-rot:-8.5deg"); expect(style).toContain("PlayfairDisplay");
   });
   it("the place in the header opens Google Maps in a new tab, without acting as a tap on the story", async () => {
     trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, mapsUrl: "https://maps.google.com/?cid=7" } : m));

@@ -19,8 +19,8 @@
   <div class="frame" data-testid="caption-frame">
     {#if landscape}<img class="blur" src={img} alt="" />{/if}
     <img class="photo" class:contain={landscape} src={img} alt="" />
-    <Caption text={caption} style={st} editable onMove={(x, y) => set({ x, y })} />
-    <div class="hint" aria-hidden="true">drag the caption where you want it</div>
+    <Caption text={caption} style={st} editable onMove={(x, y) => set({ x, y })} onRotate={(rot) => set({ rot })} />
+    <div class="hint" aria-hidden="true">drag to place · grab the handle to tilt</div>
   </div>
   <div class="controls">
     <div class="row" role="group" aria-label="Font">
@@ -32,6 +32,13 @@
       {#each Object.keys(SIZES) as k (k)}<button type="button" class="opt" class:on={st.size === k} aria-pressed={st.size === k} onclick={() => set({ size: k })}>{SIZE_LABEL[k]}</button>{/each}
       <span class="sep" aria-hidden="true"></span>
       {#each ALIGNS as a (a)}<button type="button" class="opt" class:on={st.align === a} aria-pressed={st.align === a} onclick={() => set({ align: a })}>{ALIGN_LABEL[a]}</button>{/each}
+    </div>
+    <div class="row tilt">
+      <span class="lbl" id="tilt-lbl">Tilt</span>
+      <input type="range" min="-180" max="180" step="1" value={st.rot} aria-labelledby="tilt-lbl"
+        oninput={(e) => set({ rot: +e.currentTarget.value })} />
+      <span class="deg">{st.rot}°</span>
+      {#if st.rot !== 0}<button type="button" class="opt ghost" onclick={() => set({ rot: 0 })}>Straighten</button>{/if}
     </div>
     <div class="row" role="group" aria-label="Background">
       <button type="button" class="opt" class:on={st.bg === "none"} aria-pressed={st.bg === "none"} onclick={() => set({ bg: "none" })}>No box</button>
@@ -64,5 +71,9 @@
   .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset; }
   .dot.on { border-color: #fff; box-shadow: 0 0 0 2px #111; }
   .sep { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
+  .tilt { gap: 10px; }
+  .tilt .lbl { margin: 0; font-size: 12px; color: var(--muted); }
+  .tilt input[type="range"] { flex: 1 1 120px; min-width: 100px; accent-color: #7aa2f7; margin: 0; }
+  .tilt .deg { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
   .spacer { flex: 1; }
 </style>
