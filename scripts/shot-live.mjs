@@ -2,7 +2,7 @@
 // rendering. Usage: SCRATCH=/tmp/x node scripts/shot-live.mjs [base-url] [path...]
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { launch, resolveBrowserEnv, shot, sleep } from "./browser.mjs";
+import { launch, resolveBrowserEnv, shot, sleep, count } from "./browser.mjs";
 
 const SCRATCH = process.env.SCRATCH ?? "/tmp/itineris-shots";
 const [base = "https://itineris.taptappers.club", ...paths] = process.argv.slice(2);
@@ -30,6 +30,14 @@ try {
   await page.goto(base + "/", { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".tick", { timeout: 20000 });
   await page.waitForSelector('.map[data-idle="1"]', { timeout: 30000 }).catch(() => {});
+  // Which map is drawing, and -- when it is Google -- that Google actually rendered.
+  const engine = await page.$eval(".map", (el) => el.dataset.engine ?? "maplibre").catch(() => "none");
+  console.log(`  map engine: ${engine}`);
+  if (engine === "google") {
+    ok("Google Maps rendered its tiles on the live site", await page.waitForSelector(".gm-style", { timeout: 20000 }).then(() => true).catch(() => false));
+    ok("...with our photo pins on it", (await count(page, ".gpin")) > 0, String(await count(page, ".gpin")));
+    ok("...and no Google error dialog", await page.evaluate(() => !/can't load Google Maps correctly/.test(document.body.innerText)));
+  }
   const ticks = await page.$$(".tick");
   if (ticks.length) {
     await ticks[Math.min(2, ticks.length - 1)].tap(); await sleep(600);
