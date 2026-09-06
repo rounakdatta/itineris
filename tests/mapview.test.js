@@ -49,5 +49,10 @@ describe("tapping pins", () => {
     map.queryRenderedFeatures = () => [];
     click({ point: { x: 200, y: 200 } });
     expect(trip.focusId).toBeNull();
+    // a pin with no place (no name, nothing from Google): one tap opens the story
+    trip.moments = [...trip.moments, { id: "e", t: "2026-03-15T20:00:00+08:00", lat: 1.3, lng: 103.9, place: "", caption: "", tags: [], media: { type: "photo", src: "media/e.webp", w: 1080, h: 1920 } }];
+    map.queryRenderedFeatures = () => [{ properties: { id: "e" } }];
+    click({ point: { x: 10, y: 10 } });
+    expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("e");
   });
 });

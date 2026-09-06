@@ -148,7 +148,8 @@ in the editor. Pinned photos carry the Place ID, share one pin whatever they
 were called, and inherit the place's details from their siblings without
 another lookup. No day chips: the date shows, minimally, where a photo is open. Tap the
 ring and the story opens; tap the chip and the place card shows rating, review
-count and kind of place. Those details are looked up **server-side**, once per
+count and kind of place. A photo with no place at all (no name, nothing from
+Google, no link) gets no card — one tap on its pin or thumbnail opens it. Those details are looked up **server-side**, once per
 place (Places API (New) Text Search biased to the photo's spot, matched only
 within 300 m), stored with the photo, published with the gallery and refreshed
 monthly (Google allows 30 days of caching; place IDs forever). Visitors never
@@ -164,8 +165,8 @@ the server, and only Google Maps hosts are ever fetched). Photos added while a
 shared place is active land there; a selection can be moved there. Out: every
 placed photo carries a **Google Maps ↗** link — the exact place when it came
 from a link, else a search that lands on the spot — in the story header and in
-the place card that one tap on a pin or thumbnail opens (the place's photos,
-when, what kind, ▶ Story). No Google API key, no quota, nothing to pay: these
+the place card that one tap on a placed pin or thumbnail opens (the place's
+photos, when, what kind, ▶ Story). No Google API key, no quota, nothing to pay: these
 are plain Google Maps URLs.
 
 **Admin.** The same worker under `/admin/`: it opens offline with the last

@@ -67,6 +67,15 @@ describe("GoogleMapView", () => {
     map.fire("click", {}); await tick();
     expect(trip.focusId).toBeNull(); expect(maxwell.content.classList.contains("on")).toBe(false);
   });
+  it("a pin with no place has no chip, and a tap on it opens the story, no card first", async () => {
+    trip.moments = [{ id: "e", t: "2026-03-15T20:00:00+08:00", lat: 1.3, lng: 103.9, place: "", caption: "", tags: [], media: { type: "photo", src: "media/e.webp", w: 1080, h: 1920, thumb: "media/e-t.webp" } }];
+    render(GoogleMapView, { props: { config } }); await flush(); await tick(); await flush();
+    expect(FakeMarker.all).toHaveLength(1);
+    const pin = FakeMarker.all[0];
+    expect(pin.content.querySelector(".chip")).toBeNull();
+    pin.click(); await tick();
+    expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("e");
+  });
   it("the ring goes quiet once every photo behind it has been seen", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
     const ring = byTitle("Chinatown").content.querySelector(".ring");
