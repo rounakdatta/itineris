@@ -109,3 +109,20 @@ export const tagColorExpression = () => [
 // the viewer is served at / and at /g/<token>, so they must resolve from the root
 // or a gallery URL turns every thumbnail into /g/media/... -> the SPA shell.
 export const mediaUrl = (rel) => (!rel || rel.startsWith("/") || /^https?:/.test(rel) ? rel : `/${rel}`);
+
+// Where to send someone who wants this place in Google Maps: the exact link a
+// shared Google Maps URL gave us, else a search that lands on the spot.
+export function placeLink(m) {
+  if (!m) return null;
+  if (m.mapsUrl) return m.mapsUrl;
+  const name = (m.place ?? "").trim();
+  if (hasCoords(m)) return name ? `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${m.lat},${m.lng},17z` : `https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}`;
+  return name ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}` : null;
+}
+// Every photo from the same named place, in time order; a nameless photo stands alone.
+export function placeGroup(moments, m) {
+  if (!m) return [];
+  const name = (m.place ?? "").trim();
+  const g = name ? moments.filter((x) => (x.place ?? "").trim() === name) : [m];
+  return g.length ? g : [m];
+}

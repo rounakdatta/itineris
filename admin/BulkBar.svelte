@@ -11,6 +11,7 @@
   let lat = $state("");
   let lng = $state("");
   let place = $state("");
+  let mapsUrl = $state(null);
 
   const ids = $derived([...selection]);
 
@@ -32,7 +33,7 @@
   });
   const removeFromGallery = () => run(() => api.patchGallery(pick, { remove: ids }));
   const addTag = () => run(() => api.bulk(ids, { addTags: [tag] }));
-  const setLocation = () => run(() => api.bulk(ids, { lat: +lat, lng: +lng, ...(place.trim() ? { place: place.trim() } : {}) }));
+  const setLocation = () => run(() => api.bulk(ids, { lat: +lat, lng: +lng, ...(place.trim() ? { place: place.trim() } : {}), ...(mapsUrl ? { mapsUrl } : {}) }));
   const remove = () => run(async () => { for (const id of ids) await api.remove(id); selection.clear(); });
 </script>
 
@@ -43,7 +44,7 @@
     {#if !mode}
       <button class="btn small" onclick={() => { mode = "gallery"; pick = galleries[0]?.id ?? "__new__"; }}>Gallery</button>
       <button class="btn small" onclick={() => { mode = "tag"; tag = ""; }}>Tag</button>
-      <button class="btn small" onclick={() => { mode = "location"; lat = ""; lng = ""; place = ""; }}>Location</button>
+      <button class="btn small" onclick={() => { mode = "location"; lat = ""; lng = ""; place = ""; mapsUrl = null; }}>Location</button>
       <button class="btn small danger" onclick={() => (mode = "delete")}>Delete</button>
       <button class="btn small" onclick={onExit} aria-label="Done selecting">Done</button>
     {:else if mode === "gallery"}
@@ -60,9 +61,9 @@
       <button class="btn small primary" disabled={busy || !tag.trim()} onclick={addTag}>Add tag</button>
       <button class="btn small" onclick={() => (mode = null)}>Back</button>
     {:else if mode === "location"}
-      <span class="muted small">Phones strip GPS from photos picked in the browser. Search a place, use your location, tap the map or type coordinates; all {ids.length} get this spot.</span>
+      <span class="muted small">Phones strip GPS from photos picked in the browser. Paste a Google Maps link, search a place, use your location, tap the map or type coordinates; all {ids.length} get this spot.</span>
       <div class="loc">
-        <MapPicker lat={lat === "" ? null : +lat} lng={lng === "" ? null : +lng} onChange={(a, b) => { lat = a; lng = b; }} onPlace={(name) => { if (!place.trim()) place = name; }} />
+        <MapPicker lat={lat === "" ? null : +lat} lng={lng === "" ? null : +lng} onChange={(a, b) => { lat = a; lng = b; }} onPlace={(name) => (place = name)} onLink={(u) => (mapsUrl = u)} />
         <input inputmode="decimal" bind:value={lat} placeholder="latitude" aria-label="Latitude" />
         <input inputmode="decimal" bind:value={lng} placeholder="longitude" aria-label="Longitude" />
         <input class="place" bind:value={place} placeholder="place name for all of them (optional)" aria-label="Place name" />

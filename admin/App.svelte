@@ -10,6 +10,7 @@
   import MomentEditor from "./MomentEditor.svelte";
   import GalleryList from "./GalleryList.svelte";
   import BulkBar from "./BulkBar.svelte";
+  import { extractMapsUrl } from "../server/links.js";
 
   let me = $state(null);
   let moments = $state([]);
@@ -40,7 +41,7 @@
   const pendingMoment = $derived(pendingItem && {
     id: pendingItem.id, pending: true, filename: pendingItem.name,
     t: pendingItem.meta.t ?? exifToIso(pendingItem.exif, pendingItem.createdAt), tz: pendingItem.meta.timeEdited ? "manual" : pendingItem.exif?.offset ? "exif" : "unknown",
-    lat: pendingItem.meta.lat ?? null, lng: pendingItem.meta.lng ?? null,
+    lat: pendingItem.meta.lat ?? null, lng: pendingItem.meta.lng ?? null, mapsUrl: pendingItem.meta.mapsUrl ?? null,
     place: pendingItem.meta.place ?? "", caption: pendingItem.meta.caption ?? "", tags: pendingItem.meta.tags ?? [], galleries: pendingItem.meta.galleries ?? [],
     media: { src: pendingUrl ?? "", w: 0, h: 0 },
   });
@@ -65,6 +66,33 @@
     return { prev: sorted.slice(0, i).reverse().find(placed) ?? null, next: sorted.slice(i + 1).find(placed) ?? null };
   });
 
+  // A place shared into the app (Google Maps -> Share -> itineris, or a pasted
+  // link): photos added now are placed there; a selection can be moved there.
+  let shared = $state(null);   // null | { status: "resolving"|"ready"|"error", url, name?, lat?, lng?, mapsUrl?, error? }
+  async function takeShared(url) {
+    shared = { status: "resolving", url };
+    try {
+      const r = await api.resolveLink(url);
+      if (!Number.isFinite(r.lat)) throw new Error(r.name ? `“${r.name}” came without coordinates — search its name in the editor instead` : "That link has no place in it");
+      shared = { status: "ready", url, name: r.name ?? "", lat: r.lat, lng: r.lng, mapsUrl: r.mapsUrl ?? url };
+    } catch (e) { shared = { status: "error", url, error: e.message }; }
+  }
+  async function placeSelectionAtShared() {
+    if (shared?.status !== "ready" || !selection.size) return;
+    try {
+      await api.bulk([...selection], { lat: shared.lat, lng: shared.lng, ...(shared.name ? { place: shared.name } : {}), mapsUrl: shared.mapsUrl });
+      await refresh(); exitSelect();
+    } catch (e) { error = e.message; }
+  }
+  function takeSharedFromUrl(search = location.search) {
+    const p = new URLSearchParams(search);
+    const link = extractMapsUrl([p.get("url"), p.get("text"), p.get("title")].filter(Boolean).join(" "));
+    if (!link) return false;
+    history.replaceState(null, "", location.pathname + location.hash);
+    takeShared(link);
+    return true;
+  }
+
   let fromCache = $state(false);
   async function refresh() {
     try {
@@ -76,6 +104,7 @@
   }
   onMount(() => {
     (async () => { try { me = await api.me(); await refresh(); } catch (e) { error = e.message; } })();
+    takeSharedFromUrl();
     const unsub = outbox.subscribe((snap) => { queue = snap; });
     outbox.onUploaded = () => refresh();
     outbox.start();
@@ -120,7 +149,21 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   {#if tab === "photos"}
-    <Outbox {outbox} {queue} gallery={currentGallery} onEdit={(id) => (pendingEditId = id)} />
+    {#if shared}
+      <section class="shared" class:err={shared.status === "error"} role="status" aria-live="polite">
+        <svg class="pin" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+        {#if shared.status === "resolving"}
+          <span class="what">Reading the Google Maps link…</span>
+        {:else if shared.status === "error"}
+          <span class="what">{shared.error}</span>
+        {:else}
+          <span class="what"><strong>{shared.name || "Place from Google Maps"}</strong> <a class="small" href={shared.mapsUrl} target="_blank" rel="noopener">open ↗</a><br /><span class="muted small">{shared.lat}, {shared.lng} · photos you add now land here.</span></span>
+          {#if selectMode && selection.size}<button class="btn small primary" onclick={placeSelectionAtShared}>Place {selection.size} selected here</button>{/if}
+        {/if}
+        <button class="btn small dismiss" onclick={() => (shared = null)} aria-label="Dismiss place">✕</button>
+      </section>
+    {/if}
+    <Outbox {outbox} {queue} gallery={currentGallery} location={shared?.status === "ready" ? shared : null} onEdit={(id) => (pendingEditId = id)} onLink={(url) => { const link = extractMapsUrl(url); if (link) takeShared(link); else error = "That isn't a Google Maps link"; }} />
 
     <section class="toolbar">
       <label class="filter">
@@ -197,4 +240,11 @@
   .hint { margin: 0 2px 8px; }
   .small { font-size: 13px; }
   .error { padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+  .shared { position: relative; display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 12px 44px 12px 12px; border-radius: 12px; background: color-mix(in srgb, var(--accent, #7aa2f7) 16%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent, #7aa2f7) 40%, transparent); }
+  .shared.err { background: color-mix(in srgb, var(--danger) 14%, var(--panel)); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+  .shared .pin { flex: 0 0 auto; margin-top: 2px; color: var(--accent, #7aa2f7); }
+  .shared.err .pin { color: var(--danger); }
+  .shared .what { flex: 1 1 200px; min-width: 0; line-height: 1.45; }
+  .shared a { text-decoration: none; margin-left: 6px; }
+  .shared .dismiss { position: absolute; top: 8px; right: 8px; padding: 6px 9px; }
 </style>

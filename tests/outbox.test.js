@@ -130,3 +130,15 @@ describe("Outbox", () => {
     spy.mockRestore(); clearTimeout(ob.timer);
   });
 });
+
+describe("Outbox: a place for the whole batch", () => {
+  it("photos added at a shared place carry it -- over EXIF -- and it travels to the server", async () => {
+    const ob = make(vi.fn(async () => created())); await ob.init(); online = false;
+    await ob.add([file("a.jpg")], { location: { lat: 24.471235, lng: 54.371235, name: "Zahrat Lebnan", mapsUrl: "https://maps.google.com/?cid=5" } });
+    const it = ob.items[0];
+    expect(it.meta).toMatchObject({ lat: 24.471235, lng: 54.371235, place: "Zahrat Lebnan", mapsUrl: "https://maps.google.com/?cid=5", locEdited: true });
+    expect(metaToSend(it)).toEqual({ place: "Zahrat Lebnan", lat: 24.471235, lng: 54.371235, mapsUrl: "https://maps.google.com/?cid=5" });
+    await ob.add([file("b.jpg")]);
+    expect(ob.items[1].meta).toMatchObject({ lat: 1.28, lng: 103.84, mapsUrl: null, locEdited: false });   // EXIF, as before
+  });
+});

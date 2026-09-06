@@ -129,6 +129,22 @@ try {
     const demo = await readJson(path.join(d1, "data", "galleries", "sg2026demo.json"));
     ok("...and in the other gallery that holds it", demo.moments.find((m) => m.id === c.id)?.caption === "Satay after dark");
 
+    // --- Google Maps links: the exact place in, the exact link out ---
+    ok("resolve-link refuses non-Google links", (await s1.api("GET", "/admin/api/resolve-link?url=https%3A%2F%2Fexample.com%2Fx")).status === 400);
+    const FULL = "https://www.google.com/maps/place/Lau+Pa+Sat/@1.2806,103.8505,17z/data=!3m1!4b1!4m6!3m5!1s0x31da190d3c6fd7a3:0x9a0f1d6f2a2b3c4d!8m2!3d1.280638!4d103.850453!16s%2Fg%2F1td6l0mq?entry=ttu";
+    const CID_URL = `https://maps.google.com/?cid=${BigInt("0x9a0f1d6f2a2b3c4d")}`;
+    const rl = await s1.api("GET", `/admin/api/resolve-link?url=${encodeURIComponent(FULL)}`);
+    ok("resolve-link reads name, the place's coordinates and a stable link out of a full URL (no network)", rl.status === 200 && rl.body.name === "Lau Pa Sat" && rl.body.lat === 1.280638 && rl.body.lng === 103.850453 && rl.body.mapsUrl === CID_URL, JSON.stringify(rl.body));
+    ok("PATCH rejects a non-Google mapsUrl", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { mapsUrl: "https://example.com/place" })).status === 400);
+    const linked = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { lat: 1.280638, lng: 103.850453, place: "Lau Pa Sat", mapsUrl: CID_URL });
+    ok("PATCH stores the exact link", linked.status === 200 && linked.body.mapsUrl === CID_URL);
+    ok("...and the public gallery carries it", (await readJson(path.join(d1, "data", "galleries", `${gid}.json`))).moments.find((m) => m.id === b.id)?.mapsUrl === CID_URL);
+    await s1.api("PATCH", "/admin/api/moments", { ids: [b.id], lat: 1.29, lng: 103.86 });
+    ok("a bulk spot without a link drops the stale link", (await s1.api("GET", "/admin/api/moments")).body.find((m) => m.id === b.id).mapsUrl === null);
+    const bl2 = await s1.api("PATCH", "/admin/api/moments", { ids: [b.id], lat: 1.280638, lng: 103.850453, mapsUrl: CID_URL, place: "Lau Pa Sat" });
+    ok("bulk sets spot + link + name together", bl2.body.updated === 1 && (await s1.api("GET", "/admin/api/moments")).body.find((m) => m.id === b.id).mapsUrl === CID_URL);
+    ok("bulk rejects a non-Google link", (await s1.api("PATCH", "/admin/api/moments", { ids: [b.id], mapsUrl: "https://example.com/" })).status === 400);
+
     // --- delete: moment leaves every gallery; gallery delete keeps photos ---
     const del = await s1.api("DELETE", `/admin/api/moments/${c.id}`);
     ok("DELETE moment keeps original, removes derivatives", del.status === 200 && (await exists(path.join(d1, c.media.original))) && !(await exists(path.join(d1, c.media.src))) && !(await exists(path.join(d1, c.media.medium))));

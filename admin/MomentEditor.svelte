@@ -11,6 +11,7 @@
   let tags = $state([...moment.tags]);
   let lat = $state(moment.lat ?? "");
   let lng = $state(moment.lng ?? "");
+  let mapsUrl = $state(moment.mapsUrl ?? null);   // exact Google Maps link, when the spot came from one
   const t0 = splitIso(moment.t);
   let local = $state(t0.local);
   let offset = $state(t0.offset);
@@ -27,7 +28,7 @@
   const numLng = $derived(lng === "" || lng === null ? null : +lng);
   const dirty = $derived(
     caption !== (moment.caption ?? "") || place !== (moment.place ?? "") || tags.join() !== moment.tags.join() ||
-    String(lat) !== String(moment.lat ?? "") || String(lng) !== String(moment.lng ?? "") || t !== moment.t ||
+    String(lat) !== String(moment.lat ?? "") || String(lng) !== String(moment.lng ?? "") || t !== moment.t || (mapsUrl ?? null) !== (moment.mapsUrl ?? null) ||
     inGalleries.slice().sort().join() !== (moment.galleries ?? []).slice().sort().join()
   );
   const offered = $derived(suggestions.filter((s) => !tags.includes(s) && (!tagDraft || s.includes(tagDraft.toLowerCase()))).slice(0, 12));
@@ -43,7 +44,7 @@
     if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagDraft); }
     else if (e.key === "Backspace" && !tagDraft && tags.length) tags = tags.slice(0, -1);
   }
-  function useLocation(m) { lat = m.lat; lng = m.lng; }
+  function useLocation(m) { lat = m.lat; lng = m.lng; mapsUrl = m.mapsUrl ?? null; }
   function toggleGallery(id) { inGalleries = inGalleries.includes(id) ? inGalleries.filter((x) => x !== id) : [...inGalleries, id]; }
 
   async function save() {
@@ -53,10 +54,10 @@
       if (hasLat !== hasLng) throw new Error("Give both latitude and longitude, or neither.");
       if (pending) {
         const locEdited = String(lat) !== String(moment.lat ?? "") || String(lng) !== String(moment.lng ?? "");
-        await onSaveLocal?.({ caption, place, tags, galleries: inGalleries, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null, t, locEdited: moment.locEdited || locEdited, timeEdited: moment.timeEdited || t !== moment.t });
+        await onSaveLocal?.({ caption, place, tags, galleries: inGalleries, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null, mapsUrl: hasLat ? mapsUrl ?? null : null, t, locEdited: moment.locEdited || locEdited, timeEdited: moment.timeEdited || t !== moment.t });
         return;
       }
-      const body = { caption, place, tags, t, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null };
+      const body = { caption, place, tags, t, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null, mapsUrl: hasLat ? mapsUrl ?? null : null };
       let saved = await api.patch(moment.id, body);
       const before = new Set(moment.galleries ?? []), after = new Set(inGalleries);
       for (const gid of after) if (!before.has(gid)) await api.patchGallery(gid, { add: [moment.id] });
@@ -119,11 +120,14 @@
     <button type="button" class="btn tiny" aria-pressed={showMap} onclick={() => (showMap = !showMap)}>{showMap ? "Hide map" : "Pick on map"}</button>
   </div>
   {#if showMap}
-    <MapPicker lat={numLat} lng={numLng} hint={neighbours.prev ?? neighbours.next} onChange={(a, b) => { lat = a; lng = b; }} onPlace={(name) => { if (!place.trim()) place = name; }} />
+    <MapPicker lat={numLat} lng={numLng} hint={neighbours.prev ?? neighbours.next} onChange={(a, b) => { lat = a; lng = b; }} onPlace={(name) => (place = name)} onLink={(u) => (mapsUrl = u)} />
+  {/if}
+  {#if mapsUrl}
+    <p class="muted small linked"><a href={mapsUrl} target="_blank" rel="noopener">Linked to the exact place on Google Maps ↗</a> <button type="button" class="btn tiny" onclick={() => (mapsUrl = null)}>Unlink</button></p>
   {/if}
   <div class="row">
-    <label>Latitude<input inputmode="decimal" bind:value={lat} placeholder="1.2829" /></label>
-    <label>Longitude<input inputmode="decimal" bind:value={lng} placeholder="103.8443" /></label>
+    <label>Latitude<input inputmode="decimal" bind:value={lat} placeholder="1.2829" oninput={() => (mapsUrl = null)} /></label>
+    <label>Longitude<input inputmode="decimal" bind:value={lng} placeholder="103.8443" oninput={() => (mapsUrl = null)} /></label>
   </div>
 
   <div class="row">
@@ -182,4 +186,6 @@
   .err { color: var(--danger); font-size: 13px; }
   .actions { display: flex; gap: 8px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
   .spacer { flex: 1; }
+  .linked { margin: 6px 2px 0; display: flex; align-items: center; gap: 8px; }
+  .linked a { color: var(--accent, #7aa2f7); }
 </style>

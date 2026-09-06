@@ -1,12 +1,16 @@
 <script>
   import { onMount } from "svelte";
   import { searchPlaces, currentPosition } from "./lib/geo.js";
+  import { extractMapsUrl } from "../server/links.js";
+  import { api } from "./lib/api.js";
 
   // Tap or drag to place the photo; or search a place by name; or use where
   // the device is right now. `hint` centres the map somewhere sensible when
   // the photo has no coordinates yet -- usually a neighbour's location.
-  // `onPlace` (optional) receives the chosen place's name.
-  let { lat = null, lng = null, hint = null, onChange, onPlace } = $props();
+  // `onPlace` (optional) receives the chosen place's name; `onLink` the exact
+  // Google Maps URL when the spot came from a pasted Google Maps link (null
+  // whenever the spot is chosen any other way, so a stale link never lingers).
+  let { lat = null, lng = null, hint = null, onChange, onPlace, onLink } = $props();
   let container;
   let map, marker;
   let q = $state("");
@@ -25,8 +29,8 @@
     map = new maplibregl.Map({ container, style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json", center, zoom: has || hint ? 14 : 10, attributionControl: { compact: true } });
     marker = new maplibregl.Marker({ draggable: true, color: "#7aa2f7" });
     if (has) marker.setLngLat(center).addTo(map);
-    marker.on("dragend", () => { const p = marker.getLngLat(); onChange?.(+p.lat.toFixed(6), +p.lng.toFixed(6)); });
-    map.on("click", (e) => { marker.setLngLat(e.lngLat).addTo(map); onChange?.(+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6)); });
+    marker.on("dragend", () => { const p = marker.getLngLat(); onLink?.(null); onChange?.(+p.lat.toFixed(6), +p.lng.toFixed(6)); });
+    map.on("click", (e) => { marker.setLngLat(e.lngLat).addTo(map); onLink?.(null); onChange?.(+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6)); });
     })();
     return () => { cancelled = true; map?.remove(); };
   });
@@ -41,12 +45,29 @@
   async function search() {
     if (!q.trim() || searching) return;
     searching = true; note = null;
-    try { results = await searchPlaces(q); if (!results.length) note = `Nothing found for “${q.trim()}”`; }
+    try {
+      const link = extractMapsUrl(q);
+      if (link) {
+        // A shared Google Maps link: the exact place, no guessing.
+        const r = await api.resolveLink(link);
+        if (!Number.isFinite(r.lat)) { note = r.name ? `Found “${r.name}” but no coordinates in that link — search its name instead` : "That link has no place in it"; return; }
+        results = []; q = r.name ?? "";
+        onLink?.(r.mapsUrl ?? link);
+        onChange?.(r.lat, r.lng);
+        if (r.name) onPlace?.(r.name);
+        note = `From Google Maps${r.name ? `: ${r.name}` : ""}`;
+        map?.easeTo({ center: [r.lng, r.lat], zoom: 16, duration: 400 });
+        return;
+      }
+      results = await searchPlaces(q);
+      if (!results.length) note = `Nothing found for “${q.trim()}”`;
+    }
     catch (e) { note = e.message; }
     finally { searching = false; }
   }
   function choose(r) {
     results = []; q = r.name;
+    onLink?.(null);
     onChange?.(r.lat, r.lng);
     onPlace?.(r.name);
     map?.easeTo({ center: [r.lng, r.lat], zoom: 15, duration: 400 });
@@ -54,7 +75,7 @@
   async function locate() {
     if (locating) return;
     locating = true; note = null;
-    try { const p = await currentPosition(); onChange?.(p.lat, p.lng); note = `Your location, ±${p.accuracy} m — drag the pin if it's off.`; map?.easeTo({ center: [p.lng, p.lat], zoom: 16, duration: 400 }); }
+    try { const p = await currentPosition(); onLink?.(null); onChange?.(p.lat, p.lng); note = `Your location, ±${p.accuracy} m — drag the pin if it's off.`; map?.easeTo({ center: [p.lng, p.lat], zoom: 16, duration: 400 }); }
     catch (e) { note = e.message; }
     finally { locating = false; }
   }
@@ -62,7 +83,7 @@
 
 <div class="pick">
   <div class="tools">
-    <input class="q" type="search" bind:value={q} placeholder="Search a place — “Tartine Manufactory”" aria-label="Search a place"
+    <input class="q" type="search" bind:value={q} placeholder="Search a place, or paste a Google Maps link" aria-label="Search a place"
       onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(); } }} />
     <button type="button" class="btn tiny" onclick={search} disabled={searching || !q.trim()}>{searching ? "…" : "Search"}</button>
     <button type="button" class="btn tiny" onclick={locate} disabled={locating} title="Use this device's current position">{locating ? "Locating…" : "📍 My location"}</button>

@@ -47,6 +47,7 @@ export const pub = (m) => ({
   id: m.id, t: m.t, tz: m.tz ?? "exif",
   lat: Number.isFinite(m.lat) ? m.lat : null, lng: Number.isFinite(m.lng) ? m.lng : null,
   place: m.place ?? "", caption: m.caption ?? "", tags: m.tags ?? [],
+  ...(m.mapsUrl ? { mapsUrl: m.mapsUrl } : {}),
   media: {
     type: m.media?.type ?? "photo", src: m.media?.src, w: m.media?.w, h: m.media?.h,
     ...(m.media?.medium ? { medium: m.media.medium } : {}),

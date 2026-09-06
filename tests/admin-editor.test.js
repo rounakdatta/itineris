@@ -58,3 +58,22 @@ describe("MomentEditor", () => {
     expect(screen.getByRole("application")).toBeInTheDocument();
   });
 });
+
+describe("MomentEditor: Google Maps link", () => {
+  it("shows the exact link, sends it with the location, and drops it when the coordinates are typed over", async () => {
+    const linked = { ...moment, mapsUrl: "https://maps.google.com/?cid=5" };
+    const { unmount } = render(MomentEditor, { moment: linked, galleries, onSaved: vi.fn(), onClose: () => {} });
+    expect(screen.getByRole("link", { name: /exact place on Google Maps/ })).toHaveAttribute("href", "https://maps.google.com/?cid=5");
+    await fireEvent.input(screen.getByLabelText("Caption"), { target: { value: "Mezze" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ mapsUrl: "https://maps.google.com/?cid=5", lat: 1.28, lng: 103.84 }));
+    unmount(); vi.clearAllMocks();
+    render(MomentEditor, { moment: linked, galleries, onSaved: vi.fn(), onClose: () => {} });
+    await fireEvent.input(screen.getByLabelText("Latitude"), { target: { value: "1.29" } });
+    expect(screen.queryByRole("link", { name: /exact place on Google Maps/ })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ mapsUrl: null, lat: 1.29 }));
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc } from "../src/lib/data.js";
+import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, placeLink, placeGroup } from "../src/lib/data.js";
 import { moments, tracks } from "./fixtures.js";
 
 describe("time helpers never touch the host zone", () => {
@@ -56,5 +56,22 @@ describe("geometry tolerates moments without GPS", () => {
   });
   it("bbox of nothing is null", () => {
     expect(bboxOf([], [])).toBeNull();
+  });
+});
+
+describe("Google Maps links out", () => {
+  it("prefers the exact link, else searches the name at the spot, else the spot, else the name", () => {
+    expect(placeLink({ ...moments[0], mapsUrl: "https://maps.google.com/?cid=5" })).toBe("https://maps.google.com/?cid=5");
+    expect(placeLink(moments[0])).toBe("https://www.google.com/maps/search/Chinatown/@1.28,103.84,17z");
+    expect(placeLink({ ...moments[0], place: "" })).toBe("https://www.google.com/maps/search/?api=1&query=1.28,103.84");
+    expect(placeLink({ ...moments[3], place: "Lau Pa Sat" })).toBe("https://www.google.com/maps/search/?api=1&query=Lau%20Pa%20Sat");
+    expect(placeLink(moments[3])).toBeNull();
+    expect(placeLink(null)).toBeNull();
+  });
+  it("groups a place's photos; a nameless photo stands alone", () => {
+    const ms = [...moments, { ...moments[0], id: "a2", t: "2026-03-14T09:10:00+08:00" }];
+    expect(placeGroup(ms, ms[0]).map((m) => m.id)).toEqual(["a", "a2"]);
+    expect(placeGroup(ms, moments[3]).map((m) => m.id)).toEqual(["d"]);
+    expect(placeGroup([], moments[0]).map((m) => m.id)).toEqual(["a"]);
   });
 });

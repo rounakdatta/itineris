@@ -91,7 +91,11 @@
             { layers: ["moments-dot"] }
           );
           const id = hits?.[0]?.properties?.id;
-          if (id) trip.openStory(id);
+          // Like the strip: first tap says what this is (place card), the
+          // second opens it. A tap on bare map puts the card away.
+          if (!id) trip.focusId = null;
+          else if (trip.focusId === id) trip.openStory(id);
+          else trip.focus(id);
         });
         // Test hook: tiles loaded and nothing pending. Screenshots wait for it.
         map.on("idle", () => { container.dataset.idle = "1"; });

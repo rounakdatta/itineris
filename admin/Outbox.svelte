@@ -4,7 +4,10 @@
   // NB: not named `state` -- a prop called state turns `$state(...)` into a store subscription.
   import { currentPosition } from "./lib/geo.js";
 
-  let { outbox, queue, gallery = null, onEdit } = $props();
+  // `location`: a place (from a shared/pasted Google Maps link) every photo
+  // added now is placed at. `onLink` hands a pasted link up to be resolved.
+  let { outbox, queue, gallery = null, location = null, onEdit, onLink } = $props();
+  let linkDraft = $state("");
   let input;
   let over = $state(false);
   let urls = $state(new Map());
@@ -61,7 +64,7 @@
   async function pick(fileList) {
     const files = [...fileList].filter((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|avif)$/i.test(f.name));
     if (!files.length) return;
-    await outbox.add(files, { galleries: gallery ? [gallery.id] : [] });
+    await outbox.add(files, { galleries: gallery ? [gallery.id] : [], location });
     if (input) input.value = "";
   }
   const signIn = () => location.reload();   // a full navigation goes through tinyauth; the queue is in IndexedDB and survives
@@ -76,9 +79,16 @@
   <!-- `multiple` + accept="image/*" gives camera-or-gallery on a phone and a
        normal picker on desktop, in one control. -->
   <input bind:this={input} type="file" accept="image/*" multiple hidden onchange={(e) => pick(e.target.files)} data-testid="file-input" />
-  <button class="btn primary" onclick={() => input.click()}>{gallery ? `Add photos to “${gallery.title}”` : "Add photos"}</button>
+  <button class="btn primary" onclick={() => input.click()}>{location ? `Add photos at “${location.name || "this place"}”` : gallery ? `Add photos to “${gallery.title}”` : "Add photos"}</button>
   <p class="muted hint">or drop them here · works offline — photos queue on this device and upload when they can{gallery ? "" : " · new photos stay private until they're in a gallery"}</p>
-  <p class="muted hint small">Phones usually strip GPS from photos picked in a browser. Photos without a location show ⌖ — set it in the editor, or select several and use <em>Set location</em>.</p>
+  {#if !location}
+    <p class="muted hint small">Phones usually strip GPS from photos picked in a browser. Photos without a location show ⌖ — set it in the editor, or select several and use <em>Set location</em>.</p>
+    <p class="linkrow">
+      <input class="link" type="url" bind:value={linkDraft} placeholder="Paste a Google Maps link — the next photos land there" aria-label="Google Maps link"
+        onkeydown={(e) => { if (e.key === "Enter" && linkDraft.trim()) { e.preventDefault(); onLink?.(linkDraft.trim()); linkDraft = ""; } }}
+        onpaste={(e) => { const t = e.clipboardData?.getData("text") ?? ""; if (/https?:\/\//.test(t)) { e.preventDefault(); onLink?.(t.trim()); linkDraft = ""; } }} />
+    </p>
+  {/if}
 
   {#if status}
     <div class="queue" role="region" aria-label="Upload queue">
@@ -113,7 +123,7 @@
         {/each}
       </div>
       {#if noLoc}
-        <p class="muted small">⌖ {noLoc === total ? (total === 1 ? "This photo has" : "These photos have") : `${noLoc} of these have`} no location in the file — phones remove GPS from photos picked in a browser. Tap a photo to place it, or if you're still there:</p>
+        <p class="muted small">⌖ {noLoc === total ? (total === 1 ? "This photo has" : "These photos have") : `${noLoc} of these ${noLoc === 1 ? "has" : "have"}`} no location in the file — phones remove GPS from photos picked in a browser. Tap a photo to place it, or if you're still there:</p>
         <p class="small"><button class="btn small" onclick={useMyLocation} disabled={locBusy}>{locBusy ? "Locating…" : `📍 Use my location for ${noLoc === total ? (total === 1 ? "it" : "all") : `these ${noLoc}`}`}</button></p>
       {/if}
       {#if locNote}<p class="muted small" role="status">{locNote}</p>{/if}
@@ -127,6 +137,8 @@
   .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
   .hint { margin: 10px 0 0; font-size: 13px; }
   .hint.small { margin-top: 6px; font-size: 12px; }
+  .linkrow { margin: 10px auto 0; max-width: 420px; }
+  .linkrow .link { width: 100%; font-size: 13px; padding: 8px 12px; }
   .queue { margin-top: 16px; text-align: left; }
   .status { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 14px; }
   .status .text { flex: 1; }

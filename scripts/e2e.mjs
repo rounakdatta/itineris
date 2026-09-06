@@ -74,10 +74,14 @@ try {
   const ticks = await page.$$(".tick");
   await ticks[2].tap(); await sleep(300);
   ok("first tap focuses (no story yet)", (await page.$eval(".tick.on", (el) => el.dataset.id)) === "m003" && (await page.$(".story")) === null);
+  ok("...and shows the place card: name, photos, Story, Google Maps", (await page.$(".place-card")) !== null && /Maxwell/.test(await text(page, ".place-card h2")) && (await page.$eval(".place-card a[href*='google.com/maps']", (a) => a.target === "_blank" && /Maxwell/.test(decodeURIComponent(a.href)))), await text(page, ".place-card"));
+  ok("the card sits above the strip, not on it", await page.evaluate(() => document.querySelector(".place-card").getBoundingClientRect().bottom <= document.querySelector(".strip").getBoundingClientRect().top));
+  await settle(page); await shot(page, `${SHOTS}/01b-place-card.png`);
   await (await page.$(".tick.on")).tap();
   await page.waitForSelector(".story");
   ok("second tap opens the story, URL carries it", (await hash(page)) === "#m/m003", await hash(page));
   ok("story header: day + place + clock", /Day 1/.test(await text(page, ".story header")) && /Maxwell/.test(await text(page, ".story header")), await text(page, ".story header"));
+  ok("the place in the story header is a Google Maps link", await page.$eval(".story header a.place", (a) => a.target === "_blank" && /google\.com\/maps/.test(a.href)));
   ok("story: thumbnail placeholder at once, full image fades in", (await page.$(".story img.placeholder")) !== null && (await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }).then(() => true).catch(() => false)));
   await settle(page); await shot(page, `${SHOTS}/02-story.png`);
   await swipe(page, [300, 450], [70, 455]); await sleep(400);
@@ -96,9 +100,12 @@ try {
   // The photo's full copy takes ages; the thumbnail (already on screen in the
   // strip) must stand in at once, the spinner must show, and the 5 s timer must
   // not run until the photo has actually arrived. Never a dark screen.
+  // The premise is "the thumbnail is already on the device" (it is in the
+  // strip): make sure it has actually landed before the link goes slow.
+  await page.waitForFunction(() => { const i = document.querySelector('.tick[data-id="m013"] img'); return i && i.complete && i.naturalWidth > 0; }, { timeout: 15000 });
   // (the worker may already control this page: throttle its fetches too)
   await setNetwork(browser, page, { offline: false, latency: 300, downloadThroughput: 1500, uploadThroughput: 1500 }, V);
-  const slowTick = (await page.$$(".tick"))[12];   // m013: the seed's one real raster photo (400/960/1600 copies)
+  const slowTick = (await page.$$(".tick"))[12];   // m013: a real raster photo (400/960/1600 copies)
   ok("slow: the photo under test is a real photo, not a placeholder", (await slowTick.evaluate((el) => el.dataset.id)) === "m013" && (await slowTick.$eval("img", (i) => i.getAttribute("src"))) === "/media/m013-400.webp", await slowTick.$eval("img", (i) => i.getAttribute("src")));
   await slowTick.tap(); await sleep(250); await (await page.$(".tick.on")).tap(); await page.waitForSelector(".story");
   await sleep(1500);
@@ -194,11 +201,27 @@ try {
   await clickText(page, ".sheet button", "Pick on map"); await page.waitForSelector(".picker canvas");
   ok("map picker renders", true);
   await sleep(2500); await shot(page, `${SHOTS}/14-admin-mappicker.png`);
+  // A Google Maps link pasted where a place name would go: the exact place, its name, and the link to keep.
+  const GMAPS = "https://www.google.com/maps/place/Lau+Pa+Sat/@1.2806,103.8505,17z/data=!3m1!4b1!4m6!3m5!1s0x31da190d3c6fd7a3:0x9a0f1d6f2a2b3c4d!8m2!3d1.280638!4d103.850453!16s%2Fg%2F1td6l0mq?entry=ttu";
+  const GMAPS_CID = `https://maps.google.com/?cid=${BigInt("0x9a0f1d6f2a2b3c4d")}`;
+  await page.$eval('.sheet input[aria-label="Search a place"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);
+  await page.focus('.sheet input[aria-label="Search a place"]'); await page.keyboard.press("Enter");
+  ok("a pasted Google Maps link fills the place, the spot and keeps the exact link", await waitFor(page, () => /From Google Maps: Lau Pa Sat/.test(document.querySelector(".sheet .note")?.textContent ?? "")) && (await page.$eval('.sheet input[placeholder="Chinatown Complex"]', (i) => i.value)) === "Lau Pa Sat" && (await page.$eval('.sheet input[placeholder="1.2829"]', (i) => i.value)) === "1.280638" && (await page.$eval(".sheet .linked a", (a) => a.href)) === GMAPS_CID, await text(page, ".sheet .note"));
+  await settle(page); await shot(page, `${SHOTS}/14b-admin-gmaps-link.png`);
   await page.evaluate(() => { const home = [...document.querySelectorAll(".sheet .gal")].find((l) => /home/.test(l.textContent)); home.querySelector("input").click(); });
   await clickText(page, ".sheet button", "Save");
   ok("save closes the editor", await waitFor(page, () => !document.querySelector(".sheet")));
   const lib = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
   ok("membership persisted: the edited photo is now only in Friends", JSON.stringify(lib.find((m) => m.id === editId).galleries) === JSON.stringify([friendsId]), JSON.stringify(lib.find((m) => m.id === editId).galleries));
+  ok("the exact Google Maps link and the place name were saved", lib.find((m) => m.id === editId).mapsUrl === GMAPS_CID && lib.find((m) => m.id === editId).place === "Lau Pa Sat", JSON.stringify([lib.find((m) => m.id === editId).mapsUrl, lib.find((m) => m.id === editId).place]));
+
+  console.log("--- admin: a Google Maps link pasted for the next photos ---");
+  await page.$eval('input[aria-label="Google Maps link"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);
+  await page.focus('input[aria-label="Google Maps link"]'); await page.keyboard.press("Enter");
+  ok("the place banner appears and the upload button targets it", await waitFor(page, () => /Lau Pa Sat/.test(document.querySelector(".shared")?.textContent ?? "") && /Add photos at “Lau Pa Sat”/.test(document.querySelector(".drop .btn.primary")?.textContent ?? "")), await text(page, ".shared"));
+  await settle(page); await shot(page, `${SHOTS}/14c-admin-shared-place.png`);
+  await tap(page, '.shared button[aria-label="Dismiss place"]'); await sleep(200);
+  ok("dismissed: back to plain uploads", (await page.$(".shared")) === null && /^Add photos/.test(await text(page, ".drop .btn.primary")) && !/Lau Pa Sat/.test(await text(page, ".drop .btn.primary")));
 
   console.log("--- admin: upload in bad conditions ---");
   const UP = path.join(SCRATCH, "e2e-uploads"); mkdirSync(UP, { recursive: true });
@@ -209,7 +232,9 @@ try {
   const before = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).length;
   await page.setOfflineMode(true);
   await (await page.$('[data-testid="file-input"]')).uploadFile(path.join(UP, "q1.jpg"), path.join(UP, "q2.jpg"));
-  ok("photos queued instantly while offline", await waitFor(page, () => document.querySelectorAll(".queue .tile").length === 2));
+  // "Instantly" = without waiting for any network; on-device thumbnails and EXIF
+  // still take a moment in a software-rendered headless browser.
+  ok("photos queued instantly while offline", await waitFor(page, () => document.querySelectorAll(".queue .tile").length === 2, 25000));
   ok("status: offline, 2 photos, will upload later", /Offline — 2 photos/.test(await text(page, ".queue .status")), await text(page, ".queue .status"));
   ok("thumbnails made on the device (no network involved)", await waitFor(page, () => { const im = [...document.querySelectorAll(".queue .tile img")]; return im.length === 2 && im.every((i) => i.complete && i.naturalWidth > 0); }));
   ok("header shows Offline", /Offline/.test(await text(page, "header")));
@@ -232,7 +257,7 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.setOfflineMode(true); proxy.state.down = true;
   await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".queue .tile", { timeout: 15000 });
-  ok("the admin itself opens OFFLINE: shell from the worker, library from the last copy, queue from IndexedDB", (await count(page, ".queue .tile")) === 2 && (await count(page, ".cell")) > 0 && /Offline|Saved copy/.test(await text(page, "header")));
+  ok("the admin itself opens OFFLINE: shell from the worker, library from the last copy, queue from IndexedDB", (await count(page, ".queue .tile")) === 2 && (await waitFor(page, () => document.querySelectorAll(".cell").length > 0)) && /Offline|Saved copy/.test(await text(page, "header")), `${await count(page, ".cell")} cells; ${await text(page, "header")}`);
   ok("OFFLINE: the library really came from the worker's saved copy", (await page.evaluate(() => fetch("/admin/api/library").then((r) => r.headers.get("x-itineris-cache")))) === "fallback");
   await settle(page); await shot(page, `${SHOTS}/17-admin-offline-reload.png`);
   proxy.state.down = false; await page.setOfflineMode(false);
@@ -279,6 +304,8 @@ try {
   await page.waitForSelector(".tick");
   ok("Friends gallery: title and exactly its 2 photos", (await text(page, ".brand .title")) === "Friends" && (await count(page, ".tick")) === 2, `${await text(page, ".brand .title")} / ${await count(page, ".tick")}`);
   await page.waitForFunction(() => [...document.querySelectorAll(".tick img")].every((i) => i.complete), { timeout: 10000 });
+  const pubFriendsNow = await (await fetch(`${V}/data/galleries/${friendsId}.json`)).json();
+  ok("the exact Google Maps link reached the public gallery", pubFriendsNow.moments.find((m) => m.id === editId)?.mapsUrl === GMAPS_CID);
   ok("thumbnails really load under /g/<token> (absolute media URLs)", await page.$$eval(".tick img", (imgs) => imgs.length > 0 && imgs.every((i) => i.naturalWidth > 0)), await page.$$eval(".tick img", (imgs) => imgs.map((i) => i.getAttribute("src")).join(",")));
   await settle(page, { map: true }); await shot(page, `${SHOTS}/20-viewer-friends.png`);
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");

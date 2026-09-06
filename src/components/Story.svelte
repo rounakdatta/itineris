@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey, mediaUrl, storySrc } from "../lib/data.js";
+  import { clockOf, dayKey, mediaUrl, storySrc, placeLink } from "../lib/data.js";
 
   const SEGMENT_MS = 5000;
   const DISMISS_PX = 110;   // drag down this far to close
@@ -30,6 +30,7 @@
   const fullUrl = $derived(current ? storySrc(current.media) : "");
   const loaded = $derived(!!current && loadedId === current.id);
   const failed = $derived(!!current && failedId === current.id);
+  const link = $derived(placeLink(current));
 
   // Advance timer. Restarts whenever the index changes; `paused`/`axis` are
   // read inside rAF (outside the tracking pass) so they gate without restarting.
@@ -152,13 +153,20 @@
     <header>
       <div class="meta">
         {#if dayLabel}<span class="day">{dayLabel}</span>{/if}
-        <strong>{current.place || " "}</strong>
+        {#if current.place && link}
+          <!-- The place name opens Google Maps; it must not read as a tap on the story. -->
+          <a class="place" href={link} target="_blank" rel="noopener noreferrer" title="Open in Google Maps"
+            onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>{current.place}<span class="ext" aria-hidden="true">↗</span></a>
+        {:else}
+          <strong>{current.place || " "}</strong>
+        {/if}
         <span class="clock">{clockOf(current.t)}</span>
       </div>
       <button class="close" onclick={(e) => { e.stopPropagation(); trip.closeStory(); }} onpointerdown={(e) => e.stopPropagation()} aria-label="Close">✕</button>
     </header>
 
     {#key current.id}
+      {@const id = current.id}
       {#if landscape}
         <!-- A landscape photo on a portrait screen: show all of it, over a blurred copy of itself. -->
         <img class="backdrop" src={thumbUrl} alt="" draggable="false" aria-hidden="true" />
@@ -167,7 +175,7 @@
            sharp at once, and fade the full-size image in over it when it lands. -->
       <img class="placeholder" class:contain={landscape} src={thumbUrl} alt="" draggable="false" aria-hidden="true" />
       <img class="media" class:contain={landscape} class:loaded src={fullUrl} alt={current.caption || current.place || ""} draggable="false"
-        onload={() => (loadedId = current.id)} onerror={() => (failedId = current.id)} />
+        onload={() => (loadedId = id)} onerror={() => (failedId = id)} />
       {#if !loaded && !failed}<span class="loading" aria-label="Loading photo" role="status"></span>{/if}
       {#if failed}<p class="failed" role="alert">Couldn't load this photo</p>{/if}
     {/key}
@@ -230,6 +238,8 @@
   .meta { display: flex; flex-direction: column; gap: 2px; color: #fff; min-width: 0; }
   .meta .day { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; }
   .meta strong { font-size: 15px; font-weight: 600; }
+  .meta .place { font-size: 15px; font-weight: 600; color: #fff; text-decoration: none; display: inline-flex; align-items: baseline; gap: 5px; pointer-events: auto; touch-action: manipulation; }
+  .meta .ext { font-size: 12px; opacity: 0.7; }
   .meta .clock { font-size: 12px; opacity: 0.65; font-variant-numeric: tabular-nums; }
   .close {
     background: rgba(0, 0, 0, 0.35); border: 0; color: #fff; opacity: 0.9; font-size: 16px; line-height: 1;
