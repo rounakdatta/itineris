@@ -14,6 +14,7 @@ export const api = {
   patch: (id, body) => fetch(`/admin/api/moments/${id}`, json("PATCH", body)).then(J),
   bulk: (ids, body) => fetch("/admin/api/moments", json("PATCH", { ids, ...body })).then(J),
   resolveLink: (url) => fetch(`/admin/api/resolve-link?url=${encodeURIComponent(url)}`).then(J),
+  refreshGoogle: (id) => fetch(`/admin/api/moments/${id}/google`, { method: "POST" }).then(J),
   remove: (id) => fetch(`/admin/api/moments/${id}`, { method: "DELETE" }).then(J),
   createGallery: (body) => fetch("/admin/api/galleries", json("POST", body)).then(J),
   patchGallery: (id, body) => fetch(`/admin/api/galleries/${id}`, json("PATCH", body)).then(J),

@@ -1,6 +1,7 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
   import { clockOf, dayKey, mediaUrl, storySrc, placeLink } from "../lib/data.js";
+  import { markSeen } from "../lib/seen.svelte.js";
 
   const SEGMENT_MS = 5000;
   const DISMISS_PX = 110;   // drag down this far to close
@@ -31,6 +32,8 @@
   const loaded = $derived(!!current && loadedId === current.id);
   const failed = $derived(!!current && failedId === current.id);
   const link = $derived(placeLink(current));
+  // Seen = shown, like a story: the ring on the map goes quiet for this photo.
+  $effect(() => { if (trip.storyOpen && current) markSeen(current.id); });
 
   // Advance timer. Restarts whenever the index changes; `paused`/`axis` are
   // read inside rAF (outside the tracking pass) so they gate without restarting.
@@ -155,8 +158,8 @@
         {#if dayLabel}<span class="day">{dayLabel}</span>{/if}
         {#if current.place && link}
           <!-- The place name opens Google Maps; it must not read as a tap on the story. -->
-          <a class="place" href={link} target="_blank" rel="noopener noreferrer" title="Open in Google Maps"
-            onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>{current.place}<span class="ext" aria-hidden="true">↗</span></a>
+          <span class="placerow"><a class="place" href={link} target="_blank" rel="noopener noreferrer" title="Open in Google Maps"
+            onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>{current.place}<span class="ext" aria-hidden="true">↗</span></a>{#if Number.isFinite(current.google?.rating)}<span class="rate" title={`${current.google.rating.toFixed(1)} on Google${current.google.ratingCount ? ` from ${current.google.ratingCount.toLocaleString("en")} ratings` : ""}`}>{current.google.rating.toFixed(1)}<i aria-hidden="true">★</i></span>{/if}</span>
         {:else}
           <strong>{current.place || " "}</strong>
         {/if}
@@ -240,6 +243,9 @@
   .meta strong { font-size: 15px; font-weight: 600; }
   .meta .place { font-size: 15px; font-weight: 600; color: #fff; text-decoration: none; display: inline-flex; align-items: baseline; gap: 5px; pointer-events: auto; touch-action: manipulation; }
   .meta .ext { font-size: 12px; opacity: 0.7; }
+  .meta .placerow { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+  .meta .rate { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); color: #111; font-size: 11px; font-weight: 700; vertical-align: 2px; }
+  .meta .rate i { font-style: normal; color: #f4b400; font-size: 10px; }
   .meta .clock { font-size: 12px; opacity: 0.65; font-variant-numeric: tabular-nums; }
   .close {
     background: rgba(0, 0, 0, 0.35); border: 0; color: #fff; opacity: 0.9; font-size: 16px; line-height: 1;

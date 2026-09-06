@@ -23,7 +23,8 @@ export const GMAPS_STUB = `
       this._map = m;
       if (!m) { this.content.remove(); return; }
       const c = this.content;
-      c.style.position = "absolute"; c.style.left = (24 + (this.i % 5) * 68) + "px"; c.style.top = (230 + Math.floor(this.i / 5) * 80) + "px";
+      // A grid with room for a ring + chip per cell (68 px tall content shifted 46 px down), so no pin ever sits on another.
+      c.style.position = "absolute"; c.style.left = (24 + (this.i % 5) * 68) + "px"; c.style.top = (200 + Math.floor(this.i / 5) * 125) + "px";
       c.dataset.gmarker = "1";
       if (!c.__wired) { c.__wired = true; c.addEventListener("click", () => (this.h.click || []).forEach((f) => f())); }
       m.el.appendChild(c);

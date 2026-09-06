@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, placeLink, placeGroup } from "../src/lib/data.js";
+import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, placeLink, placeGroup, groupByPlace, placeKey } from "../src/lib/data.js";
 import { moments, tracks } from "./fixtures.js";
 
 describe("time helpers never touch the host zone", () => {
@@ -73,5 +73,18 @@ describe("Google Maps links out", () => {
     expect(placeGroup(ms, ms[0]).map((m) => m.id)).toEqual(["a", "a2"]);
     expect(placeGroup(ms, moments[3]).map((m) => m.id)).toEqual(["d"]);
     expect(placeGroup([], moments[0]).map((m) => m.id)).toEqual(["a"]);
+  });
+});
+
+describe("one pin per place", () => {
+  it("groups located photos by name, keeps the first spot and thumbnail, and any Google details", () => {
+    const ms = [...moments, { ...moments[0], id: "a2", t: "2026-03-14T09:10:00+08:00", google: { placeId: "ChIJx", rating: 4.5 } }, { ...moments[3], id: "e", lat: 1.29, lng: 103.86, place: "" }];
+    const g = groupByPlace(ms);
+    expect(g.map((x) => [x.key, x.moments.length])).toEqual([["chinatown", 2], ["maxwell", 1], ["merlion", 1], ["#e", 1]]);   // d has no coords: no pin
+    expect(g[0].first.id).toBe("a"); expect(g[0].google).toMatchObject({ placeId: "ChIJx" }); expect(g[1].google).toBeNull();
+    expect(placeKey({ place: "  Lau Pa Sat ", id: "z" })).toBe("lau pa sat"); expect(placeKey({ place: "", id: "z" })).toBe("#z");
+  });
+  it("Google's own place link wins over everything", () => {
+    expect(placeLink({ ...moments[0], mapsUrl: "https://maps.google.com/?cid=5", google: { placeId: "x", mapsUri: "https://maps.google.com/?cid=777" } })).toBe("https://maps.google.com/?cid=777");
   });
 });

@@ -41,6 +41,25 @@ spec:
             - name: ITINERIS_ADMIN_EMAILS
               value: {{ .Values.admin.allowedEmails | quote }}
             {{- end }}
+            {{- if .Values.googleMaps.existingSecret }}
+            # Server-side Google Places lookups (ratings on the map). `placesApiKey`
+            # is a separate server key for when the browser key is referrer-restricted.
+            - name: ITINERIS_GOOGLE_MAPS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.googleMaps.existingSecret | quote }}
+                  key: apiKey
+                  optional: true
+            - name: ITINERIS_GOOGLE_PLACES_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.googleMaps.existingSecret | quote }}
+                  key: placesApiKey
+                  optional: true
+            {{- else if .Values.googleMaps.apiKey }}
+            - name: ITINERIS_GOOGLE_MAPS_KEY
+              value: {{ .Values.googleMaps.apiKey | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.admin.containerPort }}

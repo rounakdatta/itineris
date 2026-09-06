@@ -5,6 +5,7 @@ vi.mock("../admin/lib/api.js", async (orig) => {
   const m = await orig();
   return { ...m, api: { ...m.api,
     patch: vi.fn(async (id, body) => ({ id, ...body, galleries: ["g1"], media: {}, tags: body.tags })),
+    refreshGoogle: vi.fn(async (id) => ({ id, google: { placeId: "ChIJx", rating: 4.5, ratingCount: 762, type: "Museum", mapsUri: "https://maps.google.com/?cid=3" }, galleries: ["g1"] })),
     patchGallery: vi.fn(async () => ({})),
   } };
 });
@@ -75,5 +76,22 @@ describe("MomentEditor: Google Maps link", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ mapsUrl: null, lat: 1.29 }));
+  });
+});
+
+describe("MomentEditor: what Google says", () => {
+  it("shows the Google line when known, and ↻ asks the server to look again", async () => {
+    const onSaved = vi.fn();
+    render(MomentEditor, { moment: { ...moment, google: { placeId: "ChIJa", rating: 4.2, ratingCount: 120, type: "Cafe", mapsUri: "https://maps.google.com/?cid=2" } }, galleries, onSaved, onClose: () => {} });
+    expect(screen.getByText("4.2")).toBeInTheDocument(); expect(screen.getByText(/\(120\)/)).toBeInTheDocument(); expect(screen.getByText(/Cafe/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "↻" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.refreshGoogle).toHaveBeenCalledWith("m1");
+    expect(screen.getByText("4.5")).toBeInTheDocument(); expect(screen.getByText(/Museum/)).toBeInTheDocument();
+    expect(onSaved).toHaveBeenCalled();
+  });
+  it("says when nothing was looked up yet", () => {
+    render(MomentEditor, { moment, galleries, onClose: () => {} });
+    expect(screen.getByText(/Google: not looked up yet/)).toBeInTheDocument();
   });
 });

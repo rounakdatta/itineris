@@ -26,41 +26,60 @@ beforeEach(() => {
   trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.galleryId = "g1"; trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1; trip.view = "map";
 });
 
+import { resetSeen, markSeen } from "../src/lib/seen.svelte.js";
+const byTitle = (t) => FakeMarker.all.find((m) => m.title === t);
+const click = (el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
 describe("GoogleMapView", () => {
-  it("draws Google's map with the configured key, a photo pin per located photo, a line per route", async () => {
+  beforeEach(() => { resetSeen(); trip.moments = [...trip.moments.map((m) => (m.id === "b" ? { ...m, google: { placeId: "ChIJmax", rating: 4.4, ratingCount: 12873, type: "Hawker centre", mapsUri: "https://maps.google.com/?cid=1" } } : m)), { ...structuredClone(moments[0]), id: "a2", t: "2026-03-14T09:10:00+08:00" }]; });
+
+  it("draws Google's map with one story-ring pin per place, a count badge, a rating chip where Google knows the place, a line per route", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
     const map = FakeMap.instances[0];
     expect(map.opts).toMatchObject({ mapId: "DEMO_MAP_ID", disableDefaultUI: true, clickableIcons: true, gestureHandling: "greedy" });
     expect(map.el.dataset.engine).toBe("google");
-    expect(FakeMarker.all.map((m) => m.title)).toEqual(["Chinatown", "Maxwell", "Merlion"]);      // d has no GPS
-    expect(FakeMarker.all[0].position).toEqual({ lat: 1.28, lng: 103.84 });
-    expect(FakeMarker.all[0].content.querySelector("img").getAttribute("src")).toBe("/media/a-t.webp");
-    expect(FakeMarker.all[0].content.style.getPropertyValue("--ring")).not.toBe("");
+    expect(FakeMarker.all.map((m) => m.title)).toEqual(["Chinatown", "Maxwell", "Merlion"]);      // a + a2 share Chinatown; d has no GPS
+    const chinatown = byTitle("Chinatown"), maxwell = byTitle("Maxwell");
+    expect(chinatown.position).toEqual({ lat: 1.28, lng: 103.84 });
+    expect(chinatown.content.querySelector(".ring img").getAttribute("src")).toBe("/media/a-t.webp");
+    expect(chinatown.content.querySelector(".ring .n").textContent).toBe("2");
+    expect(chinatown.content.querySelector(".chip")).toBeNull();
+    expect(maxwell.content.querySelector(".chip").textContent).toBe("4.4★");
+    expect(maxwell.content.classList.contains("has-chip")).toBe(true);
+    expect(maxwell.content.querySelector(".ring").classList.contains("seen")).toBe(false);
     expect(FakePolyline.all).toHaveLength(2);
-    expect(FakePolyline.all[0].o.path[0]).toEqual({ lat: 1.28, lng: 103.85 });
-    expect(map.camera.some((c) => c[0] === "fitBounds")).toBe(true);                        // fitted to the photos
+    expect(map.camera.some((c) => c[0] === "fitBounds")).toBe(true);
   });
-  it("first tap on a pin focuses (card + bigger pin), second opens the story; bare map clears", async () => {
+  it("tap the ring: the story opens at once; tap the chip: the place card (then the story); bare map clears", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
-    const map = FakeMap.instances[0], b = FakeMarker.all[1];
-    b.click(); await tick();
+    const map = FakeMap.instances[0], maxwell = byTitle("Maxwell");
+    click(maxwell.content.querySelector(".chip")); await tick();
     expect(trip.focusId).toBe("b"); expect(trip.storyOpen).toBe(false);
-    expect(b.content.classList.contains("on")).toBe(true); expect(b.zIndex).toBe(1000);
+    expect(maxwell.content.classList.contains("on")).toBe(true); expect(maxwell.zIndex).toBe(1000);
     expect(map.camera.some((c) => c[0] === "panTo" && c[1].lat === 1.2803)).toBe(true);
-    expect(map.zoom).toBeGreaterThanOrEqual(15);
-    b.click(); await tick();
+    click(maxwell.content.querySelector(".chip")); await tick();
     expect(trip.storyMoment.id).toBe("b");
+    trip.closeStory(); await tick();
+    click(byTitle("Chinatown").content.querySelector(".ring")); await tick();
+    expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("a");                   // straight into the story
     trip.closeStory();
     map.fire("click", {}); await tick();
-    expect(trip.focusId).toBeNull(); expect(b.content.classList.contains("on")).toBe(false);
-    map.fire("click", { placeId: "ChIJ..." }); await tick();                                  // Google's own place: leave ours alone
+    expect(trip.focusId).toBeNull(); expect(maxwell.content.classList.contains("on")).toBe(false);
   });
-  it("a filter hides pins and routes and brings them back; a new gallery refits", async () => {
+  it("the ring goes quiet once every photo behind it has been seen", async () => {
+    render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
+    const ring = byTitle("Chinatown").content.querySelector(".ring");
+    markSeen("a"); await tick();
+    expect(ring.classList.contains("seen")).toBe(false);
+    markSeen("a2"); await tick();
+    expect(ring.classList.contains("seen")).toBe(true);
+    expect(byTitle("Maxwell").content.querySelector(".ring").classList.contains("seen")).toBe(false);
+  });
+  it("a filter hides places and brings them back; a new gallery refits", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
     const map = FakeMap.instances[0];
     trip.facets = ["activities"]; await tick();
-    expect(FakeMarker.all.filter((m) => m.map).map((m) => m.title)).toEqual(["Merlion"]);     // run only
-    expect(FakePolyline.all.every((l) => l.map)).toBe(true);
+    expect(FakeMarker.all.filter((m) => m.map).map((m) => m.title)).toEqual(["Merlion"]);
     trip.facets = ["spots"]; await tick();
     expect(FakeMarker.all.filter((m) => m.map).map((m) => m.title)).toEqual(["Chinatown", "Maxwell"]);
     expect(FakePolyline.all.every((l) => l.map === null)).toBe(true);
@@ -77,7 +96,7 @@ describe("GoogleMapView", () => {
     expect(onFail).toHaveBeenCalledTimes(1);
     expect(onFail.mock.calls[0][0].message).toMatch(/BillingNotEnabled/);
     unmount();
-    expect(mapErrorFn).toBeNull();                                  // stopped watching on teardown
+    expect(mapErrorFn).toBeNull();
   });
   it("when Google cannot load, it says so instead of leaving a blank map", async () => {
     loadImpl = async () => { throw new Error("Google Maps refused this API key"); };

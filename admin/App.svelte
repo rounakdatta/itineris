@@ -147,6 +147,7 @@
 
 <main class:selecting={selectMode}>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if me?.places?.lastError}<p class="error" role="alert">Google Places lookups are failing (ratings on the map): {me.places.lastError}</p>{/if}
 
   {#if tab === "photos"}
     {#if shared}

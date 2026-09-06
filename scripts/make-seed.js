@@ -11,18 +11,18 @@ const out = (p) => resolve(root, p);
 
 const PLACES = {
   chinatown:   { name: "Chinatown",              lat: 1.2829, lng: 103.8443 },
-  maxwell:     { name: "Maxwell Food Centre",    lat: 1.2803, lng: 103.8449 },
-  laupasat:    { name: "Lau Pa Sat",             lat: 1.2807, lng: 103.8504 },
+  maxwell:     { name: "Maxwell Food Centre",    lat: 1.2803, lng: 103.8449, google: { placeId: "ChIJseedmaxwell", rating: 4.4, ratingCount: 12873, type: "Hawker centre" } },
+  laupasat:    { name: "Lau Pa Sat",             lat: 1.2807, lng: 103.8504, google: { placeId: "ChIJseedlaupasat", rating: 4.3, ratingCount: 24154, type: "Hawker centre" } },
   merlion:     { name: "Merlion Park",           lat: 1.2868, lng: 103.8545 },
-  mbs:         { name: "Marina Bay Sands",       lat: 1.2834, lng: 103.8607 },
-  gardens:     { name: "Gardens by the Bay",     lat: 1.2816, lng: 103.8636 },
+  mbs:         { name: "Marina Bay Sands",       lat: 1.2834, lng: 103.8607, google: { placeId: "ChIJseedmbs", rating: 4.6, ratingCount: 56321, type: "Hotel" } },
+  gardens:     { name: "Gardens by the Bay",     lat: 1.2816, lng: 103.8636, google: { placeId: "ChIJseedgardens", rating: 4.7, ratingCount: 98032, type: "Garden" } },
   sentosa:     { name: "Siloso Beach",           lat: 1.2560, lng: 103.8110 },
   eastcoast:   { name: "East Coast Park",        lat: 1.3010, lng: 103.9120 },
   littleindia: { name: "Little India",           lat: 1.3067, lng: 103.8517 },
   tiongbahru:  { name: "Tiong Bahru",            lat: 1.2857, lng: 103.8270 },
   botanic:     { name: "Botanic Gardens",        lat: 1.3138, lng: 103.8159 },
   hajilane:    { name: "Haji Lane",              lat: 1.3016, lng: 103.8590 },
-  jewel:       { name: "Jewel Changi",           lat: 1.3601, lng: 103.9890 },
+  jewel:       { name: "Jewel Changi",           lat: 1.3601, lng: 103.9890, google: { placeId: "ChIJseedjewel", rating: 4.7, ratingCount: 34210, type: "Shopping mall" } },
 };
 
 // tags are AUTHORED, never inferred. this is just the seed author's set.
@@ -88,6 +88,9 @@ const moments = M.map(([t, placeKey, tags, caption], i) => {
     caption,
     tags,
     media: { type: "photo", src: `media/${id}.svg`, w: 1080, h: 1920 },
+    // Seed "Google" details are obviously fake and dated so a server with a key
+    // replaces them with the real thing on first boot.
+    ...(p.google ? { google: { ...p.google, mapsUri: null, fetchedAt: "2026-01-01T00:00:00Z" } } : {}),
   };
 });
 

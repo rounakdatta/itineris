@@ -16,6 +16,8 @@
     return a === b ? a : `${a}–${b}`;
   });
   const tags = $derived([...new Set(shown.flatMap((x) => x.tags ?? []))]);
+  // What Google says about the place: from any photo of the group that carries it.
+  const google = $derived(m ? (m.google?.placeId ? m.google : shown.find((x) => x.google?.placeId)?.google ?? null) : null);
   const open = $derived(!!m && trip.loaded && !trip.storyOpen && trip.view === "map");
 </script>
 
@@ -34,6 +36,9 @@
         <h2>{title}</h2>
         <button class="close" onclick={() => (trip.focusId = null)} aria-label="Close">✕</button>
       </div>
+      {#if google && Number.isFinite(google.rating)}
+        <p class="google"><b>{google.rating.toFixed(1)}</b><i aria-hidden="true">★</i>{#if google.ratingCount}<span class="cnt">({google.ratingCount.toLocaleString("en")})</span>{/if}{#if google.type}<span class="dot">·</span><span class="type">{google.type}</span>{/if}</p>
+      {/if}
       <p class="meta">
         {#if day}<span>{day}</span>{/if}
         <span>{times}</span>
@@ -75,6 +80,10 @@
   .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
   h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; color: #fff; line-height: 1.25; }
   .close { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, 0.08); color: var(--muted); cursor: pointer; display: grid; place-items: center; font-size: 12px; }
+  .google { margin: -2px 0 0; display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+  .google b { color: #fff; font-weight: 650; }
+  .google i { font-style: normal; color: #f4b400; font-size: 12px; margin-right: 2px; }
+  .google .dot { opacity: 0.6; }
   .meta { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); align-items: center; }
   .tag { display: inline-flex; align-items: center; gap: 5px; text-transform: uppercase; letter-spacing: 0.04em; font-size: 10.5px; }
   .tag i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
