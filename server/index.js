@@ -9,6 +9,7 @@ import { ingestMedia, backfillMedium, MEDIUM } from "./ingest.js";
 import { isLocalIso } from "./time.js";
 import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
 import { lookupPlace, needsLookup, searchPlaces, fetchPlaceDetails, isStale, isPlaceId } from "./places.js";
+import { validateStyle } from "./caption.js";
 
 const env = (k, d) => process.env[k] ?? d;
 const PORT = +env("ITINERIS_PORT", 8080);
@@ -94,6 +95,15 @@ function momentPatch(patch, email) {
     const id = PLACE_ID(patch.placeId);
     if (id === undefined) return { error: "placeId must be a Google Place ID" };
     upd.placeId = id;
+  }
+  // How the caption sits on the photo (position, face, size, pill, ink, alignment); null = the default look.
+  if ("captionStyle" in patch) {
+    if (patch.captionStyle === null) upd.captionStyle = null;
+    else {
+      const v = validateStyle(patch.captionStyle);
+      if (v.error) return { error: `captionStyle: ${v.error}` };
+      upd.captionStyle = v.style;
+    }
   }
   return { upd: { ...upd, editedBy: email, editedAt: new Date().toISOString() } };
 }

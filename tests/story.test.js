@@ -19,11 +19,19 @@ describe("Story", () => {
     trip.openStory("a"); render(Story);
     const d = dialog();
     expect(d).toHaveTextContent("14 Mar"); expect(d).not.toHaveTextContent("Day 1"); expect(d).toHaveTextContent("Chinatown"); expect(d).toHaveTextContent("08:40");
-    expect(d).toHaveTextContent("Kaya toast"); expect(d).toHaveTextContent("food");
+    expect(d.querySelector(".cap-host .cap")).toHaveTextContent("Kaya toast"); expect(d).toHaveTextContent("food");
     expect(d.querySelector("img.media").getAttribute("src")).toBe("/media/a.webp");   // absolute: works under /g/<token> too
     trip.openStory("d"); await tick();
-    expect(screen.getByRole("dialog").querySelector(".caption")).toBeNull();
+    expect(screen.getByRole("dialog").querySelector(".cap")).toBeNull();
     expect(screen.getByRole("dialog").querySelector(".tags")).toBeNull();
+  });
+  it("the caption sits where the author put it, in the face and pill they chose", async () => {
+    trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, captionStyle: { x: 0.25, y: 0.3, font: "poster", bg: "#ffb020", align: "left" } } : m));
+    trip.openStory("a"); render(Story);
+    const cap = dialog().querySelector(".cap-host .cap");
+    const style = cap.getAttribute("style").replace(/\s/g, "");
+    expect(style).toContain("--cap-x:25.00%"); expect(style).toContain("--cap-y:30.00%"); expect(style).toContain("BebasNeue"); expect(style).toContain("--cap-bg:#ffb020"); expect(style).toContain("--cap-ink:#111"); expect(style).toContain("--cap-align:left");
+    expect(cap.classList.contains("animate")).toBe(true); expect(cap.getAttribute("role")).toBeNull();   // visitors cannot drag it
   });
   it("the place in the header opens Google Maps in a new tab, without acting as a tap on the story", async () => {
     trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, mapsUrl: "https://maps.google.com/?cid=7" } : m));

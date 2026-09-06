@@ -2,6 +2,7 @@
   import { trip } from "../lib/trip.svelte.js";
   import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink, isVideo, fmtDuration } from "../lib/data.js";
   import { markSeen } from "../lib/seen.svelte.js";
+  import Caption from "./Caption.svelte";
 
   const SEGMENT_MS = 5000;
   const DISMISS_PX = 110;   // drag down this far to close
@@ -253,12 +254,15 @@
         <img class="media" class:contain={landscape} class:loaded src={fullUrl} alt={current.caption || current.place || ""} draggable="false"
           onload={() => (loadedId = id)} onerror={() => (failedId = id)} />
       {/if}
+      {#if current.caption}
+        <!-- The caption sits ON the photo, where the author dragged it, in the face and pill they chose (Caption.svelte, shared with the admin's preview). -->
+        <div class="cap-host"><Caption text={current.caption} style={current.captionStyle} animate /></div>
+      {/if}
       {#if !loaded && !failed}<span class="loading" aria-label={video_ ? "Loading video" : "Loading photo"} role="status"></span>{/if}
       {#if failed}<p class="failed" role="alert">Couldn't load this {video_ ? "video" : "photo"}</p>{/if}
     {/key}
 
     <footer>
-      {#if current.caption}<p class="caption">{current.caption}</p>{/if}
       {#if current.tags.length}
         <div class="tags">{#each current.tags as t (t)}<span class="tag">{t}</span>{/each}</div>
       {/if}
@@ -380,7 +384,7 @@
     padding: 28px 18px max(20px, env(safe-area-inset-bottom));
     background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent); color: #fff; pointer-events: none;
   }
-  .caption { margin: 0 0 10px; font-size: 16px; line-height: 1.45; max-width: 34rem; }
+  .cap-host { grid-row: 1 / -1; grid-column: 1; position: relative; z-index: 3; pointer-events: none; }
   .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
   .tag { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
   .hint { font-size: 11px; opacity: 0.55; }

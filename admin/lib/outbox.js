@@ -45,6 +45,7 @@ export function metaToSend(item) {
   const m = item.meta ?? {};
   const out = {};
   if (m.caption) out.caption = m.caption;
+  if (m.captionStyle) out.captionStyle = m.captionStyle;
   if (m.place) out.place = m.place;
   if (m.tags?.length) out.tags = m.tags;
   if (m.galleries?.length) out.galleries = m.galleries;

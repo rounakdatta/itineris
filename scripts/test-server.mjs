@@ -164,6 +164,11 @@ try {
     const rl = await s1.api("GET", `/admin/api/resolve-link?url=${encodeURIComponent(FULL)}`);
     ok("resolve-link reads name, the place's coordinates and a stable link out of a full URL (no network)", rl.status === 200 && rl.body.name === "Lau Pa Sat" && rl.body.lat === 1.280638 && rl.body.lng === 103.850453 && rl.body.mapsUrl === CID_URL, JSON.stringify(rl.body));
     ok("PATCH rejects a non-Google mapsUrl", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { mapsUrl: "https://example.com/place" })).status === 400);
+    const styled = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: { x: 0.2, y: 0.7, font: "script", size: "l", bg: "#ffb020", align: "left", junk: true } });
+    ok("PATCH captionStyle: kept, filled with defaults, junk dropped", styled.status === 200 && JSON.stringify(styled.body.captionStyle) === JSON.stringify({ x: 0.2, y: 0.7, font: "script", size: "l", bg: "#ffb020", ink: "light", align: "left" }), JSON.stringify(styled.body.captionStyle));
+    ok("PATCH captionStyle rejects an unknown face", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: { font: "comic" } })).status === 400);
+    ok("PATCH captionStyle rejects a stringy position", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: { x: "0.5" } })).status === 400);
+    ok("PATCH captionStyle: null clears it", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: null })).body.captionStyle === null);
     const linked = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { lat: 1.280638, lng: 103.850453, place: "Lau Pa Sat", mapsUrl: CID_URL });
     ok("PATCH stores the exact link", linked.status === 200 && linked.body.mapsUrl === CID_URL);
     ok("...and the public gallery carries it", (await readJson(path.join(d1, "data", "galleries", `${gid}.json`))).moments.find((m) => m.id === b.id)?.mapsUrl === CID_URL);
