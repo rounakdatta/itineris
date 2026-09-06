@@ -41,6 +41,23 @@ persistence:
   # Reuse a pre-existing PVC instead of letting the chart create one.
   existingClaim: ""
 
+# Google Maps as the map. Empty apiKey: the viewer draws MapLibre + Carto,
+# which "Save for offline" can keep. With a key -- a Maps JavaScript API key
+# restricted to this site's hostname; Google gives 10,000 free map loads a
+# month -- the viewer draws Google's map with the photos as pins and falls back
+# to MapLibre when offline. The key ships to browsers in /config.json (public
+# by nature, hence the referrer restriction; it is not a secret).
+googleMaps:
+  # Either put the key here (fine for a private values file) ...
+  apiKey: ""
+  # ... or, better for a public deployment repo, name a Secret in the release's
+  # namespace whose key `apiKey` holds it (the homelab's Bitwarden sync makes
+  # one). The Secret is optional at pod start: absent = MapLibre until it lands
+  # and the pod restarts (every deploy restarts it).
+  existingSecret: ""
+  # Optional Map ID (Cloud-based map styling). Google's demo id is used when empty.
+  mapId: ""
+
 # Upload + tagging UI and API, served under /admin on the same host. The chart
 # ships no Ingress: the deployment repo puts THIS service behind tinyauth and
 # leaves the public service open.

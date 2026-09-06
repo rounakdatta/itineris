@@ -14,6 +14,7 @@ class Trip {
   status = $state("loading");
   error = $state(null);
   fromCache = $state(false);   // the service worker served a saved copy
+  mapEngine = $state("maplibre");   // "maplibre" | "google" -- which map is drawing (see lib/config.js)
 
   // --- selection ---
   facets = $state([]);      // active facet ids; empty means "everything"

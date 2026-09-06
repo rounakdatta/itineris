@@ -10,10 +10,20 @@
   import Story from "./components/Story.svelte";
   import OfflineSheet from "./components/OfflineSheet.svelte";
   import PlaceCard from "./components/PlaceCard.svelte";
+  import GoogleMapView from "./components/GoogleMapView.svelte";
+  import { loadConfig, chooseMapEngine } from "./lib/config.js";
 
   let online = $state(typeof navigator === "undefined" ? true : navigator.onLine !== false);
+  // Which map draws the gallery, decided once per page load from /config.json:
+  // Google Maps when a key is configured and we are online, MapLibre otherwise
+  // (and whenever Google's script fails). null until known, so neither engine
+  // is downloaded for nothing.
+  let config = $state(null);
+  let engine = $state(null);
+  function useMapLibre(why) { if (why) console.warn("Google Maps unavailable, drawing with MapLibre:", why); engine = "maplibre"; trip.mapEngine = "maplibre"; }
 
   onMount(() => {
+    loadConfig().then((c) => { config = c; engine = chooseMapEngine(c, navigator.onLine !== false); trip.mapEngine = engine; });
     trip.load().then(() => {
       if (!trip.loaded) return;
       // No photo or route has a location: the map would be an empty globe, so
@@ -37,11 +47,15 @@
 
 <main>
   <!--
-    MapView is mounted once for the life of the app and never conditionally
-    rendered. The wall overlays it instead of replacing it, so the MapLibre
-    instance -- and its camera position -- survives every view switch.
+    The map is mounted once for the life of the app (per engine) and the wall
+    overlays it instead of replacing it, so the map instance -- and its camera
+    position -- survives every view switch.
   -->
-  <MapView />
+  {#if engine === "google"}
+    <GoogleMapView {config} onFail={(e) => useMapLibre(e?.message)} />
+  {:else if engine === "maplibre"}
+    <MapView />
+  {/if}
 
   {#if trip.view === "wall" && trip.loaded}
     <PhotoWall />

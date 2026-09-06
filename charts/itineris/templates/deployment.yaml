@@ -18,8 +18,38 @@ spec:
     spec:
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
-      {{- if .Values.persistence.enabled }}
+      {{- if or .Values.persistence.enabled .Values.googleMaps.existingSecret }}
       initContainers:
+        {{- if .Values.googleMaps.existingSecret }}
+        # Render /config.json from the Secret so the browser key never has to
+        # live in a values file. Optional: no Secret yet means an empty key,
+        # which the viewer treats as "draw MapLibre".
+        - name: config
+          image: {{ include "itineris.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: GOOGLE_MAPS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.googleMaps.existingSecret | quote }}
+                  key: apiKey
+                  optional: true
+            - name: GOOGLE_MAPS_MAP_ID
+              value: {{ .Values.googleMaps.mapId | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              printf '{"googleMapsApiKey":"%s","googleMapsMapId":"%s"}' "$GOOGLE_MAPS_API_KEY" "$GOOGLE_MAPS_MAP_ID" > /config/config.json
+              [ -n "$GOOGLE_MAPS_API_KEY" ] && echo "config.json rendered with a Google Maps key" || echo "no Google Maps key in the Secret yet; the viewer will draw MapLibre"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+        {{- end }}
+        {{- if .Values.persistence.enabled }}
         # First run on an empty volume: copy the demo trip baked into this
         # image so the site is never blank -- the private library from
         # /seed/library and the public gallery + media from the served root.
@@ -49,6 +79,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /pvc
+        {{- end }}
       {{- end }}
       containers:
         - name: itineris
@@ -93,6 +124,12 @@ spec:
               subPath: media
               readOnly: true
             {{- end }}
+            {{- if or .Values.googleMaps.existingSecret .Values.googleMaps.apiKey }}
+            - name: config
+              mountPath: /usr/share/nginx/html/config.json
+              subPath: config.json
+              readOnly: true
+            {{- end }}
       volumes:
         # The one writable path a read-only rootfs needs: nginx-unprivileged
         # puts its pid file and every *_temp_path here.
@@ -102,6 +139,14 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "itineris.claimName" . }}
+        {{- end }}
+        {{- if .Values.googleMaps.existingSecret }}
+        - name: config
+          emptyDir: {}
+        {{- else if .Values.googleMaps.apiKey }}
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

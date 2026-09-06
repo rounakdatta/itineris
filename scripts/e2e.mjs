@@ -9,6 +9,7 @@ import path from "node:path";
 import { launch, shot, tap, swipe, sleep, text, count, tapAt, resolveBrowserEnv, setNetwork } from "./browser.mjs";
 import { startAuthProxy } from "./lib/authproxy.mjs";
 import { fakeJpeg } from "./lib/fakejpeg.mjs";
+import { GMAPS_STUB } from "./lib/gmaps-stub.js";
 import sharp from "sharp";
 
 const ROOT = process.cwd();
@@ -161,6 +162,46 @@ try {
   await page.waitForSelector(".card");
   ok("dead gallery link explains itself", /doesn't point to a gallery/.test(await text(page, ".card")));
   await settle(page); await shot(page, `${SHOTS}/05-notfound.png`);
+
+  console.log("--- viewer: Google Maps as the map (stubbed API, real integration) ---");
+  // A key in /config.json switches the engine. The Google script is served by a
+  // stub here (there is no key in CI), so what this proves is our side of it:
+  // config -> loader -> one photo pin per located photo -> the same two-step
+  // tap -> place card -> story, and honest copy about offline.
+  writeFileSync(path.join(nd, "docroot", "config.json"), JSON.stringify({ googleMapsApiKey: "e2e-fake-key" }));
+  const gctx = await browser.createBrowserContext();
+  const gp = await gctx.newPage();
+  await gp.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  await gp.setRequestInterception(true);
+  let gmapsRequested = null;
+  gp.on("request", (r) => {
+    const u = r.url();
+    if (/^https:\/\/maps\.googleapis\.com\/maps\/api\/js/.test(u)) { gmapsRequested = u; return r.respond({ status: 200, contentType: "application/javascript", body: GMAPS_STUB }); }
+    if (/googleapis\.com|gstatic\.com|google\.com/.test(u)) return r.abort();
+    return r.continue();
+  });
+  await gp.goto(`${V}/`, { waitUntil: "domcontentloaded" });
+  await gp.waitForSelector('.map[data-engine="google"] .gpin', { timeout: 20000 });
+  ok("Google Maps is the map, loaded with the configured key", !!gmapsRequested && gmapsRequested.includes("key=e2e-fake-key") && gmapsRequested.includes("libraries=maps,marker"), gmapsRequested ?? "(not requested)");
+  ok("one photo pin per located photo, none of MapLibre", (await count(gp, ".gpin")) === 20 && (await gp.$(".maplibregl-canvas")) === null, String(await count(gp, ".gpin")));
+  ok("pins are the photos, ringed in the tag colour", await gp.$eval(".gpin img", (i) => /\/media\//.test(i.getAttribute("src"))) && (await gp.$eval(".gpin", (el) => getComputedStyle(el).borderTopColor !== "")));
+  const gpins = await gp.$$(".gpin");
+  await gpins[2].tap(); await sleep(400);
+  ok("first tap on a pin: place card, pin grows", (await gp.$(".place-card")) !== null && (await gp.$eval(".gpin.on", () => true).catch(() => false)));
+  await settle(gp); await shot(gp, `${SHOTS}/06-google-maps.png`);
+  await (await gp.$(".gpin.on")).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
+  ok("second tap opens the story", (await gp.$(".story")) !== null);
+  await gp.keyboard.press("Escape"); await sleep(300);
+  await tap(gp, '[aria-label="Save for offline"]'); await gp.waitForSelector(".sheet");
+  ok("offline sheet is honest: photos only, Google's map needs a connection", /Google's map needs a connection/.test(await text(gp, ".sheet")), await text(gp, ".sheet"));
+  await clickText(gp, ".sheet button", "Close");
+  await clickText(gp, ".toggle", "Wall"); await sleep(300);
+  ok("wall still overlays the map", (await count(gp, ".cell")) > 0);
+  await gctx.close();
+  rmSync(path.join(nd, "docroot", "config.json"));
+  // And with no key the same page draws MapLibre, as every other section here relies on.
+  await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
+  ok("without a key the map is MapLibre again", await waitFor(page, () => !!document.querySelector(".map:not([data-engine])") && !document.querySelector('.map[data-engine="google"]')));
 
   console.log("--- admin: photos, select, new gallery from selection ---");
   await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" });

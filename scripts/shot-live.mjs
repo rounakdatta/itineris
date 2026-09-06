@@ -7,6 +7,8 @@ import { launch, resolveBrowserEnv, shot, sleep } from "./browser.mjs";
 const SCRATCH = process.env.SCRATCH ?? "/tmp/itineris-shots";
 const [base = "https://itineris.taptappers.club", ...paths] = process.argv.slice(2);
 const targets = paths.length ? paths : ["/", "/#m/m010", "/#wall"];
+let fail = 0;
+const ok = (name, cond, extra = "") => { console.log(`  ${cond ? "ok  " : "FAIL"}  ${name}${extra ? "  " + extra : ""}`); if (!cond) fail++; };
 mkdirSync(path.join(SCRATCH, "shots"), { recursive: true });
 const env = resolveBrowserEnv(SCRATCH);
 const { browser, page, problems } = await launch({ env });
@@ -20,7 +22,23 @@ try {
     const file = path.join(SCRATCH, "shots", `live${p.replace(/[^a-z0-9]+/gi, "-").replace(/-$/, "") || "-home"}.png`);
     await shot(page, file);
     console.log(`  ${p.padEnd(12)} -> ${file}`);
+    if (p.includes("#m/") && (await page.$(".story"))) {
+      ok("story header links the place to Google Maps", await page.$eval(".story header a.place", (a) => a.target === "_blank" && /google\.com\/maps/.test(a.href)).catch(() => false));
+    }
+  }
+  // One tap on a strip thumbnail: the place card, above the strip, with its Google Maps link.
+  await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".tick", { timeout: 20000 });
+  await page.waitForSelector('.map[data-idle="1"]', { timeout: 30000 }).catch(() => {});
+  const ticks = await page.$$(".tick");
+  if (ticks.length) {
+    await ticks[Math.min(2, ticks.length - 1)].tap(); await sleep(600);
+    ok("place card appears on the first tap", (await page.$(".place-card")) !== null);
+    ok("...with a Google Maps link that opens a new tab", await page.$eval(".place-card a[href*='google.com/maps']", (a) => a.target === "_blank").catch(() => false));
+    ok("...above the strip, not on it", await page.evaluate(() => { const c = document.querySelector(".place-card")?.getBoundingClientRect(); const s = document.querySelector(".strip")?.getBoundingClientRect(); return !!c && !!s && c.bottom <= s.top; }));
+    await sleep(500); const file = path.join(SCRATCH, "shots", "live-place-card.png"); await shot(page, file); console.log(`  place card   -> ${file}`);
   }
 } finally { await browser.close(); }
+if (fail) { console.log(`\n${fail} FAILED`); process.exitCode = 1; }
 const real = problems.filter((x) => !/favicon/.test(x));
 console.log(real.length ? `browser problems:\n  ${real.join("\n  ")}` : "browser problems: 0");
