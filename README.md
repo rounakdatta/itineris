@@ -1,5 +1,7 @@
 # itineris
 
+<img src="brand/itineris-mark.png" alt="the itineris mark: a walking figure drawn out of an italic it, carrying an orange backpack" width="132" align="right" />
+
 A travel journal you can look at from several angles at once: a map, a timeline
 strip, and a full-screen story viewer — all rendering the *same* selection. (A
 photo wall stands in for the map only when nothing in a gallery has a location;
@@ -120,17 +122,20 @@ touch — the postcard expands into that place's story. (`HANDOFF_MS` in
 
 ## The mark
 
-![the itineris mark](brand/itineris-mark.png)
+<img src="brand/itineris-mark.png" alt="" width="160" />
 
 A walking figure drawn out of an italic *it* — the dot of the **i** its head,
 the **t** its stride — with an orange backpack. `brand/itineris-mark.png` is
 the master; every size the site serves comes from it:
 
 ```sh
-node scripts/make-icons.mjs   # favicon.ico (16/32/48), favicon-16/32.png,
-                              # icon-192/512.png, icon-maskable-512.png,
-                              # apple-touch-icon.png, og-card.png
+node scripts/make-icons.mjs   # mark-96.png (the top bar), favicon.ico (16/32/48),
+                              # favicon-16/32.png, icon-192/512.png,
+                              # icon-maskable-512.png, apple-touch-icon.png, og-card.png
 ```
+
+It rides in the top bar of both apps, beside the wordmark, on a small white
+chip (the drawing is on white, and the bar is dark).
 
 Each output trims the master's white air and puts back only what its slot
 wants: tight at 16 px so the backpack still reads, roomier for a home-screen

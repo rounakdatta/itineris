@@ -364,6 +364,7 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.setOfflineMode(true); proxy.state.down = true;
   await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".queue .tile", { timeout: 15000 });
+  ok("the admin wears the mark too", await page.$eval("header .brand .mark", (i) => i.complete && i.naturalWidth > 0), await page.$eval("header .brand .mark", (i) => i.getAttribute("src")).catch(() => "(no mark)"));
   ok("the admin itself opens OFFLINE: shell from the worker, library from the last copy, queue from IndexedDB", (await count(page, ".queue .tile")) === 2 && (await waitFor(page, () => document.querySelectorAll(".cell").length > 0)) && /Offline|Saved copy/.test(await text(page, "header")), `${await count(page, ".cell")} cells; ${await text(page, "header")}`);
   ok("OFFLINE: the library really came from the worker's saved copy", (await page.evaluate(() => fetch("/admin/api/library").then((r) => r.headers.get("x-itineris-cache")))) === "fallback");
   await settle(page); await shot(page, `${SHOTS}/17-admin-offline-reload.png`);
@@ -450,7 +451,10 @@ try {
   // whatever was actually looked at -- see the offline section below.)
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("no download button in the top bar", (await page.$('[aria-label="Save for offline"]')) === null);
-  ok("the page says which build it is", /^\d+\.\d+\.\d+$/.test(await page.$eval("main", (m) => m.dataset.appVersion ?? "")), await page.$eval("main", (m) => m.dataset.appVersion ?? "(none)"));
+  const stamped = (await (await fetch(`${V}/`)).text()).match(/name="itineris-version" content="([^"]+)"/)?.[1] ?? "";
+  ok("the served HTML says which build it is, without running any of it", /^\d+\.\d+\.\d+$/.test(stamped), stamped || "(none)");
+  ok("...and so does the running app", /^\d+\.\d+\.\d+$/.test(await page.$eval("main", (m) => m.dataset.appVersion ?? "")), await page.$eval("main", (m) => m.dataset.appVersion ?? "(none)"));
+  ok("the mark rides in the top bar, loaded", await page.$eval(".brand .mark", (i) => i.complete && i.naturalWidth > 0 && /mark-96\.png$/.test(i.getAttribute("src"))), await page.$eval(".brand .mark", (i) => `${i.getAttribute("src")} ${i.naturalWidth}px`).catch(() => "(no mark)"));
   await browser.defaultBrowserContext().overridePermissions(V, ["geolocation"]);
   await page.setGeolocation({ latitude: 1.3521, longitude: 103.8198, accuracy: 18 });
   ok("the locate button is there, and nothing has been asked yet", (await page.$('[aria-label="Show my location"]')) !== null && (await page.$('.map[data-me="1"]')) === null);
@@ -508,7 +512,7 @@ try {
   const libTry = await fetch(`${V}/library/moments.json`);
   ok("manifest served as application/manifest+json", ((await fetch(`${V}/manifest.webmanifest`)).headers.get("content-type") ?? "").includes("manifest+json"));
   // The mark: every slot the head and the manifest name has to be there, and be an image.
-  const icons = ["/favicon.ico", "/favicon-16.png", "/favicon-32.png", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png", "/og-card.png"];
+  const icons = ["/mark-96.png", "/favicon.ico", "/favicon-16.png", "/favicon-32.png", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png", "/og-card.png"];
   const served = await Promise.all(icons.map(async (u) => { const r = await fetch(`${V}${u}`); return `${u} ${r.status} ${(r.headers.get("content-type") ?? "").split(";")[0]} ${(await r.arrayBuffer()).byteLength}B`; }));
   ok("the mark is served in every size the page and the manifest ask for", served.every((s) => / 200 image\/(png|x-icon|vnd\.microsoft\.icon) [1-9]/.test(s)), served.join(" | "));
   const mani = await (await fetch(`${V}/manifest.webmanifest`)).json();

@@ -60,6 +60,7 @@ async function card(width, height) {
 
 const TIGHT = 0.06, ROOMY = 0.12, APPLE = 0.14, MASKABLE = 0.26;   // Android masks to a circle: keep the art inside the safe 80%
 const files = {
+  "mark-96.png": await square(96, TIGHT),        // the top bar, beside the wordmark
   "favicon-16.png": await square(16, TIGHT),
   "favicon-32.png": await square(32, TIGHT),
   "icon-192.png": await square(192, ROOMY),
