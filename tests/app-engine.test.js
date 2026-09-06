@@ -54,6 +54,11 @@ describe("showing the visitor where they are", () => {
   });
   const geo = { asked: 0, ok: null, fail: null, watchPosition(ok, fail) { geo.asked += 1; geo.ok = ok; geo.fail = fail; return 1; }, clearWatch() {} };
   beforeEach(() => { geo.asked = 0; Object.defineProperty(navigator, "geolocation", { value: geo, configurable: true }); });
+  it("the app stamps its version on the page, so what is deployed can be read", async () => {
+    vi.stubGlobal("fetch", site());
+    const { container } = render(App);
+    expect(container.querySelector("main").dataset.appVersion).toMatch(/^\d+\.\d+\.\d+$/);
+  });
   it("a locate button asks the browser only when tapped, and says when it is refused", async () => {
     vi.stubGlobal("fetch", site());
     const { container } = render(App);
