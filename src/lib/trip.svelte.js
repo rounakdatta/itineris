@@ -1,4 +1,4 @@
-import { momentMatches, trackMatches, placeGroups } from "./data.js";
+import { momentMatches, trackMatches, placeGroups, placeKey } from "./data.js";
 
 const GALLERY_PATH = /^\/g\/([a-z0-9-]{4,40})\/?$/;
 
@@ -42,6 +42,11 @@ class Trip {
   storyPlaces = $derived(placeGroups(this.visibleMoments));
   storyGroup = $derived(this.storyMoment ? (this.storyPlaces.find((g) => g.moments.some((m) => m.id === this.storyMoment.id))?.moments ?? [this.storyMoment]) : []);
   storyPos = $derived(this.storyMoment ? this.storyGroup.findIndex((m) => m.id === this.storyMoment.id) : -1);
+  storyPlace = $derived(this.storyMoment ? placeKey(this.storyMoment) : null);
+  // True while the story is handing over from one place to the next ("Next
+  // stop"): the viewer shrinks to show the map travelling to the new pin, and
+  // the map may dress that pin up meanwhile.
+  handoff = $state(false);
 
   // Which gallery to show comes from the URL: /g/<token>, or whatever
   // data/home.json nominates for "/". The full library is never fetched --

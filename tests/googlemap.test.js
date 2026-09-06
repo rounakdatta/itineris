@@ -74,6 +74,14 @@ describe("GoogleMapView", () => {
     pin.click(); await tick();
     expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("e");
   });
+  it("while the story hands over to the next place, the map marks itself travelling (the chosen pin pulses)", async () => {
+    const { container } = render(GoogleMapView, { props: { config } }); await flush(); await tick(); await flush();
+    expect(container.querySelector(".map").classList.contains("travel")).toBe(false);
+    trip.handoff = true; await tick();
+    expect(container.querySelector(".map").classList.contains("travel")).toBe(true);
+    trip.handoff = false; await tick();
+    expect(container.querySelector(".map").classList.contains("travel")).toBe(false);
+  });
   it("the ring goes quiet once every photo behind it has been seen", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
     const ring = byTitle("Chinatown").content.querySelector(".ring");

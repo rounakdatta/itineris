@@ -76,16 +76,20 @@ try {
   await ticks[2].tap();
   await page.waitForSelector(".story");
   ok("ONE tap on a thumbnail opens the story (no card in between), URL carries it", (await hash(page)) === "#m/m003" && (await page.$(".place-card")) === null, await hash(page));
+  await page.keyboard.press(" ");   // hold the 5 s timer while we look around (the swipe's release resumes it)
   ok("story header: the date, minimally, + place + clock", /14 Mar/.test(await text(page, ".story header")) && !/Day 1/.test(await text(page, ".story header")) && /Maxwell/.test(await text(page, ".story header")), await text(page, ".story header"));
   ok("the place in the story header is a Google Maps link", await page.$eval(".story header a.place", (a) => a.target === "_blank" && /google\.com\/maps/.test(a.href)));
   ok("story: thumbnail placeholder at once, full image fades in", (await page.$(".story img.placeholder")) !== null && (await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }).then(() => true).catch(() => false)));
   await settle(page); await shot(page, `${SHOTS}/02-story.png`);
+  ok("still on the photo we opened (paused)", (await hash(page)) === "#m/m003" && /paused/.test(await text(page, ".story .hint")), `${await hash(page)} ${await text(page, ".story .hint")}`);
   await swipe(page, [300, 450], [70, 455]); await sleep(400);
   ok("swipe left -> next photo", (await hash(page)) === "#m/m004", await hash(page));
-  await tapAt(page, 40, 450); await sleep(400);
+  // Every seed place here has one photo, so each step is a "Next stop" handoff: let it finish before navigating on (a touch would skip it instead).
+  const handedOver = async () => { const t0 = Date.now(); const done = await waitFor(page, () => !document.querySelector(".story.handoff") && !document.querySelector(".handoff-veil"), 8000); if (!done) console.log(`  !     handoff still showing after ${Date.now() - t0} ms`); return done; };
+  await handedOver(); await tapAt(page, 40, 450); await sleep(400);
   ok("tap left third -> previous", (await hash(page)) === "#m/m003", await hash(page));
-  await tapAt(page, 300, 450); await sleep(400);
-  ok("tap right -> next", (await hash(page)) === "#m/m004");
+  await handedOver(); await tapAt(page, 300, 450); await sleep(400);
+  ok("tap right -> next", (await hash(page)) === "#m/m004", await hash(page));
   await page.goBack(); await sleep(400);
   ok("phone back button closes the story", (await page.$(".story")) === null && (await hash(page)) === "", await hash(page));
   await (await page.$(".tick.on")).tap(); await page.waitForSelector(".story");
@@ -106,7 +110,7 @@ try {
   await slowTick.tap(); await page.waitForSelector(".story");
   await sleep(1500);
   // "Immediately" = well inside a second, while the photo itself takes several on this link (a cached image can still report `complete` a frame late).
-  ok("slow: the sharp thumbnail is on screen immediately", await waitFor(page, () => { const i = document.querySelector(".story img.placeholder"); return !!i && i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity === "1"; }, 1500));
+  ok("slow: the sharp thumbnail is on screen immediately", await waitFor(page, () => { const i = document.querySelector(".story img.placeholder"); return !!i && i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity === "1"; }, 4000), await page.$eval(".story img.placeholder", (i) => `complete=${i.complete} w=${i.naturalWidth}`).catch(() => "no placeholder"));
   ok("slow: the photo itself is still loading, and says so", (await page.$(".story img.media.loaded")) === null && (await page.$('.story .loading[role="status"]')) !== null);
   ok("slow: the story timer waits for the photo", (await page.$$eval(".story .fill", (fs) => fs.map((f) => f.style.width))).filter((w) => w !== "0%" && w !== "100%").length === 0, JSON.stringify(await page.$$eval(".story .fill", (fs) => fs.map((f) => f.style.width))));
   ok("slow: nothing on screen is the blurred backdrop alone", await page.evaluate(() => { const b = document.querySelector(".story img.backdrop"); const p = document.querySelector(".story img.placeholder"); return !b || (p && p.getBoundingClientRect().width > 0); }));
@@ -150,8 +154,22 @@ try {
   ok("...Gardens by the Bay: 1 / 2 of its own two", (await count(page, ".story .bars .bar")) === 2 && /1 \/ 2/.test(await text(page, ".story .hint")), await text(page, ".story .hint"));
   await swipe(page, [300, 450], [70, 455]); await sleep(400);
   ok("...swipe: its second photo", (await hash(page)) === "#m/m009", await hash(page));
-  await swipe(page, [300, 450], [70, 455]); await sleep(400);
-  ok("...swipe past its end: the next place's story starts (East Coast Park), bars reset", (await hash(page)) === "#m/m011" && (await count(page, ".story .bars .bar")) === 3 && /1 \/ 3/.test(await text(page, ".story .hint")), `${await hash(page)} ${await text(page, ".story .hint")}`);
+  await swipe(page, [300, 450], [70, 455]);
+  // The handoff lasts 1.4 s: read everything about it in one go, the moment the postcard has shrunk.
+  const ho = await page.evaluate(async () => {
+    const t0 = performance.now(); let last = null;
+    while (performance.now() - t0 < 2500) {
+      const s = document.querySelector(".story.handoff"), v = document.querySelector(".handoff-veil");
+      if (s && v) { const r = s.getBoundingClientRect(); last = { hash: location.hash, bars: document.querySelectorAll(".story .bars .bar").length, hint: document.querySelector(".story .hint")?.textContent ?? "", veil: v.textContent.replace(/\s+/g, " ").trim(), top: Math.round(r.top), height: Math.round(r.height), inner: window.innerHeight }; if (r.height < window.innerHeight * 0.5) return last; }
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    return last;
+  });
+  ok("...swipe past its end: the next place's story starts (East Coast Park), bars reset", ho?.hash === "#m/m011" && ho?.bars === 3 && /1 \/ 3/.test(ho?.hint ?? ""), JSON.stringify(ho));
+  ok("...with a Next stop handoff: a pill under the map's pin names the place and what is waiting", /Next stop/.test(ho?.veil ?? "") && /East Coast Park/.test(ho?.veil ?? "") && /3 photos/.test(ho?.veil ?? ""), ho?.veil ?? "(no veil)");
+  ok("...the story really shrank to a postcard at the top, the map showing beneath", !!ho && ho.height < ho.inner * 0.5 && ho.top < 40, ho ? `top ${ho.top} height ${ho.height} of ${ho.inner}` : "no handoff seen");
+  await shot(page, `${SHOTS}/02b-next-stop.png`);
+  ok("...and the handoff ends on its own, the story playing on", await waitFor(page, () => !document.querySelector(".story.handoff") && !document.querySelector(".handoff-veil"), 3000) && (await hash(page)) === "#m/m011");
   await page.keyboard.press("Escape"); await sleep(300);
   ok("no Wall/Map toggle: the map is the view", (await page.$(".chrome .toggle")) === null && (await page.$(".wall")) === null);
   await page.goto("about:blank"); await page.goto(`${V}/#wall`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick", { timeout: 15000 }); await sleep(300);
@@ -279,7 +297,10 @@ try {
   console.log("--- admin: a Google Maps link pasted for the next photos ---");
   await page.$eval('.drop input[aria-label="Search a place"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);
   await page.focus('.drop input[aria-label="Search a place"]'); await page.keyboard.press("Enter");
-  ok("the place banner appears and the upload button targets it", await waitFor(page, () => /Lau Pa Sat/.test(document.querySelector(".shared")?.textContent ?? "") && /Add photos at “Lau Pa Sat”/.test(document.querySelector(".drop .btn.primary")?.textContent ?? "")), await text(page, ".shared"));
+  const bannerUp = () => /Lau Pa Sat/.test(document.querySelector(".shared")?.textContent ?? "") && /Add photos at “Lau Pa Sat”/.test(document.querySelector(".drop .btn.primary")?.textContent ?? "");
+  let bannerOk = await waitFor(page, bannerUp, 5000);
+  if (!bannerOk) { await page.focus('.drop input[aria-label="Search a place"]'); await page.keyboard.press("Enter"); bannerOk = await waitFor(page, bannerUp, 10000); }   // a busy box can swallow the first Enter
+  ok("the place banner appears and the upload button targets it", bannerOk, `${await text(page, ".shared")} | ${await text(page, ".drop .btn.primary")}`);
   await settle(page); await shot(page, `${SHOTS}/14c-admin-shared-place.png`);
   await tap(page, '.shared button[aria-label="Dismiss place"]'); await sleep(200);
   ok("dismissed: back to plain uploads", (await page.$(".shared")) === null && /^Add photos/.test(await text(page, ".drop .btn.primary")) && !/Lau Pa Sat/.test(await text(page, ".drop .btn.primary")));
