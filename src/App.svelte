@@ -51,7 +51,9 @@
   });
 </script>
 
-<main>
+<!-- Which build is on this device, readable without a UI for it: the deploy
+     checks and `shot:live` read this, and so can anyone in dev tools. -->
+<main data-app-version={__APP_VERSION__}>
   <!--
     The map is mounted once for the life of the app (per engine) and the wall
     overlays it instead of replacing it, so the map instance -- and its camera

@@ -450,6 +450,7 @@ try {
   // whatever was actually looked at -- see the offline section below.)
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("no download button in the top bar", (await page.$('[aria-label="Save for offline"]')) === null);
+  ok("the page says which build it is", /^\d+\.\d+\.\d+$/.test(await page.$eval("main", (m) => m.dataset.appVersion ?? "")), await page.$eval("main", (m) => m.dataset.appVersion ?? "(none)"));
   await browser.defaultBrowserContext().overridePermissions(V, ["geolocation"]);
   await page.setGeolocation({ latitude: 1.3521, longitude: 103.8198, accuracy: 18 });
   ok("the locate button is there, and nothing has been asked yet", (await page.$('[aria-label="Show my location"]')) !== null && (await page.$('.map[data-me="1"]')) === null);

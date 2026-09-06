@@ -29,6 +29,7 @@ try {
   // One tap on a strip thumbnail: the story, straight away (no place card).
   await page.goto(base + "/", { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".tick", { timeout: 20000 });
+  console.log(`  version      -> ${await page.$eval("main", (m) => m.dataset.appVersion ?? "(none)")}`);
   await page.waitForSelector('.map[data-idle="1"]', { timeout: 30000 }).catch(() => {});
   // Which map is drawing, and -- when it is Google -- that Google actually rendered.
   const engine = await page.$eval(".map", (el) => el.dataset.engine ?? "maplibre").catch(() => "none");
