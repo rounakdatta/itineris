@@ -276,6 +276,13 @@ try {
   await (await page.$(".cell")).tap(); await page.waitForSelector(".sheet");
   ok("native time picker holds the photo's local time", (await page.$eval('.sheet input[type="datetime-local"]', (i) => i.value)) === editRec.t.slice(0, 16) && (await page.$eval(".sheet select", (s) => s.value)) === editRec.t.slice(-6), `${editId} ${editRec.t}`);
   ok("gallery checklist: in both", (await page.$$eval(".sheet .gal input", (is) => is.filter((i) => i.checked).length)) === 2);
+  // A caption, styled: typing one brings up the styler (a phone-shaped preview with the real caption renderer); pick a face and a pill, nudge it up.
+  await page.$eval(".sheet textarea", (el) => { el.value = ""; el.dispatchEvent(new Event("input", { bubbles: true })); });   // the seed photo already has a caption
+  await page.type(".sheet textarea", "Satay by the water");
+  ok("the caption styler appears with the caption on the photo", await waitFor(page, () => document.querySelector('[data-testid="caption-frame"] .cap')?.textContent === "Satay by the water"));
+  await clickText(page, '[role="group"][aria-label="Font"] button', "Poster"); await clickText(page, '[role="group"][aria-label="Background"] button', "Dark");
+  await page.focus('[data-testid="caption-frame"] .cap'); await page.keyboard.down("Shift"); await page.keyboard.press("ArrowUp"); await page.keyboard.up("Shift");
+  ok("the preview follows: Poster face, dark pill, moved up 5%", await page.$eval('[data-testid="caption-frame"] .cap', (c) => { const s = getComputedStyle(c); return /Bebas Neue/.test(s.fontFamily) && s.backgroundColor === "rgba(8, 9, 12, 0.66)" && s.textTransform === "uppercase" && c.getAttribute("style").replace(/\s/g, "").includes("--cap-y:77.00%"); }), await page.$eval('[data-testid="caption-frame"] .cap', (c) => `${getComputedStyle(c).fontFamily} | ${getComputedStyle(c).backgroundColor} | ${c.getAttribute("style").slice(0, 40)}`));
   await settle(page); await shot(page, `${SHOTS}/13-admin-editor.png`);
   await clickText(page, ".sheet button", "Pick on map"); await page.waitForSelector(".picker canvas");
   ok("map picker renders", true);
@@ -293,6 +300,14 @@ try {
   const lib = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
   ok("membership persisted: the edited photo is now only in Friends", JSON.stringify(lib.find((m) => m.id === editId).galleries) === JSON.stringify([friendsId]), JSON.stringify(lib.find((m) => m.id === editId).galleries));
   ok("the exact Google Maps link and the place name were saved", lib.find((m) => m.id === editId).mapsUrl === GMAPS_CID && lib.find((m) => m.id === editId).place === "Lau Pa Sat", JSON.stringify([lib.find((m) => m.id === editId).mapsUrl, lib.find((m) => m.id === editId).place]));
+  ok("...and the caption with its style", lib.find((m) => m.id === editId).caption === "Satay by the water" && JSON.stringify(lib.find((m) => m.id === editId).captionStyle) === JSON.stringify({ x: 0.5, y: 0.77, font: "poster", size: "m", bg: "dark", ink: "light", align: "center" }), JSON.stringify(lib.find((m) => m.id === editId).captionStyle));
+  // ...and the story shows exactly that: the same renderer, on the photo, where it was put.
+  await page.goto(`${V}/g/${friendsId}#m/${editId}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story .cap-host .cap", { timeout: 15000 });
+  ok("the viewer's story wears the styled caption: Poster face in a dark pill, 77% down, on the photo", await page.$eval(".story .cap-host .cap", (c) => { const s = getComputedStyle(c), r = c.getBoundingClientRect(), f = c.closest(".story").getBoundingClientRect(); return c.textContent === "Satay by the water" && /Bebas Neue/.test(s.fontFamily) && s.backgroundColor === "rgba(8, 9, 12, 0.66)" && Math.abs((r.top + r.height / 2 - f.top) / f.height - 0.77) < 0.03; }), await page.$eval(".story .cap-host .cap", (c) => { const r = c.getBoundingClientRect(), f = c.closest(".story").getBoundingClientRect(); return `${getComputedStyle(c).fontFamily} | centre at ${((r.top + r.height / 2 - f.top) / f.height).toFixed(2)}`; }));
+  ok("...with the bundled font actually loaded", await page.evaluate(() => document.fonts.check('16px "Bebas Neue"')));
+  await settle(page); await shot(page, `${SHOTS}/13b-story-caption.png`);
+  await page.keyboard.press("Escape"); await sleep(300);
+  await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
 
   console.log("--- admin: a Google Maps link pasted for the next photos ---");
   await page.$eval('.drop input[aria-label="Search a place"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);

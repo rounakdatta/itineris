@@ -108,6 +108,29 @@ describe("MomentEditor: pinned to a Google place", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ placeId: "ChIJyamo", lat: 37.7619, lng: -122.4194, place: "Yamo", mapsUrl: "https://maps.google.com/?cid=77" }));
   });
+  it("with a caption, the styler appears: a face, a pill, a nudge, and Save sends captionStyle", async () => {
+    render(MomentEditor, { moment: { ...moment, caption: "Kaya toast" }, galleries, onSaved: vi.fn(), onClose: () => {} });
+    expect(screen.getByTestId("caption-frame").querySelector(".cap")).toHaveTextContent("Kaya toast");
+    await fireEvent.click(screen.getByRole("button", { name: "Script" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    await fireEvent.keyDown(screen.getByRole("button", { name: /Caption\. Drag/ }), { key: "ArrowRight" });
+    expect(screen.getByRole("button", { name: "Script" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("caption-frame").querySelector(".cap").getAttribute("style")).toContain("Caveat");
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captionStyle: expect.objectContaining({ font: "script", bg: "dark", x: 0.51, y: 0.82 }) }));
+  });
+  it("no caption, no styler; Reset sends null so the server clears the style", async () => {
+    render(MomentEditor, { moment: { ...moment, caption: "", captionStyle: { font: "serif" } }, galleries, onSaved: vi.fn(), onClose: () => {} });
+    expect(screen.queryByTestId("caption-frame")).toBeNull();
+    await fireEvent.input(screen.getByLabelText(/Caption/), { target: { value: "Now with words" } });
+    expect(screen.getByTestId("caption-frame")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ caption: "Now with words", captionStyle: null }));
+  });
   it("Unpin clears the pin; typing coordinates does too", async () => {
     render(MomentEditor, { moment: { ...moment, placeId: "ChIJold", google: { placeId: "ChIJold", name: "Old Place", rating: 4 } }, galleries, onSaved: vi.fn(), onClose: () => {} });
     expect(screen.getByText(/Pinned to a Google place/)).toHaveTextContent("Old Place");
