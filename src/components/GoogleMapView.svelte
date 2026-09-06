@@ -147,6 +147,9 @@
     if (map.getZoom() < 15) map.setZoom(15);
   });
 
+  // "Next stop": while the story hands over, the pin it is travelling to pulses.
+  $effect(() => { if (container) container.classList.toggle("travel", trip.handoff); });
+
   // Filter changed, or data arrived -> refit (inputs only, like MapView).
   $effect(() => {
     trip.facets;
@@ -173,6 +176,8 @@
      centre sits on the spot (ring 44 + gap 4 + chip 20 = 68 tall). */
   :global(.gpin) { display: flex; flex-direction: column; align-items: center; gap: 4px; transform: translateY(22px); cursor: pointer; }
   :global(.gpin.has-chip) { transform: translateY(46px); }
+  :global(.map.travel .gpin.on .ring) { animation: travel-pulse 900ms ease-in-out infinite; }
+  @keyframes travel-pulse { 50% { scale: 1.16; } }
   :global(.gpin .ring) {
     position: relative; width: 44px; height: 44px; padding: 3px; border: 0; border-radius: 50%; cursor: pointer;
     background: conic-gradient(from 200deg, #f9ce34, #ee2a7b, #6228d7, #f9ce34);

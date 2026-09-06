@@ -55,11 +55,15 @@ describe("Story", () => {
     trip.openStory("a"); await tick();
     expect(screen.getByRole("dialog").querySelector("img.backdrop")).toBeNull();
   });
+  // Each fixture photo is its own place, so every step here is a "Next stop"
+  // handoff; the touch after it skips the handoff, the one after that navigates.
+  const skip = async (d) => { await fireEvent.pointerDown(d, { clientX: 200, clientY: 300, pointerId: 9 }); await tick(); await new Promise((r) => setTimeout(r, 450)); await tick(); };
   it("tap right = next, tap left = previous", async () => {
     trip.openStory("a"); render(Story);
     const d = dialog();
     await gesture(d, [300, 400], [300, 400], 1);
     expect(trip.storyMoment.id).toBe("b");
+    await skip(d);
     await gesture(d, [30, 400], [30, 400], 1);
     expect(trip.storyMoment.id).toBe("a");
   });
@@ -68,8 +72,10 @@ describe("Story", () => {
     const d = dialog();
     await gesture(d, [300, 400], [120, 405]);
     expect(trip.storyMoment.id).toBe("b");
+    await skip(d);
     await gesture(d, [100, 400], [290, 395]);
     expect(trip.storyMoment.id).toBe("a");
+    await skip(d);
     await gesture(d, [200, 300], [205, 520]);
     expect(trip.storyOpen).toBe(false);
   });
@@ -119,6 +125,55 @@ describe("Story", () => {
     expect(d.querySelector(".hint")).toHaveTextContent("2 / 2");
     trip.closeStory(); trip.openStory("c"); await tick();
     expect([...d.querySelectorAll(".fill")]).toHaveLength(1);   // a place with one photo: one bar, no other shop's pointer
+  });
+});
+
+describe("Story: Next stop (crossing to another place)", () => {
+  // Chinatown twice (a, a2) with Maxwell (b) in between in time.
+  beforeEach(() => { trip.moments = [...structuredClone(moments), { ...structuredClone(moments[0]), id: "a2", t: "2026-03-14T13:00:00+08:00", caption: "Back for more" }]; trip.handoff = false; });
+  it("stepping within a place is plain; stepping into the next place hands over: postcard, pill naming the pin, map flag", async () => {
+    trip.openStory("a"); render(Story);
+    const d = dialog();
+    await gesture(d, [300, 400], [300, 400], 1);
+    expect(trip.storyMoment.id).toBe("a2"); expect(d).not.toHaveClass("handoff"); expect(document.querySelector(".handoff-veil")).toBeNull(); expect(trip.handoff).toBe(false);
+    await gesture(d, [300, 400], [300, 400], 1);
+    expect(trip.storyMoment.id).toBe("b"); expect(d).toHaveClass("handoff"); expect(trip.handoff).toBe(true);
+    const pill = document.querySelector(".handoff-veil");
+    expect(pill).toHaveTextContent(/Next stop/); expect(pill).toHaveTextContent(/Maxwell/); expect(pill).toHaveTextContent(/1 photo/);
+    expect(pill.querySelector(".avatar img").getAttribute("src")).toBe("/media/b.webp");
+    // the new place's bars are already its own
+    expect(d.querySelectorAll(".fill")).toHaveLength(1);
+  });
+  it("a touch anywhere skips the handoff; the story is already on the new place", async () => {
+    trip.openStory("a2"); render(Story);
+    const d = dialog();
+    await gesture(d, [300, 400], [300, 400], 1);
+    expect(d).toHaveClass("handoff");
+    await fireEvent.pointerDown(document.querySelector(".handoff-veil"), { clientX: 200, clientY: 600, pointerId: 2 }); await tick();
+    expect(d).not.toHaveClass("handoff"); expect(trip.handoff).toBe(false); expect(trip.storyMoment.id).toBe("b");
+    // while the card expands back, a tap is swallowed (the card is still small and moving)...
+    expect(document.querySelector(".handoff-veil.quiet")).not.toBeNull();
+    await gesture(d, [300, 400], [300, 400], 1);
+    expect(trip.storyMoment.id).toBe("b");
+    await new Promise((r) => setTimeout(r, 450)); await tick();
+    expect(document.querySelector(".handoff-veil")).toBeNull();
+    // ...then taps navigate again; a tap on the postcard itself skips too, without counting as next/previous
+    await gesture(d, [300, 400], [300, 400], 1);   // -> c, handoff
+    expect(trip.storyMoment.id).toBe("c"); expect(d).toHaveClass("handoff");
+    await gesture(d, [300, 400], [300, 400], 1);
+    expect(trip.storyMoment.id).toBe("c"); expect(d).not.toHaveClass("handoff");
+  });
+  it("left alone, the handoff ends by itself and the story plays on; closing clears it", async () => {
+    trip.openStory("a2"); render(Story);
+    const d = dialog();
+    await gesture(d, [300, 400], [300, 400], 1);
+    expect(d).toHaveClass("handoff");
+    await new Promise((r) => setTimeout(r, 2000)); await tick();   // 1.4 s handoff + 0.4 s expand
+    expect(d).not.toHaveClass("handoff"); expect(trip.handoff).toBe(false); expect(trip.storyMoment.id).toBe("b"); expect(document.querySelector(".handoff-veil")).toBeNull();
+    await gesture(d, [300, 400], [300, 400], 1);   // -> c, handoff again
+    expect(trip.handoff).toBe(true);
+    await fireEvent.keyDown(window, { key: "Escape" }); await tick();
+    expect(trip.storyOpen).toBe(false); expect(trip.handoff).toBe(false);
   });
 });
 

@@ -8,6 +8,7 @@
   const SWIPE_PX = 56;      // drag sideways this far to change photo
   const TAP_MS = 350;      // a tap released within this is navigation; longer is hold-to-pause
   const TAP_SLOP = 12;
+  const HANDOFF_MS = 1400;  // how long the "Next stop" postcard + map show before the next place plays
 
   let progress = $state(0);
   let paused = $state(false);
@@ -23,6 +24,17 @@
   // on the speaker turns sound on for the rest of the session.
   let muted = $state(true);
   let video = $state(null);
+  // "Next stop": crossing from one place's story to the next. The whole viewer
+  // shrinks to a postcard at the top, the map beneath glides to the new pin,
+  // and a pill names it. A tap (or the timer) expands into the new story.
+  let handoff = $state(false);
+  let handoffTimer = null;
+  // While the postcard expands back (380 ms) the card is still small and
+  // moving; a tap then would be measured against the wrong geometry or miss
+  // the card altogether, so taps are swallowed until it has settled.
+  let expanding = $state(false);
+  let expandTimer = null;
+  const EXPAND_MS = 400;
 
   let down = null;
   let holdTimer = null;
@@ -38,6 +50,31 @@
   const loaded = $derived(!!current && loadedId === current.id);
   const failed = $derived(!!current && failedId === current.id);
   const link = $derived(placeLink(current));
+  // What the Next stop pill says about the place we are arriving at.
+  const nextStop = $derived.by(() => {
+    if (!handoff || !current) return null;
+    const g = trip.storyGroup;
+    const google = current.google?.placeId ? current.google : g.find((x) => x.google?.placeId)?.google ?? null;
+    const videos = g.filter((x) => isVideo(x.media)).length, photos = g.length - videos;
+    const what = [photos ? `${photos} photo${photos === 1 ? "" : "s"}` : "", videos ? `${videos} video${videos === 1 ? "" : "s"}` : ""].filter(Boolean).join(" & ");
+    const first = g[0] ?? current;
+    return { name: current.place?.trim() || current.caption?.trim() || "Photo", rating: Number.isFinite(google?.rating) ? google.rating.toFixed(1) : null, what, thumb: mediaUrl(first.media.thumb ?? first.media.src), video: isVideo(first.media) };
+  });
+  function startHandoff() { clearTimeout(handoffTimer); handoff = true; trip.handoff = true; handoffTimer = setTimeout(endHandoff, HANDOFF_MS); }
+  function endHandoff() {
+    clearTimeout(handoffTimer); handoffTimer = null;
+    if (!handoff) return;
+    handoff = false; trip.handoff = false;
+    expanding = true; clearTimeout(expandTimer); expandTimer = setTimeout(() => (expanding = false), EXPAND_MS);
+  }
+  // Every step goes through here: a step that lands in another place is a handoff.
+  function go(delta) {
+    const before = trip.storyPlace;
+    if (!trip.step(delta)) return false;
+    if (trip.storyPlace !== before) startHandoff();
+    return true;
+  }
+  $effect(() => { if (!trip.storyOpen) endHandoff(); });
   // Seen = shown, like a story: the ring on the map goes quiet for this photo.
   $effect(() => { if (trip.storyOpen && current) markSeen(current.id); });
 
@@ -58,10 +95,10 @@
       last = now;
       // On a slow link the timer must not run ahead of the photo. A video
       // drives the bar itself (see ontimeupdate) and advances when it ends.
-      if (!paused && !axis && (loaded || failed) && !(video_ && !failed)) {
+      if (!paused && !axis && !handoff && (loaded || failed) && !(video_ && !failed)) {
         progress += dt / SEGMENT_MS;
         if (progress >= 1) {
-          if (!trip.step(1)) trip.closeStory();
+          if (!go(1)) trip.closeStory();
           return;
         }
       }
@@ -79,7 +116,7 @@
 
   // Hold-to-pause and the space bar pause the video too; the speaker button
   // is applied to the element directly (a fresh <video> per photo needs it again).
-  $effect(() => { if (!video) return; if (paused || axis) video.pause(); else video.play?.()?.catch?.(() => {}); });
+  $effect(() => { if (!video) return; if (paused || axis || handoff) video.pause(); else video.play?.()?.catch?.(() => {}); });
   $effect(() => { if (video) video.muted = muted; });
 
   // Keyboard, and focus the dialog so screen readers and arrow keys land here.
@@ -88,18 +125,21 @@
     dialog?.focus?.();
     const onKey = (e) => {
       if (e.key === "Escape") trip.closeStory();
-      else if (e.key === "ArrowRight") { if (!trip.step(1)) trip.closeStory(); }
-      else if (e.key === "ArrowLeft") trip.step(-1);
+      else if (handoff && ["ArrowRight", "ArrowLeft", " ", "Enter"].includes(e.key)) { e.preventDefault(); endHandoff(); }
+      else if (e.key === "ArrowRight") { if (!go(1)) trip.closeStory(); }
+      else if (e.key === "ArrowLeft") go(-1);
       else if (e.key === " ") { e.preventDefault(); paused = !paused; }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  function next() { if (!trip.step(1)) trip.closeStory(); }
-  function prev() { trip.step(-1); }
+  function next() { if (!go(1)) trip.closeStory(); }
+  function prev() { go(-1); }
 
   function onPointerDown(e) {
+    if (handoff) { endHandoff(); return; }   // a tap during the handoff skips straight into the story
+    if (expanding) return;                   // ...and one while the card is still expanding is ignored
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* synthetic or already-released pointer */ }
     down = { x: e.clientX, y: e.clientY, t: performance.now() };
     dragX = 0; dragY = 0; axis = null;
@@ -145,9 +185,10 @@
 
   <div
     class="story"
+    class:handoff
     bind:this={dialog}
-    style:transform="translate({dragX * 0.35}px, {dragY}px) scale({1 - Math.min(dragY / 2600, 0.06)})"
-    style:transition={axis ? "none" : "transform 260ms cubic-bezier(.2,.8,.2,1)"}
+    style:transform={handoff ? "translateY(var(--ho-y)) scale(var(--ho-s))" : `translate(${dragX * 0.35}px, ${dragY}px) scale(${1 - Math.min(dragY / 2600, 0.06)})`}
+    style:transition={axis ? "none" : "transform 380ms cubic-bezier(.2,.8,.2,1), border-radius 380ms, box-shadow 380ms"}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
@@ -224,6 +265,22 @@
       <div class="hint">{trip.storyPos + 1} / {items.length}{paused ? " · paused" : ""}</div>
     </footer>
   </div>
+  {#if (handoff && nextStop) || expanding}
+    <!-- Beneath the postcard: the map is travelling to the next pin; this names it. Any touch skips ahead.
+         It stays, quietly, while the card expands back, so a tap then lands nowhere wrong. -->
+    <div class="handoff-veil" class:quiet={!handoff} onpointerdown={() => { if (handoff) endHandoff(); }} role="status" aria-live="polite">
+      {#if handoff && nextStop}
+      <div class="nextstop">
+        <span class="avatar" aria-hidden="true"><img src={nextStop.thumb} alt="" />{#if nextStop.video}<span class="v">▶</span>{/if}</span>
+        <span class="words">
+          <span class="eyebrow">Next stop</span>
+          <span class="name">{nextStop.name}</span>
+          <span class="sub">{#if nextStop.rating}<b>{nextStop.rating}<i>★</i></b>{/if}<span>{nextStop.what}</span></span>
+        </span>
+      </div>
+      {/if}
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -237,7 +294,32 @@
     overscroll-behavior: contain; touch-action: none;
     user-select: none; -webkit-user-select: none;
     overflow: hidden; outline: none;
+    /* The Next stop postcard: shrunk from the top edge so the pin at the map's centre shows beneath it. */
+    transform-origin: 50% 0; --ho-s: 0.36; --ho-y: 2vh;
   }
+  .story.handoff { border-radius: 26px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65); }
+  .handoff-veil {
+    position: fixed; inset: 0; z-index: 49; display: flex; flex-direction: column; align-items: center; padding: 58vh 16px 0;
+    background: radial-gradient(ellipse at 50% 44%, rgba(6, 7, 10, 0) 0 20%, rgba(6, 7, 10, 0.55) 62%);
+    animation: veil-in 380ms ease both; touch-action: none;
+  }
+  .handoff-veil.quiet { background: none; animation: none; }
+  .nextstop {
+    display: flex; align-items: center; gap: 12px; padding: 9px 18px 9px 9px; border-radius: 999px; max-width: min(92vw, 420px);
+    background: rgba(10, 12, 16, 0.94); color: #fff; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+    animation: pill-in 420ms cubic-bezier(.2,.8,.2,1) 140ms both;
+  }
+  .nextstop .avatar { position: relative; width: 50px; height: 50px; border-radius: 50%; padding: 3px; flex: none; background: conic-gradient(#f9ce34, #ee2a7b, #6228d7, #f9ce34); }
+  .nextstop .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; border: 2px solid #0a0c10; background: #14181e; }
+  .nextstop .avatar .v { position: absolute; right: -2px; bottom: -2px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #0a0c10; background: #fff; color: #111; font-size: 8px; line-height: 14px; text-align: center; box-sizing: border-box; }
+  .nextstop .words { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .nextstop .eyebrow { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.6; }
+  .nextstop .name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nextstop .sub { display: flex; align-items: center; gap: 8px; font-size: 12px; opacity: 0.85; }
+  .nextstop .sub b { color: #ffd166; font-weight: 700; } .nextstop .sub i { font-style: normal; margin-left: 1px; }
+  @keyframes pill-in { from { opacity: 0; transform: translateY(14px) scale(0.96); } }
+  @keyframes veil-in { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .story { --ho-s: 1; --ho-y: 0; } .story.handoff { border-radius: 0; } .handoff-veil, .nextstop { animation: none; } }
   /* grid-column is load-bearing: the bars/header/footer auto-place into column
      1, so an item spanning every row with no column of its own would be pushed
      into an implicit column 2 -- beside the chrome instead of behind it. */
@@ -308,6 +390,7 @@
       inset: 50% auto auto 50%; translate: -50% -50%;
       width: min(430px, 92vw); height: min(88vh, 860px);
       border-radius: 14px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+      --ho-s: 0.5; --ho-y: 0;
     }
   }
 </style>

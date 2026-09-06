@@ -80,6 +80,13 @@ never the whole trip's. Past its last item the next place's story begins
 in time); past the last place the viewer closes. A photo with no place is a
 story of one.
 
+**Next stop.** Crossing from one place to the next is shown, not silent: the
+story shrinks to a postcard at the top of the screen, the map beneath glides to
+the next pin (which pulses), and a pill under it names the place with its
+rating and how many photos and videos are waiting. After a moment — or on any
+touch — the postcard expands into that place's story. (`HANDOFF_MS` in
+`Story.svelte`; reduced-motion users get the pill without the shrink.)
+
 | | |
 |---|---|
 | tap right / `→` | next |
