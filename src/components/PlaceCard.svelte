@@ -3,7 +3,7 @@
   // the place's photos, when, what kind, and hands off to the story or to
   // Google Maps. A second tap (or the card's own button) opens the story.
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey, dateLabel, mediaUrl, placeLink, placeGroup, TAG_COLOR } from "../lib/data.js";
+  import { clockOf, dayKey, dateLabel, mediaUrl, placeLink, placeGroup, hasPlaceInfo, TAG_COLOR } from "../lib/data.js";
 
   const m = $derived(trip.focused);
   const shown = $derived(placeGroup(trip.visibleMoments, m));
@@ -18,7 +18,9 @@
   const tags = $derived([...new Set(shown.flatMap((x) => x.tags ?? []))]);
   // What Google says about the place: from any photo of the group that carries it.
   const google = $derived(m ? (m.google?.placeId ? m.google : shown.find((x) => x.google?.placeId)?.google ?? null) : null);
-  const open = $derived(!!m && trip.loaded && !trip.storyOpen && trip.view === "map");
+  // No card for a bare photo: it would say "Photo", the date and Story -- nothing
+  // the story itself does not say. Those open on the first tap instead.
+  const open = $derived(!!m && hasPlaceInfo(m) && trip.loaded && !trip.storyOpen && trip.view === "map");
 </script>
 
 {#if open}

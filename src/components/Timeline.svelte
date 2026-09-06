@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, mediaUrl, TAG_COLOR } from "../lib/data.js";
+  import { clockOf, mediaUrl, TAG_COLOR, hasPlaceInfo } from "../lib/data.js";
 
   let strip;
 
@@ -14,8 +14,9 @@
   // First tap flies the map there; a second tap on the same photo opens it.
   // (Double-tap does not exist on a phone, and a single tap must not hijack the
   // map by opening full-screen.)
+  // A photo with no place has no card to show first: open it at once.
   function onTick(m) {
-    if (trip.focusId === m.id) trip.openStory(m.id);
+    if (trip.focusId === m.id || !hasPlaceInfo(m)) trip.openStory(m.id);
     else trip.focus(m.id);
   }
 </script>

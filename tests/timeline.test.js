@@ -17,6 +17,11 @@ describe("Timeline", () => {
     await fireEvent.click(tick);
     expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("a");
   });
+  it("a photo with no place opens on the FIRST tap: there is no card to show first", async () => {
+    render(Timeline);
+    await fireEvent.click(screen.getByRole("button", { name: /19:50/ }));
+    expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("d"); expect(trip.focusId).toBe("d");
+  });
   it("no day chips: the strip is the whole dock", () => {
     render(Timeline);
     expect(screen.queryByRole("button", { name: /Whole trip|Day 1/ })).toBeNull();

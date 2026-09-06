@@ -38,11 +38,15 @@ describe("PlaceCard", () => {
     render(PlaceCard); trip.focus("b"); await tick();
     expect(screen.getByRole("link", { name: /Google Maps/ })).toHaveAttribute("href", "https://maps.google.com/?cid=42");
   });
-  it("a photo without a place shows alone; without coordinates, no map link", async () => {
+  it("a photo without a place gets no card at all (it would only say Photo, the date and Story)", async () => {
     render(PlaceCard); trip.focus("d"); await tick();
-    const card = screen.getByRole("complementary", { name: "Place: Photo" });
-    expect(card.querySelectorAll(".thumb")).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: /Google Maps/ })).toBeNull();
+    expect(screen.queryByRole("complementary")).toBeNull();
+    // ...but a name alone is enough for a card, even with nothing from Google
+    trip.focus("c"); await tick();
+    expect(screen.getByRole("complementary", { name: "Place: Merlion" })).toBeInTheDocument();
+    // ...and so is a Google Maps link on an unnamed photo
+    trip.moments = trip.moments.map((m) => (m.id === "d" ? { ...m, mapsUrl: "https://maps.google.com/?cid=42" } : m)); trip.focus("d"); await tick();
+    expect(screen.getByRole("complementary", { name: "Place: Photo" })).toBeInTheDocument();
   });
   it("tapping a photo or Story opens the story; ✕ puts the card away; it hides while the story plays and on the wall", async () => {
     render(PlaceCard); trip.focus("a"); await tick();
