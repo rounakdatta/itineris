@@ -6,7 +6,7 @@ import { trip } from "../src/lib/trip.svelte.js";
 import { moments, tracks } from "./fixtures.js";
 import { seen, resetSeen } from "../src/lib/seen.svelte.js";
 
-beforeEach(() => { trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1; });
+beforeEach(() => { trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.facets = []; trip.focusId = null; trip.storyIndex = -1; });
 const dialog = () => { const d = screen.getByRole("dialog"); d.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 844, right: 390, bottom: 844 }); return d; };
 const gesture = async (el, from, to, steps = 4) => {
   await fireEvent.pointerDown(el, { clientX: from[0], clientY: from[1], pointerId: 1 });
@@ -18,7 +18,7 @@ describe("Story", () => {
   it("shows day, place, clock, caption and tags; hides empty rows", async () => {
     trip.openStory("a"); render(Story);
     const d = dialog();
-    expect(d).toHaveTextContent("Day 1"); expect(d).toHaveTextContent("Chinatown"); expect(d).toHaveTextContent("08:40");
+    expect(d).toHaveTextContent("14 Mar"); expect(d).not.toHaveTextContent("Day 1"); expect(d).toHaveTextContent("Chinatown"); expect(d).toHaveTextContent("08:40");
     expect(d).toHaveTextContent("Kaya toast"); expect(d).toHaveTextContent("food");
     expect(d.querySelector("img.media").getAttribute("src")).toBe("/media/a.webp");   // absolute: works under /g/<token> too
     trip.openStory("d"); await tick();

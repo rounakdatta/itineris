@@ -84,7 +84,7 @@ const moments = M.map(([t, placeKey, tags, caption], i) => {
     lat: +jitter(p.lat, 0.0018).toFixed(6),
     lng: +jitter(p.lng, 0.0018).toFixed(6),
     place: p.name,
-    placeId: placeKey,
+    spot: placeKey,   // the seed's own key for the place (NOT a Google Place ID)
     caption,
     tags,
     media: { type: "photo", src: `media/${id}.svg`, w: 1080, h: 1920 },

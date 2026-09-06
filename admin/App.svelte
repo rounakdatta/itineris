@@ -41,7 +41,7 @@
   const pendingMoment = $derived(pendingItem && {
     id: pendingItem.id, pending: true, filename: pendingItem.name,
     t: pendingItem.meta.t ?? exifToIso(pendingItem.exif, pendingItem.createdAt), tz: pendingItem.meta.timeEdited ? "manual" : pendingItem.exif?.offset ? "exif" : "unknown",
-    lat: pendingItem.meta.lat ?? null, lng: pendingItem.meta.lng ?? null, mapsUrl: pendingItem.meta.mapsUrl ?? null,
+    lat: pendingItem.meta.lat ?? null, lng: pendingItem.meta.lng ?? null, mapsUrl: pendingItem.meta.mapsUrl ?? null, placeId: pendingItem.meta.placeId ?? null,
     place: pendingItem.meta.place ?? "", caption: pendingItem.meta.caption ?? "", tags: pendingItem.meta.tags ?? [], galleries: pendingItem.meta.galleries ?? [],
     media: { src: pendingUrl ?? "", w: 0, h: 0 },
   });
@@ -66,24 +66,42 @@
     return { prev: sorted.slice(0, i).reverse().find(placed) ?? null, next: sorted.slice(i + 1).find(placed) ?? null };
   });
 
-  // A place shared into the app (Google Maps -> Share -> itineris, or a pasted
-  // link): photos added now are placed there; a selection can be moved there.
-  let shared = $state(null);   // null | { status: "resolving"|"ready"|"error", url, name?, lat?, lng?, mapsUrl?, error? }
+  // The place the next photos are pinned to: picked from your places or a
+  // Google search, or shared in (Google Maps -> Share -> itineris, a pasted
+  // link). A selection can be moved onto it too.
+  let shared = $state(null);   // null | { status: "resolving"|"ready"|"error", url?, name?, lat?, lng?, mapsUrl?, placeId?, google?, error? }
+  function pinPlace(p) { shared = { status: "ready", name: p.name ?? "", lat: p.lat, lng: p.lng, mapsUrl: p.mapsUrl ?? null, placeId: p.placeId ?? null, google: p.google ?? null }; }
   async function takeShared(url) {
     shared = { status: "resolving", url };
     try {
       const r = await api.resolveLink(url);
       if (!Number.isFinite(r.lat)) throw new Error(r.name ? `“${r.name}” came without coordinates — search its name in the editor instead` : "That link has no place in it");
-      shared = { status: "ready", url, name: r.name ?? "", lat: r.lat, lng: r.lng, mapsUrl: r.mapsUrl ?? url };
+      shared = { status: "ready", url, name: r.name ?? "", lat: r.lat, lng: r.lng, mapsUrl: r.mapsUrl ?? url, placeId: null, google: null };
     } catch (e) { shared = { status: "error", url, error: e.message }; }
   }
   async function placeSelectionAtShared() {
     if (shared?.status !== "ready" || !selection.size) return;
     try {
-      await api.bulk([...selection], { lat: shared.lat, lng: shared.lng, ...(shared.name ? { place: shared.name } : {}), mapsUrl: shared.mapsUrl });
+      await api.bulk([...selection], { lat: shared.lat, lng: shared.lng, ...(shared.name ? { place: shared.name } : {}), mapsUrl: shared.mapsUrl, ...(shared.placeId ? { placeId: shared.placeId } : {}) });
       await refresh(); exitSelect();
     } catch (e) { error = e.message; }
   }
+  // Every place already in the journal, newest first: pick one and the new
+  // photos share its pin. Keyed like the viewer keys pins (Google place, else name).
+  const known = $derived.by(() => {
+    const byKey = new Map();
+    for (const m of [...moments].sort((a, b) => (a.t < b.t ? 1 : -1))) {
+      if (m.lat === null || m.lng === null) continue;
+      const name = (m.place ?? "").trim() || m.google?.name || "";
+      if (!name && !m.google?.placeId) continue;
+      const key = m.google?.placeId ? `g:${m.google.placeId}` : name.toLowerCase();
+      const k = byKey.get(key);
+      if (k) { k.count++; continue; }
+      byKey.set(key, { key, name, lat: m.lat, lng: m.lng, placeId: m.google?.placeId ?? m.placeId ?? null, mapsUrl: m.google?.mapsUri ?? m.mapsUrl ?? null, google: m.google?.placeId ? m.google : null, count: 1 });
+    }
+    return [...byKey.values()];
+  });
+  const placesEnabled = $derived(!!me?.places?.configured);
   function takeSharedFromUrl(search = location.search) {
     const p = new URLSearchParams(search);
     const link = extractMapsUrl([p.get("url"), p.get("text"), p.get("title")].filter(Boolean).join(" "));
@@ -158,13 +176,13 @@
         {:else if shared.status === "error"}
           <span class="what">{shared.error}</span>
         {:else}
-          <span class="what"><strong>{shared.name || "Place from Google Maps"}</strong> <a class="small" href={shared.mapsUrl} target="_blank" rel="noopener">open ↗</a><br /><span class="muted small">{shared.lat}, {shared.lng} · photos you add now land here.</span></span>
+          <span class="what"><strong>{shared.name || "Place from Google Maps"}</strong>{#if Number.isFinite(shared.google?.rating)} <span class="rate">{shared.google.rating.toFixed(1)}<i aria-hidden="true">★</i></span>{/if}{#if shared.mapsUrl} <a class="small" href={shared.mapsUrl} target="_blank" rel="noopener">open ↗</a>{/if}<br /><span class="muted small">{shared.placeId ? "Pinned to this Google place" : `${shared.lat}, ${shared.lng}`} · photos you add now land here.</span></span>
           {#if selectMode && selection.size}<button class="btn small primary" onclick={placeSelectionAtShared}>Place {selection.size} selected here</button>{/if}
         {/if}
         <button class="btn small dismiss" onclick={() => (shared = null)} aria-label="Dismiss place">✕</button>
       </section>
     {/if}
-    <Outbox {outbox} {queue} gallery={currentGallery} location={shared?.status === "ready" ? shared : null} onEdit={(id) => (pendingEditId = id)} onLink={(url) => { const link = extractMapsUrl(url); if (link) takeShared(link); else error = "That isn't a Google Maps link"; }} />
+    <Outbox {outbox} {queue} gallery={currentGallery} location={shared?.status === "ready" ? shared : null} {known} {placesEnabled} onEdit={(id) => (pendingEditId = id)} onPick={pinPlace} />
 
     <section class="toolbar">
       <label class="filter">
@@ -193,18 +211,18 @@
 </main>
 
 {#if selectMode && selection.size}
-  <BulkBar {selection} {galleries} {suggestions} onDone={() => { refresh(); }} onExit={exitSelect} />
+  <BulkBar {selection} {galleries} {suggestions} {known} {placesEnabled} onDone={() => { refresh(); }} onExit={exitSelect} />
 {/if}
 
 {#if editing}
   {#key editing.id}
-    <MomentEditor moment={editing} {galleries} {suggestions} {neighbours} {onSaved} {onDeleted} onClose={() => (editingId = null)} />
+    <MomentEditor moment={editing} {galleries} {suggestions} {neighbours} {known} {placesEnabled} {onSaved} {onDeleted} onClose={() => (editingId = null)} />
   {/key}
 {/if}
 
 {#if pendingMoment}
   {#key pendingMoment.id}
-    <MomentEditor moment={pendingMoment} pending {galleries} {suggestions}
+    <MomentEditor moment={pendingMoment} pending {galleries} {suggestions} {known} {placesEnabled}
       onSaveLocal={async (meta) => { await outbox.updateMeta(pendingMoment.id, meta); pendingEditId = null; }}
       onDeleted={async (id) => { await outbox.remove(id); pendingEditId = null; }}
       onClose={() => (pendingEditId = null)} />
@@ -247,5 +265,6 @@
   .shared.err .pin { color: var(--danger); }
   .shared .what { flex: 1 1 200px; min-width: 0; line-height: 1.45; }
   .shared a { text-decoration: none; margin-left: 6px; }
+  .shared .rate { font-weight: 700; margin-left: 6px; } .shared .rate i { font-style: normal; color: #f4b400; font-size: 11px; margin-left: 2px; }
   .shared .dismiss { position: absolute; top: 8px; right: 8px; padding: 6px 9px; }
 </style>

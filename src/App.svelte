@@ -117,7 +117,7 @@
   .chrome.hidden { visibility: hidden; }
   .chrome.wall { background: var(--bg); border-bottom: 1px solid var(--line); }
   /* The worker's "Updated · Reload" pill: above the timeline dock, not on it. */
-  :global(#itineris-update) { bottom: 176px !important; }
+  :global(#itineris-update) { bottom: 112px !important; }
   .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 12px 2px 14px; }
   .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
   .word { color: #fff; }

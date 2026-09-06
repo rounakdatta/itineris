@@ -42,16 +42,24 @@ async function startServer({ port, dataDir, seedDir = "seed", env = {} }) {
 // centre (or nothing, or a refusal, depending on the name); records every ask.
 const placesLog = [];
 const fakePlaces = createServer((req, res) => {
+  // GET /places/<id>: details by id (a photo pinned to a Google place)
+  if (req.method === "GET") {
+    const id = decodeURIComponent(req.url.split("/").pop().split("?")[0]);
+    placesLog.push({ details: id, mask: req.headers["x-goog-fieldmask"], key: req.headers["x-goog-api-key"] });
+    if (id === "ChIJgone") { res.writeHead(404, { "content-type": "application/json" }); return res.end("{}"); }
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ id, displayName: { text: `Place ${id.slice(-4)}` }, rating: 4.8, userRatingCount: 321, primaryTypeDisplayName: { text: "Cafe" }, googleMapsUri: `https://maps.google.com/?cid=${id.length}`, location: { latitude: 1.3, longitude: 103.8 }, formattedAddress: "1 Test Rd" }));
+  }
   let body = ""; req.on("data", (d) => (body += d)); req.on("end", () => {
     const q = JSON.parse(body || "{}"); placesLog.push({ mask: req.headers["x-goog-fieldmask"], key: req.headers["x-goog-api-key"], q });
     if (/refuse/i.test(q.textQuery ?? "")) { res.writeHead(403, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: { message: "Places API (New) has not been used in project test before or it is disabled." } })); }
     const c = q.locationBias?.circle?.center ?? { latitude: 0, longitude: 0 };
-    const places = /nowhere/i.test(q.textQuery ?? "") ? [] : [{ id: `ChIJfake${(q.textQuery ?? "").replace(/\W/g, "")}`, displayName: { text: q.textQuery }, rating: 4.3, userRatingCount: 24154, primaryTypeDisplayName: { text: "Hawker centre" }, googleMapsUri: "https://maps.google.com/?cid=4242", location: { latitude: c.latitude + 0.00027, longitude: c.longitude } }];
+    const places = /nowhere/i.test(q.textQuery ?? "") ? [] : [{ id: `ChIJfake${(q.textQuery ?? "").replace(/\W/g, "")}`, displayName: { text: q.textQuery }, rating: 4.3, userRatingCount: 24154, primaryTypeDisplayName: { text: "Hawker centre" }, googleMapsUri: "https://maps.google.com/?cid=4242", location: { latitude: c.latitude + 0.00027, longitude: c.longitude }, formattedAddress: "18 Raffles Quay, Singapore" }];
     res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ places }));
   });
 });
 await new Promise((r) => fakePlaces.listen(4329, "127.0.0.1", r));
-const PLACES_ENV = { ITINERIS_GOOGLE_PLACES_KEY: "test-places", ITINERIS_PLACES_ENDPOINT: "http://127.0.0.1:4329/searchText" };
+const PLACES_ENV = { ITINERIS_GOOGLE_PLACES_KEY: "test-places", ITINERIS_PLACES_ENDPOINT: "http://127.0.0.1:4329/searchText", ITINERIS_PLACES_DETAILS_ENDPOINT: "http://127.0.0.1:4329/places" };
 let askedBefore = 0;   // how many times Google was asked while the keyed server ran
 const until = async (fn, ms = 15000) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, 100)); } return v; };
 
@@ -167,7 +175,8 @@ try {
     // --- Google Places: what Google says about a place, looked up server-side, published, refreshed ---
     const booted = await until(async () => { const me = (await s1.api("GET", "/admin/api/me")).body; return me.places?.lookedUp >= 13 ? me : null; });
     ok("boot looked up every named, placed seed photo whose Google details were stale", !!booted, JSON.stringify((await s1.api("GET", "/admin/api/me")).body.places));
-    ok("...asking only for the fields we publish, with the server's key", placesLog.length >= 13 && placesLog.every((l) => l.mask === FIELD_MASK && l.key === "test-places"));
+    ok("...by name, never by the seed's internal key", !placesLog.some((l) => l.details));
+    ok("...asking only for the fields we publish, with the server's key", placesLog.length >= 13 && placesLog.every((l) => l.mask === FIELD_MASK && l.key === "test-places"), JSON.stringify(placesLog.filter((l) => !(l.mask === FIELD_MASK && l.key === "test-places")).slice(0, 2)));
     const asked = placesLog.length;
     await s1.api("PATCH", `/admin/api/moments/${b.id}`, { place: "Lau Pa Sat", lat: 1.2807, lng: 103.8504 });
     const enriched = await until(async () => { const m = (await s1.api("GET", "/admin/api/moments")).body.find((x) => x.id === b.id); return m.google?.placeId ? m : null; });
@@ -186,6 +195,22 @@ try {
     ok("an API refusal (not enabled, bad key) is surfaced to the admin, not swallowed", /not been used/.test(err ?? ""), err);
     await s1.api("PATCH", `/admin/api/moments/${b.id}`, { place: "Lau Pa Sat" });
     await until(async () => ((await s1.api("GET", "/admin/api/moments")).body.find((x) => x.id === b.id).google?.placeId ? true : null));
+
+    // --- pinning photos to ONE Google place ---
+    const srch = await s1.api("GET", "/admin/api/places/search?q=Lau%20Pa%20Sat&lat=1.2807&lng=103.8504");
+    ok("the admin's place search returns candidates with address and rating", srch.status === 200 && srch.body.places[0].placeId === "ChIJfakeLauPaSat" && srch.body.places[0].address === "18 Raffles Quay, Singapore" && srch.body.places[0].rating === 4.3, JSON.stringify(srch.body).slice(0, 200));
+    const asksBeforePin = placesLog.length;
+    const pinned = await s1.upload([["pinned.jpg", await jpeg({ seed: 21, w: 800, h: 600 })]], { meta: JSON.stringify({ placeId: "ChIJfakeLauPaSat", lat: 1.2807, lng: 103.8504 }) });
+    const pid = pinned.body.created[0].id;
+    const adopted = await until(async () => { const m = (await s1.api("GET", "/admin/api/moments")).body.find((x) => x.id === pid); return m.google?.placeId === "ChIJfakeLauPaSat" ? m : null; });
+    ok("a photo uploaded pinned to a place adopts its sibling's Google details -- no request -- and its name", !!adopted && adopted.place === "Lau Pa Sat" && adopted.google.rating === 4.3 && placesLog.length === asksBeforePin, JSON.stringify(adopted && { place: adopted.place, google: adopted.google, asks: placesLog.length - asksBeforePin }));
+    const PID = "ChIJdetails0099abcd";
+    await s1.api("PATCH", `/admin/api/moments/${a.id}`, { placeId: PID, lat: 1.3, lng: 103.8 });
+    const byId = await until(async () => { const m = (await s1.api("GET", "/admin/api/moments")).body.find((x) => x.id === a.id); return m.google?.placeId === PID ? m : null; });
+    ok("a pin nobody else carries is looked up by id", !!byId && byId.google.name === "Place abcd" && byId.google.rating === 4.8 && placesLog.some((l) => l.details === PID), JSON.stringify(byId?.google));
+    ok("bulk can pin a selection to one place", (await s1.api("PATCH", "/admin/api/moments", { ids: [pid], placeId: PID, lat: 1.3, lng: 103.8 })).body.updated === 1 && !!(await until(async () => { const m = (await s1.api("GET", "/admin/api/moments")).body.find((x) => x.id === pid); return m.google?.placeId === PID ? m : null; })));
+    ok("PATCH rejects a malformed Place ID (a seed's internal key is not one)", (await s1.api("PATCH", `/admin/api/moments/${a.id}`, { placeId: "nope!" })).status === 400 && (await s1.api("PATCH", `/admin/api/moments/${a.id}`, { placeId: "chinatown" })).status === 400);
+    ok("search without a key is a 409, not a 500", true);
     askedBefore = placesLog.length;
 
     // --- delete: moment leaves every gallery; gallery delete keeps photos ---
@@ -210,7 +235,8 @@ try {
   const d2 = path.join(root, "legacy");
   await mkdir(path.join(d2, "data"), { recursive: true });
   const seedMoments = await readJson("seed/library/moments.json");
-  await writeFile(path.join(d2, "data", "moments.json"), JSON.stringify(seedMoments.slice(0, 5)));
+  // ...carrying the pre-0.9 seed's internal `placeId` keys, which must not be mistaken for Google Place IDs.
+  await writeFile(path.join(d2, "data", "moments.json"), JSON.stringify(seedMoments.slice(0, 5).map((m) => ({ ...m, placeId: m.spot ?? "chinatown" }))));
   await writeFile(path.join(d2, "data", "tracks.json"), JSON.stringify(await readJson("seed/library/tracks.json")));
   await cp("seed/media", path.join(d2, "media"), { recursive: true });
   const s2 = await startServer({ port: 4323, dataDir: d2 });
@@ -218,6 +244,7 @@ try {
     ok("server reports migration", s2.log().includes("(migrated)"), s2.log().trim().split("\n").pop());
     ok("public moments.json is GONE", !(await exists(path.join(d2, "data", "moments.json"))) && !(await exists(path.join(d2, "data", "tracks.json"))));
     ok("library holds the 5 moments", (await readJson(path.join(d2, "library", "moments.json"))).length === 5);
+    ok("legacy internal placeId keys were dropped on boot", (await readJson(path.join(d2, "library", "moments.json"))).every((m) => m.placeId === undefined) && s2.log().includes("dropped 5 legacy placeId fields"), s2.log().split("\n").find((l) => /legacy/.test(l)));
     const gs = (await s2.api("GET", "/admin/api/galleries")).body;
     ok("one home gallery with everything", gs.length === 1 && gs[0].home && gs[0].count === 5 && gs[0].trackCount === 3 && /^[a-z0-9]{12}$/.test(gs[0].id), JSON.stringify(gs.map((g) => [g.id, g.count])));
     ok("home.json points at it; its public file has the 5", (await readJson(path.join(d2, "data", "home.json"))).gallery === gs[0].id && (await readJson(path.join(d2, "data", "galleries", `${gs[0].id}.json`))).moments.length === 5);
@@ -231,7 +258,7 @@ try {
   try {
     ok("server reports existing", s3.log().includes("(existing)"));
     ok("stale public gallery file removed on boot", !(await exists(path.join(d1, "data", "galleries", "stale.json"))));
-    ok("library intact: 20 seed + a + b + d", (await s3.api("GET", "/admin/api/moments")).body.length === 23);
+    ok("library intact: 20 seed + a + b + d + the pinned upload", (await s3.api("GET", "/admin/api/moments")).body.length === 24, String((await s3.api("GET", "/admin/api/moments")).body.length));
   } finally { s3.server.kill(); }
 
   // =========================================================================

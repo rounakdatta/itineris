@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dateLabel, mediaUrl, TAG_COLOR } from "../lib/data.js";
+  import { clockOf, mediaUrl, TAG_COLOR } from "../lib/data.js";
 
   let strip;
 
@@ -20,18 +20,9 @@
   }
 </script>
 
+<!-- The strip: every photo in the selection, in time order. No day chips: the
+     date shows where a photo is open, and that is enough. -->
 <div class="dock" class:hidden={trip.storyOpen} class:wall={trip.view === "wall"}>
-  <div class="days" role="group" aria-label="Days">
-    <button class="day" class:on={trip.day === null} aria-pressed={trip.day === null} onclick={() => (trip.day = null)}>
-      Whole trip
-    </button>
-    {#each trip.days as d (d.key)}
-      <button class="day" class:on={trip.day === d.key} aria-pressed={trip.day === d.key} onclick={() => trip.setDay(d.key)}>
-        {d.label}<span class="date">{dateLabel(d.key)}</span><span class="n">{d.count}</span>
-      </button>
-    {/each}
-  </div>
-
   <div class="strip" bind:this={strip}>
     {#each trip.visibleMoments as m (m.id)}
       <button
@@ -60,17 +51,6 @@
     padding: 12px 0 max(10px, env(safe-area-inset-bottom));
     background: linear-gradient(to top, rgba(11, 13, 16, 0.94) 40%, transparent);
   }
-  .days { display: flex; gap: 6px; padding: 0 12px 10px; overflow-x: auto; scrollbar-width: none; }
-  .days::-webkit-scrollbar { display: none; }
-  .day {
-    flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: 6px;
-    min-height: 32px; padding: 5px 11px; border-radius: 999px; border: 1px solid transparent;
-    background: rgba(255, 255, 255, 0.06); color: var(--muted); cursor: pointer;
-  }
-  .day.on { background: rgba(255, 255, 255, 0.16); color: #fff; border-color: var(--line); }
-  .date { font-size: 11px; opacity: 0.7; }
-  .n { font-size: 11px; opacity: 0.6; font-variant-numeric: tabular-nums; }
-
   .strip { display: flex; gap: 8px; padding: 0 12px; overflow-x: auto; scrollbar-width: none; scroll-padding: 0 12px; }
   .strip::-webkit-scrollbar { display: none; }
   .tick {
@@ -91,10 +71,7 @@
   }
   /* Nothing under the story needs painting while it plays. */
   .dock.hidden { visibility: hidden; }
-  /* On the wall the grid IS the strip: keep only the day chips, on a solid bar
-     so cells scrolling underneath never show through. */
-  .dock.wall { background: var(--bg); border-top: 1px solid var(--line); padding-top: 10px; }
-  .dock.wall .strip, .dock.wall .empty { display: none; }
-  .dock.wall .days { padding-bottom: 2px; }
+  /* On the wall the grid IS the strip. */
+  .dock.wall { display: none; }
   .empty { margin: 0; padding: 24px 4px; color: var(--muted); font-size: 13px; }
 </style>

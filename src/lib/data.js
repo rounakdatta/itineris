@@ -123,15 +123,16 @@ export function placeLink(m) {
 // Every photo from the same named place, in time order; a nameless photo stands alone.
 export function placeGroup(moments, m) {
   if (!m) return [];
-  const name = (m.place ?? "").trim();
-  const g = name ? moments.filter((x) => (x.place ?? "").trim() === name) : [m];
+  const key = placeKey(m);
+  const g = key.startsWith("#") ? [m] : moments.filter((x) => placeKey(x) === key);
   return g.length ? g : [m];
 }
 
 // One pin per PLACE on the map: photos sharing a name collapse into a group
 // (first photo's spot and thumbnail, count, whatever Google said about it).
 // A photo without a name is its own place.
-export const placeKey = (m) => ((m.place ?? "").trim().toLowerCase() || `#${m.id}`);
+// The same Google place is one pin whatever it was called; else the name; else the photo alone.
+export const placeKey = (m) => (m.google?.placeId ? `g:${m.google.placeId}` : (m.place ?? "").trim().toLowerCase() || `#${m.id}`);
 export function groupByPlace(moments) {
   const groups = new Map();
   for (const m of moments) {

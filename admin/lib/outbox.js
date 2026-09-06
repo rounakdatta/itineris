@@ -48,7 +48,7 @@ export function metaToSend(item) {
   if (m.place) out.place = m.place;
   if (m.tags?.length) out.tags = m.tags;
   if (m.galleries?.length) out.galleries = m.galleries;
-  if (m.locEdited && Number.isFinite(m.lat) && Number.isFinite(m.lng)) { out.lat = m.lat; out.lng = m.lng; if (m.mapsUrl) out.mapsUrl = m.mapsUrl; }
+  if (m.locEdited && Number.isFinite(m.lat) && Number.isFinite(m.lng)) { out.lat = m.lat; out.lng = m.lng; if (m.mapsUrl) out.mapsUrl = m.mapsUrl; if (m.placeId) out.placeId = m.placeId; }
   if (m.timeEdited && m.t) out.t = m.t;
   return out;
 }
@@ -100,7 +100,7 @@ export class Outbox {
         id, createdAt: this.now(), name: file.name, type: file.type, size: file.size, file, thumb, exif,
         meta: {
           caption: "", place: placed?.name ?? "", tags: [], galleries: JSON.parse(JSON.stringify([...galleries])),
-          lat: placed ? placed.lat : exif.lat ?? null, lng: placed ? placed.lng : exif.lng ?? null, mapsUrl: placed?.mapsUrl ?? null,
+          lat: placed ? placed.lat : exif.lat ?? null, lng: placed ? placed.lng : exif.lng ?? null, mapsUrl: placed?.mapsUrl ?? null, placeId: placed?.placeId ?? null,
           t: null, locEdited: !!placed, timeEdited: false,
         },
         state: "waiting", attempts: 0, nextAt: 0, error: null, progress: 0,

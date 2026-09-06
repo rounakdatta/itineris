@@ -4,7 +4,7 @@ import Timeline from "../src/components/Timeline.svelte";
 import { trip } from "../src/lib/trip.svelte.js";
 import { moments, tracks } from "./fixtures.js";
 
-beforeEach(() => { trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1; });
+beforeEach(() => { trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.facets = []; trip.focusId = null; trip.storyIndex = -1; });
 
 describe("Timeline", () => {
   it("first tap focuses, second tap on the same photo opens it", async () => {
@@ -17,13 +17,9 @@ describe("Timeline", () => {
     await fireEvent.click(tick);
     expect(trip.storyOpen).toBe(true); expect(trip.storyMoment.id).toBe("a");
   });
-  it("day chips carry the date and reflect selection", async () => {
+  it("no day chips: the strip is the whole dock", () => {
     render(Timeline);
-    const day1 = screen.getByRole("button", { name: /Day 1/ });
-    expect(day1).toHaveTextContent("14 Mar");
-    expect(day1).toHaveAttribute("aria-pressed", "false");
-    await fireEvent.click(day1);
-    expect(trip.day).toBe("2026-03-14"); expect(day1).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getAllByRole("button", { name: /^\d\d:\d\d/ }).length).toBe(2);
+    expect(screen.queryByRole("button", { name: /Whole trip|Day 1/ })).toBeNull();
+    expect(screen.getAllByRole("button").length).toBe(moments.length);
   });
 });

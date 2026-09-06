@@ -6,7 +6,7 @@ import { moments, tracks } from "./fixtures.js";
 const popstate = () => new Promise((r) => window.addEventListener("popstate", r, { once: true }));
 beforeEach(() => {
   trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.status = "ready";
-  trip.facets = []; trip.day = null; trip.view = "map"; trip.focusId = null; trip.storyIndex = -1;
+  trip.facets = []; trip.view = "map"; trip.focusId = null; trip.storyIndex = -1;
   window.history.replaceState(null, "", "/");
 });
 

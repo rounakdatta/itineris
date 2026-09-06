@@ -3,7 +3,10 @@ import { render, screen, fireEvent } from "@testing-library/svelte";
 import { tick } from "svelte";
 vi.mock("../admin/lib/api.js", async (orig) => {
   const m = await orig();
-  return { ...m, api: { ...m.api, resolveLink: vi.fn(async () => ({ name: "Zahrat Lebnan - Defence St", lat: 24.471235, lng: 54.371235, cid: "5", mapsUrl: "https://maps.google.com/?cid=5" })) } };
+  return { ...m, api: { ...m.api,
+    resolveLink: vi.fn(async () => ({ name: "Zahrat Lebnan - Defence St", lat: 24.471235, lng: 54.371235, cid: "5", mapsUrl: "https://maps.google.com/?cid=5" })),
+    searchPlaces: vi.fn(async () => ({ places: [{ placeId: "ChIJyamo", name: "Yamo", address: "3406 18th St, San Francisco", lat: 37.7619, lng: -122.4194, rating: 4.5, ratingCount: 1204, type: "Burmese restaurant", mapsUri: "https://maps.google.com/?cid=77" }] })),
+  } };
 });
 import { api } from "../admin/lib/api.js";
 import MapPicker from "../admin/MapPicker.svelte";
@@ -32,7 +35,7 @@ describe("MapPicker", () => {
     expect(onChange).toHaveBeenCalledWith(37.7614, -122.4118);
     expect(onPlace).toHaveBeenCalledWith("Tartine Manufactory");
     expect(screen.queryByRole("listbox")).toBeNull();
-    expect(q.value).toBe("Tartine Manufactory");
+    expect(q.value).toBe("");
   });
   it("a pasted Google Maps link is resolved by the server and hands back the exact place + link", async () => {
     const fetch = vi.spyOn(globalThis, "fetch");
@@ -47,7 +50,38 @@ describe("MapPicker", () => {
     expect(onPlace).toHaveBeenCalledWith("Zahrat Lebnan - Defence St");
     expect(onLink).toHaveBeenCalledWith("https://maps.google.com/?cid=5");
     expect(screen.getByRole("status")).toHaveTextContent("From Google Maps: Zahrat Lebnan - Defence St");
-    expect(q.value).toBe("Zahrat Lebnan - Defence St");
+    expect(q.value).toBe("");
+  });
+  it("with a Places key on the server, search goes to Google and a pick carries the Place ID and rating", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch");
+    const onChange = vi.fn(), onPlace = vi.fn(), onLink = vi.fn(), onPick = vi.fn();
+    render(MapPicker, { lat: 1.28, lng: 103.84, placesEnabled: true, onChange, onPlace, onLink, onPick });
+    await fireEvent.input(screen.getByLabelText("Search a place"), { target: { value: "yamo" } });
+    await fireEvent.keyDown(screen.getByLabelText("Search a place"), { key: "Enter" }); await flush(); await tick();
+    expect(api.searchPlaces).toHaveBeenCalledWith("yamo", { lat: 1.28, lng: 103.84 });
+    expect(fetch).not.toHaveBeenCalled();                                    // not Nominatim
+    const opt = screen.getByRole("option", { name: /Yamo/ });
+    expect(opt).toHaveTextContent("4.5★(1,204)"); expect(opt).toHaveTextContent("3406 18th St");
+    await fireEvent.click(opt);
+    expect(onChange).toHaveBeenCalledWith(37.7619, -122.4194);
+    expect(onPlace).toHaveBeenCalledWith("Yamo");
+    expect(onLink).toHaveBeenCalledWith("https://maps.google.com/?cid=77");
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ placeId: "ChIJyamo", google: expect.objectContaining({ rating: 4.5 }) }));
+  });
+  it("your places are one tap away, and put every photo on the same pin", async () => {
+    const onPick = vi.fn(), onChange = vi.fn();
+    render(MapPicker, { lat: null, lng: null, known: [{ key: "g:ChIJyamo", name: "Yamo", lat: 37.7619, lng: -122.4194, placeId: "ChIJyamo", mapsUrl: "https://maps.google.com/?cid=77", google: { placeId: "ChIJyamo", rating: 4.5 }, count: 3 }], onChange, onPick });
+    expect(screen.getByText("Your places")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: /Yamo/ }));
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ placeId: "ChIJyamo", name: "Yamo" }));
+    expect(onChange).toHaveBeenCalledWith(37.7619, -122.4194);
+  });
+  it("a spot chosen by hand unpins", async () => {
+    const onPick = vi.fn();
+    render(MapPicker, { lat: 1.28, lng: 103.84, onChange: vi.fn(), onPick }); await flush(); await tick();
+    const map = (await import("maplibre-gl")).default.Map.instances.at(-1);
+    map.handlers.click[0]({ lngLat: { lat: 1.3, lng: 103.9 } });
+    expect(onPick).toHaveBeenCalledWith(null);
   });
   it("choosing a spot any other way clears the exact link", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => [{ lat: "1", lon: "2", name: "Somewhere", display_name: "Somewhere, Else" }] });

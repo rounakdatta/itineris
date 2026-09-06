@@ -95,3 +95,26 @@ describe("MomentEditor: what Google says", () => {
     expect(screen.getByText(/Google: not looked up yet/)).toBeInTheDocument();
   });
 });
+
+describe("MomentEditor: pinned to a Google place", () => {
+  it("picking one of your places pins the photo, and Save sends the Place ID", async () => {
+    const known = [{ key: "g:ChIJyamo", name: "Yamo", lat: 37.7619, lng: -122.4194, placeId: "ChIJyamo", mapsUrl: "https://maps.google.com/?cid=77", google: { placeId: "ChIJyamo", rating: 4.5, name: "Yamo" }, count: 2 }];
+    render(MomentEditor, { moment, galleries, known, onSaved: vi.fn(), onClose: () => {} });
+    await fireEvent.click(screen.getByRole("button", { name: "Pick on map" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Yamo/ }));
+    expect(screen.getByText(/Pinned to a Google place/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Place")).toHaveValue("Yamo");
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ placeId: "ChIJyamo", lat: 37.7619, lng: -122.4194, place: "Yamo", mapsUrl: "https://maps.google.com/?cid=77" }));
+  });
+  it("Unpin clears the pin; typing coordinates does too", async () => {
+    render(MomentEditor, { moment: { ...moment, placeId: "ChIJold", google: { placeId: "ChIJold", name: "Old Place", rating: 4 } }, galleries, onSaved: vi.fn(), onClose: () => {} });
+    expect(screen.getByText(/Pinned to a Google place/)).toHaveTextContent("Old Place");
+    await fireEvent.click(screen.getByRole("button", { name: "Unpin" }));
+    expect(screen.queryByText(/Pinned to a Google place/)).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ placeId: null }));
+  });
+});

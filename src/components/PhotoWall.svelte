@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey, mediaUrl } from "../lib/data.js";
+  import { clockOf, dayKey, dateLabel, mediaUrl } from "../lib/data.js";
 
   // Group by the photo's own local day, so the wall reads chronologically.
   const groups = $derived(
@@ -10,14 +10,11 @@
       return acc;
     }, {})
   );
-  const label = $derived(
-    Object.fromEntries(trip.days.map((d) => [d.key, d.label]))
-  );
 </script>
 
 <div class="wall">
   {#each Object.entries(groups) as [key, items] (key)}
-    <h2>{label[key] ?? key}<span>{key}</span></h2>
+    <h2>{dateLabel(key)}<span>{key.slice(0, 4)}</span></h2>
     <div class="grid">
       {#each items as m (m.id)}
         <button class="cell" onclick={() => trip.openStory(m.id)} title={m.caption}>
