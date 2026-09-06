@@ -1,0 +1,55 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/svelte";
+import { tick } from "svelte";
+import PlaceCard from "../src/components/PlaceCard.svelte";
+import { trip } from "../src/lib/trip.svelte.js";
+import { moments, tracks } from "./fixtures.js";
+
+beforeEach(() => {
+  trip.moments = [...structuredClone(moments), { ...structuredClone(moments[0]), id: "a2", t: "2026-03-14T09:10:00+08:00", caption: "Second round", tags: ["food", "coffee"] }];
+  trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.view = "map"; trip.facets = []; trip.day = null; trip.focusId = null; trip.storyIndex = -1;
+});
+
+describe("PlaceCard", () => {
+  it("nothing focused, nothing shown; a focused pin shows the place, its photos, and a Google Maps link", async () => {
+    render(PlaceCard);
+    expect(screen.queryByRole("complementary")).toBeNull();
+    trip.focus("a"); await tick();
+    const card = screen.getByRole("complementary", { name: "Place: Chinatown" });
+    expect(card).toHaveTextContent("Day 1"); expect(card).toHaveTextContent("08:40–09:10"); expect(card).toHaveTextContent("2 photos");
+    expect(card).toHaveTextContent("food"); expect(card).toHaveTextContent("coffee");
+    expect(card.querySelectorAll(".thumb")).toHaveLength(2);
+    const link = screen.getByRole("link", { name: /Google Maps/ });
+    expect(link).toHaveAttribute("href", "https://www.google.com/maps/search/Chinatown/@1.28,103.84,17z");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+  });
+  it("uses the exact link when the photo has one", async () => {
+    trip.moments = trip.moments.map((m) => (m.id === "b" ? { ...m, mapsUrl: "https://maps.google.com/?cid=42" } : m));
+    render(PlaceCard); trip.focus("b"); await tick();
+    expect(screen.getByRole("link", { name: /Google Maps/ })).toHaveAttribute("href", "https://maps.google.com/?cid=42");
+  });
+  it("a photo without a place shows alone; without coordinates, no map link", async () => {
+    render(PlaceCard); trip.focus("d"); await tick();
+    const card = screen.getByRole("complementary", { name: "Place: Photo" });
+    expect(card.querySelectorAll(".thumb")).toHaveLength(1);
+    expect(screen.queryByRole("link", { name: /Google Maps/ })).toBeNull();
+  });
+  it("tapping a photo or Story opens the story; ✕ puts the card away; it hides while the story plays and on the wall", async () => {
+    render(PlaceCard); trip.focus("a"); await tick();
+    await fireEvent.click(screen.getByRole("button", { name: /Open 09:10/ }));
+    expect(trip.storyMoment.id).toBe("a2");
+    expect(screen.queryByRole("complementary")).toBeNull();      // hidden while the story is open
+    trip.closeStory(); await tick();
+    expect(screen.getByRole("complementary")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "▶ Story" }));
+    expect(trip.storyMoment.id).toBe("a2");                      // focus followed the story
+    trip.closeStory(); await tick();
+    trip.view = "wall"; await tick();
+    expect(screen.queryByRole("complementary")).toBeNull();
+    trip.view = "map"; await tick();
+    await fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(trip.focusId).toBeNull();
+    expect(screen.queryByRole("complementary")).toBeNull();
+  });
+});

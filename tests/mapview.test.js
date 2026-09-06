@@ -33,3 +33,21 @@ describe("MapView", () => {
     expect(map.camera.filter((c) => c[0] === "fitBounds").length).toBeGreaterThan(before);
   });
 });
+
+describe("tapping pins", () => {
+  it("first tap focuses (place card), second opens the story; bare map clears the focus", async () => {
+    trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.galleryId = "g1"; trip.status = "ready";
+    render(MapView); await flush(); await tick();
+    const map = maplibregl.Map.instances[0];
+    const click = map.handlers.click[0];
+    map.queryRenderedFeatures = () => [{ properties: { id: "b" } }];
+    click({ point: { x: 10, y: 10 } });
+    expect(trip.focusId).toBe("b"); expect(trip.storyOpen).toBe(false);
+    click({ point: { x: 10, y: 10 } });
+    expect(trip.storyMoment.id).toBe("b");
+    trip.closeStory();
+    map.queryRenderedFeatures = () => [];
+    click({ point: { x: 200, y: 200 } });
+    expect(trip.focusId).toBeNull();
+  });
+});

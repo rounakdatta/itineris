@@ -113,6 +113,18 @@ you upload from where you shot), a **place search** (OpenStreetMap Nominatim,
 one request per search) that also fills the place name, a neighbour's location,
 tapping the map, or coordinates. Desktop uploads keep their GPS.
 
+**Google Maps, both ways.** Nobody has to leave the maps they use. In: paste
+or share a Google Maps link (the admin is a Web Share Target — Google Maps →
+Share → itineris) and the place's name, coordinates and exact link are read
+from the URL (`server/links.js`; short `maps.app.goo.gl` links are followed by
+the server, and only Google Maps hosts are ever fetched). Photos added while a
+shared place is active land there; a selection can be moved there. Out: every
+placed photo carries a **Google Maps ↗** link — the exact place when it came
+from a link, else a search that lands on the spot — in the story header and in
+the place card that one tap on a pin or thumbnail opens (the place's photos,
+when, what kind, ▶ Story). No Google API key, no quota, nothing to pay: these
+are plain Google Maps URLs.
+
 **Admin.** The same worker under `/admin/`: it opens offline with the last
 library and the queue. Edits to already-uploaded photos still need the network
 and fail visibly; uploads never do.

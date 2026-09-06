@@ -24,6 +24,18 @@ describe("Story", () => {
     expect(screen.getByRole("dialog").querySelector(".caption")).toBeNull();
     expect(screen.getByRole("dialog").querySelector(".tags")).toBeNull();
   });
+  it("the place in the header opens Google Maps in a new tab, without acting as a tap on the story", async () => {
+    trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, mapsUrl: "https://maps.google.com/?cid=7" } : m));
+    trip.openStory("a"); render(Story);
+    const link = screen.getByRole("link", { name: /Chinatown/ });
+    expect(link).toHaveAttribute("href", "https://maps.google.com/?cid=7");
+    expect(link).toHaveAttribute("target", "_blank");
+    await fireEvent.pointerDown(link, { clientX: 100, clientY: 60, pointerId: 1 });
+    await fireEvent.pointerUp(dialog(), { clientX: 100, clientY: 60, pointerId: 1 });
+    expect(trip.storyMoment.id).toBe("a");                        // not a tap: still on the same photo
+    trip.openStory("b"); await tick();
+    expect(screen.getByRole("link", { name: /Maxwell/ })).toHaveAttribute("href", "https://www.google.com/maps/search/Maxwell/@1.2803,103.8449,17z");
+  });
   it("a landscape photo is shown whole over a blurred copy", async () => {
     trip.openStory("b"); render(Story);
     const d = dialog();

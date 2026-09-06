@@ -48,7 +48,7 @@ export function metaToSend(item) {
   if (m.place) out.place = m.place;
   if (m.tags?.length) out.tags = m.tags;
   if (m.galleries?.length) out.galleries = m.galleries;
-  if (m.locEdited && Number.isFinite(m.lat) && Number.isFinite(m.lng)) { out.lat = m.lat; out.lng = m.lng; }
+  if (m.locEdited && Number.isFinite(m.lat) && Number.isFinite(m.lng)) { out.lat = m.lat; out.lng = m.lng; if (m.mapsUrl) out.mapsUrl = m.mapsUrl; }
   if (m.timeEdited && m.t) out.t = m.t;
   return out;
 }
@@ -88,14 +88,21 @@ export class Outbox {
     return this.init().then(() => this.flush());
   }
 
-  async add(files, { galleries = [] } = {}) {
+  // `location` ({ lat, lng, name?, mapsUrl? }) places every photo of the batch
+  // up front -- a shared Google Maps place, typically -- and wins over EXIF.
+  async add(files, { galleries = [], location = null } = {}) {
     const ids = [];
+    const placed = location && Number.isFinite(location.lat) && Number.isFinite(location.lng) ? location : null;
     for (const file of files) {
       const id = crypto.randomUUID();
       const [exif, thumb] = await Promise.all([readExif(file).catch(() => ({})), makeThumb(file).catch(() => null)]);
       const item = {
         id, createdAt: this.now(), name: file.name, type: file.type, size: file.size, file, thumb, exif,
-        meta: { caption: "", place: "", tags: [], galleries: JSON.parse(JSON.stringify([...galleries])), lat: exif.lat ?? null, lng: exif.lng ?? null, t: null, locEdited: false, timeEdited: false },
+        meta: {
+          caption: "", place: placed?.name ?? "", tags: [], galleries: JSON.parse(JSON.stringify([...galleries])),
+          lat: placed ? placed.lat : exif.lat ?? null, lng: placed ? placed.lng : exif.lng ?? null, mapsUrl: placed?.mapsUrl ?? null,
+          t: null, locEdited: !!placed, timeEdited: false,
+        },
         state: "waiting", attempts: 0, nextAt: 0, error: null, progress: 0,
       };
       await put(item);

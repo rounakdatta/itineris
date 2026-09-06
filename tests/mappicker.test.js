@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import { tick } from "svelte";
+vi.mock("../admin/lib/api.js", async (orig) => {
+  const m = await orig();
+  return { ...m, api: { ...m.api, resolveLink: vi.fn(async () => ({ name: "Zahrat Lebnan - Defence St", lat: 24.471235, lng: 54.371235, cid: "5", mapsUrl: "https://maps.google.com/?cid=5" })) } };
+});
+import { api } from "../admin/lib/api.js";
 import MapPicker from "../admin/MapPicker.svelte";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -28,6 +33,30 @@ describe("MapPicker", () => {
     expect(onPlace).toHaveBeenCalledWith("Tartine Manufactory");
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(q.value).toBe("Tartine Manufactory");
+  });
+  it("a pasted Google Maps link is resolved by the server and hands back the exact place + link", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch");
+    const onChange = vi.fn(), onPlace = vi.fn(), onLink = vi.fn();
+    render(MapPicker, { lat: null, lng: null, onChange, onPlace, onLink });
+    const q = screen.getByLabelText("Search a place");
+    await fireEvent.input(q, { target: { value: "Zahrat Lebnan https://maps.app.goo.gl/AbC?g_st=ic" } });
+    await fireEvent.keyDown(q, { key: "Enter" }); await flush(); await tick();
+    expect(api.resolveLink).toHaveBeenCalledWith("https://maps.app.goo.gl/AbC?g_st=ic");
+    expect(fetch).not.toHaveBeenCalled();                                    // not Nominatim
+    expect(onChange).toHaveBeenCalledWith(24.471235, 54.371235);
+    expect(onPlace).toHaveBeenCalledWith("Zahrat Lebnan - Defence St");
+    expect(onLink).toHaveBeenCalledWith("https://maps.google.com/?cid=5");
+    expect(screen.getByRole("status")).toHaveTextContent("From Google Maps: Zahrat Lebnan - Defence St");
+    expect(q.value).toBe("Zahrat Lebnan - Defence St");
+  });
+  it("choosing a spot any other way clears the exact link", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => [{ lat: "1", lon: "2", name: "Somewhere", display_name: "Somewhere, Else" }] });
+    const onLink = vi.fn();
+    render(MapPicker, { lat: null, lng: null, onChange: vi.fn(), onLink });
+    await fireEvent.input(screen.getByLabelText("Search a place"), { target: { value: "somewhere" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Search" })); await flush(); await tick();
+    await fireEvent.click(screen.getByRole("option", { name: /Somewhere/ }));
+    expect(onLink).toHaveBeenCalledWith(null);
   });
   it("says when nothing was found", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => [] });

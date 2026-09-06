@@ -37,7 +37,7 @@ describe("Outbox UI", () => {
   it("says which photos arrived without a location, and why", () => {
     const { container, unmount } = render(Outbox, { outbox: fakeOutbox(), queue: { items: [item({ id: "a", lat: 1.29, lng: 103.85 }), item({ id: "b" })], blocked: false, flushing: false, online: true } });
     expect(container.querySelectorAll(".tile .flag.loc")).toHaveLength(1);
-    expect(screen.getByText(/1 of these have no location in the file/)).toHaveTextContent(/phones remove GPS/);
+    expect(screen.getByText(/1 of these has no location in the file/)).toHaveTextContent(/phones remove GPS/);
     unmount();
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [item({ id: "a", lat: 1.29, lng: 103.85 })], blocked: false, flushing: false, online: true } });
     expect(screen.queryByText(/no location/)).toBeNull();
@@ -51,6 +51,18 @@ describe("Outbox UI", () => {
     expect(outbox.updateMeta).toHaveBeenCalledWith("b", { lat: 37.7614, lng: -122.4118, locEdited: true });
     expect(outbox.updateMeta).toHaveBeenCalledWith("c", { lat: 37.7614, lng: -122.4118, locEdited: true });
     expect(screen.getByText(/Placed 2 photos at your location \(±9 m\)/)).toBeInTheDocument();
+  });
+  it("a shared place renames the button; a pasted link is handed up", async () => {
+    const onLink = vi.fn();
+    const { unmount } = render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true }, location: { name: "Zahrat Lebnan", lat: 1, lng: 2 }, onLink });
+    expect(screen.getByRole("button", { name: "Add photos at “Zahrat Lebnan”" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Google Maps link")).toBeNull();
+    unmount();
+    render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true }, onLink });
+    const box = screen.getByLabelText("Google Maps link");
+    await fireEvent.input(box, { target: { value: "https://maps.app.goo.gl/AbC" } });
+    await fireEvent.keyDown(box, { key: "Enter" });
+    expect(onLink).toHaveBeenCalledWith("https://maps.app.goo.gl/AbC");
   });
   it("no queue, no panel", () => {
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true } });

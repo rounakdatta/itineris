@@ -9,6 +9,7 @@
   import Timeline from "./components/Timeline.svelte";
   import Story from "./components/Story.svelte";
   import OfflineSheet from "./components/OfflineSheet.svelte";
+  import PlaceCard from "./components/PlaceCard.svelte";
 
   let online = $state(typeof navigator === "undefined" ? true : navigator.onLine !== false);
 
@@ -63,6 +64,7 @@
       <FacetBar />
     </div>
     <Timeline />
+    <PlaceCard />
   {/if}
 
   {#if trip.status === "loading"}

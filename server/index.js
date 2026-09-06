@@ -7,6 +7,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Store, token, TOKEN_RE } from "./store.js";
 import { ingestPhoto, backfillMedium, MEDIUM } from "./ingest.js";
 import { isLocalIso } from "./time.js";
+import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
 
 const env = (k, d) => process.env[k] ?? d;
 const PORT = +env("ITINERIS_PORT", 8080);
@@ -37,6 +38,8 @@ app.use("/admin/*", async (c, next) => {
 const STR = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : null);
 const NUM_OR_NULL = (v) => (v === null || v === "" ? null : Number.isFinite(+v) ? +v : undefined);
 const IDS = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === "string"))] : null);
+// A Google Maps link for the exact place, or null to clear; undefined = invalid.
+const LINK = (v) => (v === null || v === "" ? null : typeof v === "string" && v.trim().length <= 600 && isGoogleMapsUrl(v.trim()) ? v.trim() : undefined);
 const cleanTags = (arr) => [...new Set(arr.map((t) => STR(t, 40)).filter(Boolean).map((t) => t.toLowerCase()))];
 const withGalleries = (moments, galleries) => {
   const idx = new Map();
@@ -74,6 +77,11 @@ function momentPatch(patch, email) {
   if ("t" in patch) {
     if (!isLocalIso(patch.t)) return { error: "t must be ISO-8601 with an explicit offset, e.g. 2026-03-14T08:40:00+08:00" };
     upd.t = patch.t; upd.tz = "manual";
+  }
+  if ("mapsUrl" in patch) {
+    const link = LINK(patch.mapsUrl);
+    if (link === undefined) return { error: "mapsUrl must be a Google Maps link" };
+    upd.mapsUrl = link;
   }
   return { upd: { ...upd, editedBy: email, editedAt: new Date().toISOString() } };
 }
@@ -148,14 +156,26 @@ app.patch("/admin/api/moments", async (c) => {
     if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return c.json({ error: "coordinates out of range" }, 400);
     loc = { lat, lng };
   }
+  // The exact Google Maps link, when the spot came from one. A new spot without
+  // a link drops any old link: it would point at the previous place.
+  let link;
+  if ("mapsUrl" in body) { link = LINK(body.mapsUrl); if (link === undefined) return c.json({ error: "mapsUrl must be a Google Maps link" }, 400); }
+  if (loc && link === undefined) link = null;
   const set = new Set(ids); let n = 0;
   await store.updateMoments((list) => list.map((m) => {
     if (!set.has(m.id)) return m;
     n++;
     const tags = [...new Set([...(m.tags ?? []).filter((t) => !remove.includes(t)), ...add])];
-    return { ...m, tags, ...(place !== undefined ? { place } : {}), ...(loc ?? {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
+    return { ...m, tags, ...(place !== undefined ? { place } : {}), ...(loc ?? {}), ...(link !== undefined ? { mapsUrl: link } : {}), editedBy: c.get("email"), editedAt: new Date().toISOString() };
   }));
   return c.json({ updated: n });
+});
+
+// A shared Google Maps link -> place name, coordinates, exact link. Short
+// links need a redirect followed, which a browser cannot do cross-origin.
+app.get("/admin/api/resolve-link", async (c) => {
+  try { return c.json(await resolveMapsLink(c.req.query("url") ?? "")); }
+  catch (e) { return c.json({ error: e.message }, e.status ?? 500); }
 });
 
 // Removes the moment, its public derivatives and its gallery memberships. The
