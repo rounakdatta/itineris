@@ -20,7 +20,7 @@ const clickText = (page, sel, re) => page.evaluate((s, src) => { const r = new R
 const visibleImgsLoaded = (page) => page.$$eval(".tick img", (imgs) => { const vis = imgs.filter((i) => i.getBoundingClientRect().left < window.innerWidth); return vis.length > 0 && vis.every((i) => i.complete && i.naturalWidth > 0); });
 
 let google = false;
-// ---- launch 1: online, install the worker, save the gallery ------------------
+// ---- launch 1: online, install the worker, browse a little ------------------
 {
   const { browser, page } = await launch({ env, userDataDir: profile });
   try {
@@ -35,16 +35,14 @@ let google = false;
     // needs a connection; MapLibre's Carto tiles are saved too.
     google = await page.evaluate(() => !!document.querySelector('.map[data-engine="google"]'));
     console.log(`  map engine on production: ${google ? "Google Maps" : "MapLibre"}`);
-    await page.click('[aria-label="Save for offline"]'); await page.waitForSelector(".sheet");
-    const plan = await text(page, ".sheet");
-    if (google) ok("save sheet plans the photos, and no map tiles (Google's may not be cached)", /\d+ images/.test(plan) && !/tiles/.test(plan), plan.replace(/\s+/g, " ").slice(0, 120));
-    else ok("save sheet plans photos and map tiles", /\d+ images/.test(plan) && /tiles/.test(plan), plan.replace(/\s+/g, " ").slice(0, 120));
-    ok("clicked Save", await clickText(page, ".sheet button", /^Save for offline|^Update/));
-    let last = "";
-    const saved = await page.waitForFunction(() => /Saved just now/.test(document.querySelector(".sheet")?.textContent ?? ""), { timeout: 180000 }).then(() => true).catch(() => false);
-    last = (await text(page, ".sheet")).replace(/\s+/g, " ");
-    ok("Save for offline completed on production", saved, last.slice(0, 160));
-    await shot(page, path.join(SCRATCH, "shots", "prod-saved.png"));
+    ok("no download button: nothing to press, the worker keeps what is looked at", (await page.$('[aria-label="Save for offline"]')) === null);
+    ok("...and a locate button in its place", (await page.$('[aria-label="Show my location"]')) !== null);
+    // Looking at a story is what caches its photo; that is the offline promise now.
+    const ticks = await page.$$(".tick");
+    if (ticks.length) { await ticks[0].tap(); await page.waitForSelector(".story img.media", { timeout: 20000 }).catch(() => {}); await page.waitForSelector(".story img.media.loaded", { timeout: 30000 }).catch(() => {}); }
+    ok("a story opened online, so its photo is in the cache", await page.evaluate(async () => (await (await caches.open("itineris-media")).keys()).length > 0));
+    await page.keyboard.press("Escape"); await sleep(400);
+    await shot(page, path.join(SCRATCH, "shots", "prod-browsed.png"));
   } finally { await browser.close(); }
 }
 
@@ -54,7 +52,7 @@ let google = false;
   try {
     await page.goto(`${base}/`, { waitUntil: "domcontentloaded" }).catch(() => {});
     const gotTicks = await page.waitForSelector(".tick", { timeout: 30000 }).then(() => true).catch(() => false);
-    ok("NO NETWORK: the home gallery reopens from the worker's cache", gotTicks && (await count(page, ".tick")) === 20, String(await count(page, ".tick").catch(() => 0)));
+    ok("NO NETWORK: the home gallery reopens from the worker's cache", gotTicks && (await count(page, ".tick")) > 0, String(await count(page, ".tick").catch(() => 0)));
     ok("NO NETWORK: data is the worker's saved copy", (await page.evaluate(() => fetch("/data/home.json").then((r) => r.headers.get("x-itineris-cache")).catch(() => null))) === "fallback");
     ok("NO NETWORK: the app says so", /Offline|Saved copy/.test(await text(page, ".chrome .top") ?? ""), (await text(page, ".chrome .top") ?? "").replace(/\s+/g, " "));
     await page.waitForFunction(() => [...document.querySelectorAll(".tick img")].filter((i) => i.getBoundingClientRect().left < window.innerWidth).every((i) => i.complete), { timeout: 15000 }).catch(() => {});
@@ -67,8 +65,8 @@ let google = false;
       ok("NO NETWORK: the map renders from cached tiles", await page.waitForSelector('.map[data-idle="1"]', { timeout: 30000 }).then(() => true).catch(() => false));
     }
     // A placed photo takes two taps (card, then story); a bare one opens on the first.
-    const ticks = await page.$$(".tick"); await ticks[1].tap(); await sleep(300); if (!(await page.$(".story"))) await (await page.$(".tick.on")).tap();
-    ok("NO NETWORK: a story opens with its photo", await page.waitForSelector(".story img.media", { timeout: 10000 }).then(() => page.$eval(".story img.media", (i) => i.complete && i.naturalWidth > 0)).catch(() => false));
+    const back = await page.$$(".tick"); await back[0].tap();
+    ok("NO NETWORK: the story we had looked at opens with its photo", await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }).then(() => page.$eval(".story img.media", (i) => i.complete && i.naturalWidth > 0)).catch(() => false));
     await sleep(800); await shot(page, path.join(SCRATCH, "shots", "prod-offline.png"));
   } finally { await browser.close(); }
 }

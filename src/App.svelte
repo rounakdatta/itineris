@@ -8,9 +8,9 @@
   import FacetBar from "./components/FacetBar.svelte";
   import Timeline from "./components/Timeline.svelte";
   import Story from "./components/Story.svelte";
-  import OfflineSheet from "./components/OfflineSheet.svelte";
   import GoogleMapView from "./components/GoogleMapView.svelte";
   import { loadConfig, chooseMapEngine } from "./lib/config.js";
+  import { here } from "./lib/here.svelte.js";
 
   let online = $state(typeof navigator === "undefined" ? true : navigator.onLine !== false);
   // Which map draws the gallery, decided once per page load from /config.json:
@@ -73,7 +73,25 @@
         <h1 class="brand"><span class="word">itineris</span>{#if trip.title}<span class="sep" aria-hidden="true">·</span><span class="title">{trip.title}</span>{/if}</h1>
         {#if !online || trip.fromCache}<span class="pill" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
         {#if !hasAnyCoords(trip.moments, trip.tracks)}<span class="pill muted" role="status">No locations yet</span>{/if}
-        <OfflineSheet />
+        {#if here.status === "denied"}<span class="pill muted" role="status">Location is blocked for this site</span>
+        {:else if here.status === "error"}<span class="pill muted" role="status">Couldn't find you</span>
+        {:else if here.status === "unavailable"}<span class="pill muted" role="status">No location on this device</span>{/if}
+        {#if trip.view === "map"}
+          <!-- Ask for the browser's location only on this tap, and only show it while it is on. -->
+          <button
+            class="locate" class:on={here.status === "on"} class:asking={here.status === "asking"}
+            onclick={() => here.toggle()}
+            aria-pressed={here.on}
+            aria-label={here.on ? "Hide my location" : "Show my location"}
+            title={here.on ? "Hide my location" : "Show my location"}
+          >
+            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+              <circle cx="12" cy="12" r="3.1" fill="currentColor" />
+              <circle cx="12" cy="12" r="6.9" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <path d="M12 1.6v3.1M12 19.3v3.1M1.6 12h3.1M19.3 12h3.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </button>
+        {/if}
       </div>
       <FacetBar />
     </div>
@@ -126,6 +144,16 @@
     flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
     background: var(--panel); backdrop-filter: blur(12px); color: var(--text); cursor: pointer;
   }
+  .locate {
+    flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; padding: 0;
+    border-radius: 50%; border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(12px);
+    color: var(--text); cursor: pointer;
+  }
+  .locate.on { background: #4c8dff; border-color: #4c8dff; color: #fff; }
+  .locate.asking { animation: locating 1.1s ease-in-out infinite; }
+  @keyframes locating { 50% { opacity: 0.45; } }
+  @media (prefers-reduced-motion: reduce) { .locate.asking { animation: none; } }
+
   .pill { flex: 0 0 auto; font-size: 11px; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }
   .pill.muted { background: rgba(255, 255, 255, 0.08); color: var(--muted); }
 
