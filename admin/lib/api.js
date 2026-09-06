@@ -31,7 +31,8 @@ export const api = {
       fd.append("meta", JSON.stringify(item.metaForServer ?? {}));
       const x = new XMLHttpRequest();
       x.open("POST", "/admin/api/upload");
-      x.timeout = 180_000;
+      // A video is transcoded before the server answers: give it the time (the queue retries; the server dedups).
+      x.timeout = (item.type ?? "").startsWith("video/") ? 20 * 60_000 : 180_000;
       x.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
       const fail = (message, status) => reject(Object.assign(new Error(message), { status }));
       x.onload = () => {

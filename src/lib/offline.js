@@ -15,7 +15,8 @@ export function savedInfo(id) {
 
 export function planDownload({ moments = [], tracks = [] }) {
   // The thumbnail plus the tier this device will actually display.
-  const media = [...new Set(moments.flatMap((m) => [m.media?.thumb, isSmallScreen() ? m.media?.medium ?? m.media?.src : m.media?.src].filter(Boolean).map(mediaUrl)))];
+  // Videos: the poster tier the story shows AND the video file itself.
+  const media = [...new Set(moments.flatMap((m) => [m.media?.thumb, m.media?.type === "video" ? m.media?.medium ?? m.media?.poster : null, m.media?.type === "video" ? m.media?.src : isSmallScreen() ? m.media?.medium ?? m.media?.src : m.media?.src].filter(Boolean).map(mediaUrl)))];
   const box = bboxOf(moments.filter(hasCoords), tracks);
   let tiles = [], stoppedAt = null, zmin = null, zmax = null;
   if (box && tileTemplate) {

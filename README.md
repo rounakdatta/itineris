@@ -113,6 +113,19 @@ you upload from where you shot), a **place search** (OpenStreetMap Nominatim,
 one request per search) that also fills the place name, a neighbour's location,
 tapping the map, or coordinates. Desktop uploads keep their GPS.
 
+**Videos.** Upload them like photos (`.mp4`/`.mov`, what phones record, HEVC
+included). The admin server (`server/video.js`, ffmpeg in the image) reads
+when and where the clip was shot (QuickTime's local creation date, else the
+UTC time in the zone of its GPS tag), keeps the original, makes an H.264
+`.mp4` every browser plays (longest edge 1280, rotation baked in, faststart)
+and a poster frame in the photo tiers. In the story a video autoplays muted
+over its poster with a speaker to turn sound on; the bar follows the video and
+the story moves on when it ends. Videos wear ▶ in the strip, the wall, the
+pins and the queue; the queue draws its own poster while the upload waits, and
+gives the server twenty minutes to transcode (the upload retries and dedups
+if the phone gives up first). Clips over 180 s are refused
+(`ITINERIS_MAX_VIDEO_SECONDS`).
+
 **Google Maps as the map.** Set `googleMaps.apiKey` in the chart values (a
 Maps JavaScript API key restricted to the site's hostname; 10,000 free map
 loads a month) and the viewer draws Google's map — its streets, its shop

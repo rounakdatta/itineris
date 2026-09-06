@@ -115,3 +115,36 @@ describe("Story", () => {
     expect(fills[0]).toBe("100%"); expect(fills[1]).toBe("100%"); expect(fills[3]).toBe("0%");
   });
 });
+
+describe("Story: videos", () => {
+  const video = { id: "v", t: "2026-03-15T10:00:00+08:00", lat: 1.29, lng: 103.86, place: "Clarke Quay", caption: "River lights", tags: ["night"], media: { type: "video", src: "media/v-1280.mp4", poster: "media/v-1600.webp", medium: "media/v-960.webp", thumb: "media/v-400.webp", duration: 12.5, w: 1280, h: 720 } };
+  beforeEach(() => { trip.moments = [...structuredClone(moments), video]; });
+  it("plays the video, muted until asked, over its poster; the bar follows the video; the end moves on", async () => {
+    trip.openStory("v"); render(Story);
+    const d = dialog();
+    const v = d.querySelector("video.media");
+    expect(v).not.toBeNull();
+    expect(v.getAttribute("src")).toBe("/media/v-1280.mp4"); expect(v.getAttribute("poster")).toBe("/media/v-960.webp");
+    expect(v.muted).toBe(true); expect(v.hasAttribute("playsinline")).toBe(true); expect(v.hasAttribute("autoplay")).toBe(true);
+    expect(d.querySelector(".dur")).toHaveTextContent("0:13");   // 12.5 s, rounded
+    expect(d.querySelector("img.placeholder").getAttribute("src")).toBe("/media/v-400.webp");
+    expect(v).not.toHaveClass("loaded");
+    await fireEvent.loadedData(v); await tick();
+    expect(v).toHaveClass("loaded");
+    Object.defineProperty(v, "duration", { value: 10, configurable: true }); Object.defineProperty(v, "currentTime", { value: 5, configurable: true, writable: true });
+    await fireEvent.timeUpdate(v); await tick();
+    const fills = [...d.querySelectorAll(".fill")];
+    expect(fills[trip.storyIndex].style.width).toBe("50%");                    // the video's own progress, not a 5 s timer
+    await fireEvent.click(screen.getByRole("button", { name: "Turn sound on" })); await tick();
+    expect(screen.getByRole("button", { name: "Turn sound off" })).toBeInTheDocument();   // the state toggled
+    expect(v.muted).toBe(false);                                                            // ...and reached the element
+    await fireEvent.ended(v); await tick();
+    expect(trip.storyMoment.id).toBe("d");                                     // the end of the video moves the story on
+  });
+  it("a photo after a video gets its own image again", async () => {
+    trip.openStory("v"); render(Story);                                       // in time order the video sits before d
+    await fireEvent.ended(dialog().querySelector("video.media")); await tick();
+    expect(trip.storyMoment.id).toBe("d");
+    expect(dialog().querySelector("video.media")).toBeNull(); expect(dialog().querySelector("img.media")).not.toBeNull();
+  });
+});

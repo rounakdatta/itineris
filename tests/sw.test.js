@@ -69,8 +69,9 @@ describe("tiles", () => {
 describe("planning a download", () => {
   it("lists every image once, absolute, and no tiles without a template", () => {
     setTileTemplate(null);
-    const plan = planDownload({ moments, tracks });
+    const plan = planDownload({ moments: [...moments, { id: "v", lat: 1, lng: 2, media: { type: "video", src: "media/v-1280.mp4", poster: "media/v-1600.webp", medium: "media/v-960.webp", thumb: "media/v-400.webp" } }], tracks });
     expect(plan.media).toContain("/media/a.webp"); expect(plan.media).toContain("/media/a-t.webp");
+    expect(plan.media).toContain("/media/v-1280.mp4"); expect(plan.media).toContain("/media/v-960.webp"); expect(plan.media).toContain("/media/v-400.webp");   // a video: its file, poster tier and thumb
     expect(new Set(plan.media).size).toBe(plan.media.length);
     expect(plan.tiles).toEqual([]);
   });

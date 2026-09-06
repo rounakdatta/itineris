@@ -2,7 +2,7 @@
 // the admin's data volume linked in exactly as production shares it, the admin
 // server behind a forged identity header, and puppeteer walking the actual user
 // journeys on a phone-sized viewport. Screenshots land in $SCRATCH/shots.
-import { spawn, execSync } from "node:child_process";
+import { spawn, execSync, execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -110,7 +110,8 @@ try {
   ok("slow: the photo under test is a real photo, not a placeholder", (await slowTick.evaluate((el) => el.dataset.id)) === "m013" && (await slowTick.$eval("img", (i) => i.getAttribute("src"))) === "/media/m013-400.webp", await slowTick.$eval("img", (i) => i.getAttribute("src")));
   await slowTick.tap(); await sleep(250); await (await page.$(".tick.on")).tap(); await page.waitForSelector(".story");
   await sleep(1500);
-  ok("slow: the sharp thumbnail is on screen immediately", await page.$eval(".story img.placeholder", (i) => i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity === "1"));
+  // "Immediately" = well inside a second, while the photo itself takes several on this link (a cached image can still report `complete` a frame late).
+  ok("slow: the sharp thumbnail is on screen immediately", await waitFor(page, () => { const i = document.querySelector(".story img.placeholder"); return !!i && i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity === "1"; }, 1500));
   ok("slow: the photo itself is still loading, and says so", (await page.$(".story img.media.loaded")) === null && (await page.$('.story .loading[role="status"]')) !== null);
   ok("slow: the story timer waits for the photo", (await page.$$eval(".story .fill", (fs) => fs.map((f) => f.style.width))).filter((w) => w !== "0%" && w !== "100%").length === 0, JSON.stringify(await page.$$eval(".story .fill", (fs) => fs.map((f) => f.style.width))));
   ok("slow: nothing on screen is the blurred backdrop alone", await page.evaluate(() => { const b = document.querySelector(".story img.backdrop"); const p = document.querySelector(".story img.placeholder"); return !b || (p && p.getBoundingClientRect().width > 0); }));
@@ -142,9 +143,10 @@ try {
   await page.keyboard.press("Escape"); await sleep(300);
 
   console.log("--- viewer: deep link, wall, facet ---");
-  await page.goto(`${V}/#m/m010`, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".story");
-  ok("a shared story link opens that story", /Spectra|Marina Bay Sands/.test(await text(page, ".story")), (await text(page, ".story header")).slice(0, 60));
+  // A COLD load: leave the site first, so this is a shared link opened from a
+  // chat, not a same-document hash change on a page that is already running.
+  await page.goto("about:blank"); await page.goto(`${V}/#m/m010`, { waitUntil: "domcontentloaded" });
+  ok("a shared story link opens that story on a cold load, URL intact", await page.waitForSelector(".story", { timeout: 15000 }).then(() => true).catch(() => false) && /Spectra|Marina Bay Sands/.test(await text(page, ".story")) && (await hash(page)) === "#m/m010", `${await hash(page)} ${(await text(page, ".story header").catch(() => "")).slice(0, 60)}`);
   await page.keyboard.press("Escape"); await sleep(300);
   await tap(page, ".chrome .toggle"); await page.waitForSelector(".wall");
   ok("wall view, URL #wall", (await hash(page)) === "#wall" && (await count(page, ".wall .cell")) === 20);
@@ -152,6 +154,8 @@ try {
   await (await page.$$(".wall .cell"))[5].tap(); await page.waitForSelector(".story");
   await page.goBack(); await sleep(400);
   ok("back from a wall story returns to the wall", (await page.$(".story")) === null && (await hash(page)) === "#wall" && (await page.$(".wall")) !== null);
+  await page.goto("about:blank"); await page.goto(`${V}/#wall`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".wall .cell", { timeout: 15000 });
+  ok("a shared wall link opens the wall on a cold load, URL intact", (await hash(page)) === "#wall" && (await count(page, ".wall .cell")) === 20, await hash(page));
   await tap(page, ".chrome .toggle"); await sleep(300);
   await clickText(page, ".chrome nav .chip", "Activities"); await sleep(400);
   ok("facet narrows the strip to runs and rides", (await count(page, ".tick")) === 4, String(await count(page, ".tick")));
@@ -334,6 +338,34 @@ try {
   ok("arrived annotated: caption + tag from the queue, EXIF time kept", !!q && q.tags.includes("queued") && q.t === "2026-03-19T10:00:00+08:00", JSON.stringify(q && { tags: q.tags, t: q.t }));
   ok("both queued photos are in the library, private", libAfter.length === before + 2 && libAfter.filter((m) => m.galleries.length === 0).length >= 2, `${before} -> ${libAfter.length}`);
   ok("nothing left in the queue on a fresh load", (await page.reload({ waitUntil: "domcontentloaded" }), await page.waitForSelector(".cell"), (await page.$(".queue")) === null));
+
+  console.log("--- a video: queued with its own poster, transcoded on the server, played in the story ---");
+  let hasFfmpeg = true; try { execFileSync("ffmpeg", ["-version"], { stdio: "ignore" }); } catch { hasFfmpeg = false; }
+  if (!hasFfmpeg) console.log("  skip  no ffmpeg on PATH");
+  else {
+    const clip = path.join(UP, "clip.mp4");
+    // Twenty seconds: the story moves on (here: closes) when its video ends, and every check below must land before that.
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=20:size=640x360:rate=15", "-f", "lavfi", "-i", "sine=frequency=440:duration=20", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
+      "-metadata", "creation_time=2026-03-19T02:00:00Z", "-metadata", "location=+01.2900+103.8600/", clip], { stdio: "ignore" });
+    await page.select(".filter select", "all");
+    await (await page.$('[data-testid="file-input"]')).uploadFile(clip);
+    ok("a video queues like a photo, marked as one", await waitFor(page, () => document.querySelector(".queue .tile .vid") !== null, 15000));
+    ok("...with a poster drawn on the device", await waitFor(page, () => { const i = document.querySelector(".queue .tile img"); return !!i && i.complete && i.naturalWidth > 0; }, 15000));
+    ok("it uploads and the server finishes the video", await waitFor(page, () => !document.querySelector(".queue"), 120000));
+    const libV = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.media?.type === "video");
+    ok("the library has a video moment placed and timed from the file", !!libV && libV.lat === 1.29 && libV.t === "2026-03-19T10:00:00+08:00", JSON.stringify(libV && { t: libV.t, lat: libV.lat, media: libV.media.src }));
+    ok("the library list marks it ▶", await waitFor(page, () => document.querySelector(".cell .flag.vid") !== null));
+    await fetch(`${A}/admin/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ add: [libV.id] }) });
+    await page.goto(`${V}/g/${friendsId}#m/${libV.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story video.media", { timeout: 20000 });
+    ok("the story plays it: a <video> over its poster, muted, with a sound button and its length", (await page.$eval(".story video.media", (v) => v.muted && v.hasAttribute("playsinline") && /-1280\.mp4$/.test(v.getAttribute("src")) && /-960\.webp$/.test(v.getAttribute("poster")))) && (await page.$('.story .sound[aria-label="Turn sound on"]')) !== null && (await text(page, ".story .dur")) === "0:20");
+    ok("...and the browser can actually decode it", await page.waitForFunction(() => { const v = document.querySelector(".story video.media"); return v && v.readyState >= 2; }, { timeout: 20000 }).then(() => true).catch(() => false), await page.$eval(".story video.media", (v) => `readyState ${v.readyState} error ${v.error?.code ?? "none"}`));
+    ok("the strip marks the video ▶", (await count(page, ".tick .vid")) === 1);
+    await settle(page); await shot(page, `${SHOTS}/18-story-video.png`);
+    await page.keyboard.press("Escape"); await sleep(300);
+    // put the Friends gallery back the way the later checks expect it
+    await fetch(`${A}/admin/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ remove: [libV.id] }) });
+    await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
+  }
 
   console.log("--- photos without GPS: a gallery with no locations, then bulk Set location ---");
   const lib2 = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();

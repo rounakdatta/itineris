@@ -27,6 +27,7 @@
       {#each shown.slice(0, 6) as x (x.id)}
         <button class="thumb" class:on={x.id === m?.id} onclick={() => trip.openStory(x.id)} aria-label={`Open ${clockOf(x.t)} ${x.caption || x.place || ""}`.trim()}>
           <img src={mediaUrl(x.media.thumb ?? x.media.src)} alt="" loading="lazy" />
+          {#if x.media.type === "video"}<span class="vid" aria-hidden="true">▶</span>{/if}
         </button>
       {/each}
       {#if shown.length > 6}<span class="more">+{shown.length - 6}</span>{/if}
@@ -75,6 +76,8 @@
   .thumb { flex: 0 0 auto; width: 58px; height: 58px; padding: 0; border-radius: 10px; overflow: hidden; border: 2px solid transparent; background: #14181e; cursor: pointer; opacity: 0.85; }
   .thumb.on { border-color: #fff; opacity: 1; }
   .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .vid { position: absolute; right: 3px; bottom: 3px; width: 16px; height: 16px; border-radius: 50%; background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 8px; display: grid; place-items: center; }
+  .thumb { position: relative; }
   .more { flex: 0 0 auto; font-size: 12px; color: var(--muted); padding: 0 6px; }
   .body { display: grid; gap: 6px; min-width: 0; }
   .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }

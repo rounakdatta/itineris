@@ -80,6 +80,7 @@
     img.src = mediaUrl(group.first.media.thumb ?? group.first.media.src); img.alt = ""; img.loading = "lazy"; img.draggable = false;
     ring.appendChild(img);
     if (group.moments.length > 1) { const n = document.createElement("span"); n.className = "n"; n.textContent = String(group.moments.length); ring.appendChild(n); }
+    if (group.moments.some((x) => x.media?.type === "video")) { const v = document.createElement("span"); v.className = "v"; v.textContent = "▶"; v.setAttribute("aria-hidden", "true"); ring.appendChild(v); }
     el.appendChild(ring);
     // The chip says which place this is -- "Yamo" -- and, when Google knows it, how it is rated.
     let chip = null;
@@ -184,6 +185,7 @@
     position: absolute; right: -5px; top: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; border: 2px solid #fff;
     background: #111; color: #fff; font: 700 10.5px/14px system-ui, -apple-system, sans-serif; text-align: center; box-sizing: border-box;
   }
+  :global(.gpin .ring .v) { position: absolute; left: -5px; bottom: -5px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; background: #111; color: #fff; font-size: 8px; line-height: 14px; text-align: center; box-sizing: border-box; }
   :global(.gpin .chip) {
     display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 7px; border: 0; border-radius: 999px; cursor: pointer;
     background: #fff; color: #111; font: 700 11px/20px system-ui, -apple-system, sans-serif; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);

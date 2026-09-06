@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { fakeJpeg as jpeg } from "./lib/fakejpeg.mjs";
+import { execFileSync } from "node:child_process";
 
 const WHO = "tester@example.com";
 let fail = 0;
@@ -212,6 +213,33 @@ try {
     ok("PATCH rejects a malformed Place ID (a seed's internal key is not one)", (await s1.api("PATCH", `/admin/api/moments/${a.id}`, { placeId: "nope!" })).status === 400 && (await s1.api("PATCH", `/admin/api/moments/${a.id}`, { placeId: "chinatown" })).status === 400);
     ok("search without a key is a 409, not a 500", true);
     askedBefore = placesLog.length;
+
+    // --- videos: a real clip through ffprobe/poster/transcode (needs ffmpeg on PATH; CI installs it) ---
+    let hasFfmpeg = true; try { execFileSync("ffmpeg", ["-version"], { stdio: "ignore" }); } catch { hasFfmpeg = false; }
+    if (!hasFfmpeg) console.log("  skip  videos: no ffmpeg on PATH");
+    else {
+      const clip = path.join(root, "clip.mp4");
+      execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=640x360:rate=15", "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "-metadata", "creation_time=2026-03-14T00:40:12Z", "-metadata", "location=+01.2807+103.8504/", clip], { stdio: "ignore" });
+      const vidUp = await s1.upload([["clip.mp4", await readFile(clip)]]);
+      const vid = vidUp.body.created?.[0];
+      ok("a video uploads and becomes a video moment", vidUp.status === 200 && vid?.media.type === "video", JSON.stringify(vidUp.body).slice(0, 300));
+      if (vid) {
+        ok("...with an H.264 mp4, a poster in three tiers, duration and size", /-1280\.mp4$/.test(vid.media.src) && vid.media.poster?.endsWith("-1600.webp") && vid.media.medium?.endsWith("-960.webp") && vid.media.thumb?.endsWith("-400.webp") && Math.abs(vid.media.duration - 2) < 0.6 && vid.media.w === 640 && vid.media.h === 360, JSON.stringify(vid.media));
+        const files = await Promise.all([vid.media.src, vid.media.poster, vid.media.medium, vid.media.thumb, vid.media.original].map((r) => exists(path.join(d1, r))));
+        ok("...all on disk, original kept", files.every(Boolean));
+        const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", path.join(d1, vid.media.src)]).toString());
+        ok("...the copy is H.264 + AAC with the moov atom first (plays as it downloads)", probe.streams.some((s) => s.codec_name === "h264") && probe.streams.some((s) => s.codec_name === "aac") && (await readFile(path.join(d1, vid.media.src))).subarray(0, 64).toString("latin1").includes("moov"), probe.streams.map((s) => s.codec_name).join(","));
+        ok("...shot when the file says, in the zone of where it says", vid.t === "2026-03-14T08:40:12+08:00" && vid.tz === "gps" && vid.lat === 1.2807 && vid.lng === 103.8504, `${vid.t} ${vid.tz} ${vid.lat},${vid.lng}`);
+        const again = await s1.upload([["clip.mp4", await readFile(clip)]]);
+        ok("the same clip again is a duplicate, not a second transcode", again.body.created.length === 0 && again.body.duplicates[0]?.id === vid.id);
+        await s1.api("PATCH", `/admin/api/galleries/${gid}`, { add: [vid.id] });
+        const pubV = (await readJson(path.join(d1, "data", "galleries", `${gid}.json`))).moments.find((m) => m.id === vid.id);
+        ok("...published with type, poster and duration, never the original", pubV?.media.type === "video" && pubV.media.poster && pubV.media.duration && !pubV.media.original, JSON.stringify(pubV?.media));
+        const delV = await s1.api("DELETE", `/admin/api/moments/${vid.id}`);
+        ok("deleting a video removes its copy and poster tiers, keeps the original", delV.status === 200 && !(await exists(path.join(d1, vid.media.src))) && !(await exists(path.join(d1, vid.media.poster))) && (await exists(path.join(d1, vid.media.original))));
+      }
+    }
 
     // --- delete: moment leaves every gallery; gallery delete keeps photos ---
     const del = await s1.api("DELETE", `/admin/api/moments/${c.id}`);
