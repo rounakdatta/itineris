@@ -121,7 +121,38 @@ describe("MomentEditor: pinned to a Google place", () => {
     expect(screen.getByTestId("caption-frame").querySelector(".cap").getAttribute("style").replace(/\s/g, "")).toContain("--cap-rot:-8deg");
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await new Promise((r) => setTimeout(r, 0));
-    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captionStyle: expect.objectContaining({ font: "editorial", bg: "dark", x: 0.51, y: 0.82, rot: -8 }) }));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captions: [expect.objectContaining({ text: "Kaya toast", font: "editorial", bg: "dark", x: 0.51, y: 0.82, rot: -8 })] }));
+  });
+  it("a few captions on one photo: add, write, style and remove, each keeping its own place", async () => {
+    render(MomentEditor, { moment: { ...moment, caption: "Kaya toast" }, galleries, onSaved: vi.fn(), onClose: () => {} });
+    expect(screen.getByLabelText("Caption")).toHaveValue("Kaya toast");
+    await fireEvent.click(screen.getByRole("button", { name: "+ caption" }));
+    expect(screen.getByLabelText("Caption 2 of 2")).toHaveValue("");                       // the new one is empty and chosen
+    await fireEvent.input(screen.getByLabelText("Caption 2 of 2"), { target: { value: "6am, before the queue" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Caps" }));
+    const shown = [...screen.getByTestId("caption-frame").querySelectorAll(".cap")];
+    expect(shown.map((c) => c.textContent.trim())).toEqual(["Kaya toast", "6am, before the queue"]);
+    expect(shown[1].classList.contains("selected")).toBe(true);                            // the chosen one owns the handle
+    expect(shown[0].querySelector(".turn")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captions: [
+      expect.objectContaining({ text: "Kaya toast", y: 0.82 }),
+      expect.objectContaining({ text: "6am, before the queue", font: "caps", y: 0.68 }),   // stacked above the first, not on top of it
+    ] }));
+    // choosing the first one puts the controls back on it; Remove drops the chosen one
+    await fireEvent.click(screen.getByRole("button", { name: /^1\. Kaya toast/ }));
+    expect(screen.getByLabelText("Caption 1 of 2")).toHaveValue("Kaya toast");
+    await fireEvent.click(screen.getByRole("button", { name: "Remove caption 1" }));
+    expect(screen.getByLabelText("Caption")).toHaveValue("6am, before the queue");
+    expect(screen.getByTestId("caption-frame").querySelectorAll(".cap")).toHaveLength(1);
+  });
+  it("a caption nobody wrote anything in is not sent", async () => {
+    render(MomentEditor, { moment: { ...moment, caption: "Kaya toast" }, galleries, onSaved: vi.fn(), onClose: () => {} });
+    await fireEvent.click(screen.getByRole("button", { name: "+ caption" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captions: [expect.objectContaining({ text: "Kaya toast" })] }));
   });
   it("Straighten puts a tilted caption upright again", async () => {
     render(MomentEditor, { moment: { ...moment, caption: "Kaya toast", captionStyle: { rot: -12 } }, galleries, onSaved: vi.fn(), onClose: () => {} });
@@ -130,16 +161,20 @@ describe("MomentEditor: pinned to a Google place", () => {
     expect(screen.getByLabelText("Tilt")).toHaveValue("0");
     expect(screen.queryByRole("button", { name: "Straighten" })).toBeNull();
   });
-  it("no caption, no styler; Reset sends null so the server clears the style", async () => {
+  it("no caption, no styler; a caption written from scratch starts plain, and Reset returns it there", async () => {
+    // A style with nothing written in it is not a caption, so it does not come back with the words.
     render(MomentEditor, { moment: { ...moment, caption: "", captionStyle: { font: "editorial" } }, galleries, onSaved: vi.fn(), onClose: () => {} });
     expect(screen.queryByTestId("caption-frame")).toBeNull();
     await fireEvent.input(screen.getByLabelText(/Caption/), { target: { value: "Now with words" } });
     expect(screen.getByTestId("caption-frame")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();                    // nothing to reset yet
+    expect(screen.getByRole("button", { name: "Clean" })).toHaveAttribute("aria-pressed", "true");
+    await fireEvent.click(screen.getByRole("button", { name: "Elegant" }));
     await fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await new Promise((r) => setTimeout(r, 0));
-    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ caption: "Now with words", captionStyle: null }));
+    expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captions: [{ text: "Now with words", x: 0.5, y: 0.82, rot: 0, font: "clean", size: "m", bg: "none", ink: "light", align: "center" }] }));
   });
   it("Unpin clears the pin; typing coordinates does too", async () => {
     render(MomentEditor, { moment: { ...moment, placeId: "ChIJold", google: { placeId: "ChIJold", name: "Old Place", rating: 4 } }, galleries, onSaved: vi.fn(), onClose: () => {} });

@@ -43,7 +43,7 @@ describe("Caption", () => {
   });
   it("tilt: dragging the handle points the caption's top at the finger, snapping to tidy angles unless Alt is held", async () => {
     const onRotate = vi.fn(), onCommit = vi.fn();
-    const { container } = render(Caption, { text: "Hi", style: { x: 0.5, y: 0.5 }, editable: true, onRotate, onCommit });
+    const { container } = render(Caption, { text: "Hi", style: { x: 0.5, y: 0.5 }, editable: true, selected: true, onRotate, onCommit });
     frame(container.querySelector(".cap-layer"));
     const handle = container.querySelector(".cap .turn");
     expect(handle).not.toBeNull();
@@ -60,9 +60,21 @@ describe("Caption", () => {
     await fireEvent.pointerUp(handle, { clientX: 250, clientY: 100, pointerId: 3 });
     expect(onCommit).toHaveBeenCalledTimes(1);
   });
+  it("one of several: only the chosen caption wears the handle, and touching another chooses it", async () => {
+    const onSelect = vi.fn(), onMove = vi.fn();
+    const { container } = render(Caption, { text: "Second", style: { x: 0.4, y: 0.4 }, editable: true, selected: false, onSelect, onMove });
+    frame(container.querySelector(".cap-layer"));
+    const cap = container.querySelector(".cap");
+    expect(cap.querySelector(".turn")).toBeNull();          // the handle belongs to the chosen one
+    expect(cap.classList.contains("selected")).toBe(false);
+    await fireEvent.pointerDown(cap, { clientX: 120, clientY: 240, pointerId: 5 });
+    expect(onSelect).toHaveBeenCalledTimes(1);              // ...and touching this one chooses it
+    await fireEvent.pointerMove(cap, { clientX: 150, clientY: 240, pointerId: 5 });
+    expect(onMove).toHaveBeenCalled();                      // the same touch also moves it
+  });
   it("tilt: [ and ] turn it a degree at a time, 15 with shift, and the caption itself carries the angle", async () => {
     const onRotate = vi.fn(), onCommit = vi.fn();
-    const { container } = render(Caption, { text: "Hi", style: { rot: -8 }, editable: true, onRotate, onCommit });
+    const { container } = render(Caption, { text: "Hi", style: { rot: -8 }, editable: true, selected: true, onRotate, onCommit });
     const cap = container.querySelector(".cap");
     expect(cap.getAttribute("style").replace(/\s/g, "")).toContain("--cap-rot:-8deg");
     await fireEvent.keyDown(cap, { key: "]" });

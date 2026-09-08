@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeStyle, validateStyle, captionVars, isDefaultStyle, luminance, DEFAULT_STYLE, FONTS, LEGACY_FONTS } from "../server/caption.js";
+import { normalizeStyle, validateStyle, captionVars, isDefaultStyle, luminance, captionsOf, validateCaptions, nextCaption, styleOf, DEFAULT_STYLE, FONTS, LEGACY_FONTS, MAX_CAPTIONS } from "../server/caption.js";
 
 describe("caption style: the shared model", () => {
   it("normalizes anything odd to the default, and clamps the position clear of the chrome", () => {
@@ -59,5 +59,37 @@ describe("caption style: the shared model", () => {
   it("knows the default look when it sees it", () => {
     expect(isDefaultStyle(null)).toBe(true); expect(isDefaultStyle({ x: 0.5 })).toBe(true); expect(isDefaultStyle({ rot: 0 })).toBe(true);
     expect(isDefaultStyle({ font: "editorial" })).toBe(false); expect(isDefaultStyle({ rot: -3 })).toBe(false);
+  });
+});
+
+describe("a few captions on one photo", () => {
+  it("reads either shape: the list when there is one, else the single caption 0.13.0 wrote", () => {
+    expect(captionsOf({ caption: " Kaya toast ", captionStyle: { font: "script", y: 0.5 } })).toEqual([{ text: "Kaya toast", ...DEFAULT_STYLE, y: 0.5, font: "elegant" }]);
+    expect(captionsOf({ caption: "old", captions: [{ text: "new" }] })).toEqual([{ text: "new", ...DEFAULT_STYLE }]);   // the list wins
+    expect(captionsOf({ caption: "   " })).toEqual([]);
+    expect(captionsOf({ captions: [{ text: "a" }, { text: "  " }, { text: "b" }] }).map((c) => c.text)).toEqual(["a", "b"]);   // blank ones are not captions
+    expect(captionsOf(null)).toEqual([]); expect(captionsOf({ captions: "nope" })).toEqual([]);
+    expect(captionsOf({ captions: Array.from({ length: 9 }, (_, i) => ({ text: `c${i}` })) })).toHaveLength(MAX_CAPTIONS);
+  });
+  it("validates the list strictly, naming the entry that is wrong", () => {
+    expect(validateCaptions([{ text: " one ", font: "caps" }, { text: "" }])).toEqual({ captions: [{ text: "one", ...DEFAULT_STYLE, font: "caps" }] });
+    expect(validateCaptions(Array.from({ length: MAX_CAPTIONS + 1 }, () => ({ text: "x" }))).error).toMatch(/at most 5 captions/);
+    expect(validateCaptions([{ text: "ok" }, { text: "x", font: "comic" }]).error).toMatch(/^\[1\]: font must be one of/);
+    expect(validateCaptions([{ text: "ok" }, { rot: 400, text: "x" }]).error).toMatch(/^\[1\]: rot must be/);
+    expect(validateCaptions([{ text: 7 }]).error).toMatch(/^\[0\]\.text must be a string/);
+    expect(validateCaptions(["hi"]).error).toMatch(/^\[0\] must be an object/);
+    expect(validateCaptions({ text: "x" }).error).toMatch(/must be an array/);
+    expect(validateCaptions([]).captions).toEqual([]);
+  });
+  it("a new caption stacks above the last one and keeps its look, so a series matches", () => {
+    expect(nextCaption([], "first")).toEqual({ text: "first", ...DEFAULT_STYLE });
+    const second = nextCaption([{ text: "first", ...DEFAULT_STYLE, font: "caps", bg: "dark", rot: -8 }], "second");
+    expect(second).toMatchObject({ text: "second", font: "caps", bg: "dark", y: 0.68, rot: 0 });
+    // ...and it never climbs out of the frame
+    let stack = [{ text: "a", ...DEFAULT_STYLE, y: 0.2 }];
+    expect(nextCaption(stack, "b").y).toBe(0.12);
+  });
+  it("styleOf keeps the look and drops the words", () => {
+    expect(styleOf({ text: "hi", ...DEFAULT_STYLE })).toEqual(DEFAULT_STYLE);
   });
 });

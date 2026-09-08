@@ -146,6 +146,20 @@ try {
   // chat, not a same-document hash change on a page that is already running.
   await page.goto("about:blank"); await page.goto(`${V}/#m/m010`, { waitUntil: "domcontentloaded" });
   ok("a shared story link opens that story on a cold load, URL intact", await page.waitForSelector(".story", { timeout: 15000 }).then(() => true).catch(() => false) && /Spectra|Marina Bay Sands/.test(await text(page, ".story")) && (await hash(page)) === "#m/m010", `${await hash(page)} ${(await text(page, ".story header").catch(() => "")).slice(0, 60)}`);
+  await page.waitForSelector(".story .cap-host .cap", { timeout: 10000 });
+  ok("a photo can wear a few captions: both, where they were put, in the faces they were given", await page.evaluate(() => {
+    const caps = [...document.querySelectorAll(".story .cap-host .cap")];
+    if (caps.length !== 2) return `${caps.length} captions`;
+    const s = (el) => getComputedStyle(el), box = (el) => el.getBoundingClientRect(), frame = document.querySelector(".story").getBoundingClientRect();
+    const mid = (el) => (box(el).top + box(el).height / 2 - frame.top) / frame.height;
+    const turn = (el) => { const m = new DOMMatrixReadOnly(s(el).transform); return (Math.atan2(m.b, m.a) * 180) / Math.PI; };
+    if (!/Spectra/.test(caps[0].textContent) || !/twice a night/.test(caps[1].textContent)) return "wrong texts";
+    if (Math.abs(mid(caps[0]) - 0.86) > 0.03 || Math.abs(mid(caps[1]) - 0.2) > 0.03) return `at ${mid(caps[0]).toFixed(2)} and ${mid(caps[1]).toFixed(2)}`;
+    if (!/Cinzel/.test(s(caps[1]).fontFamily) || s(caps[1]).backgroundColor !== "rgba(8, 9, 12, 0.66)") return `second is ${s(caps[1]).fontFamily}`;
+    if (Math.abs(turn(caps[1]) + 7) > 0.5) return `second turned ${turn(caps[1]).toFixed(1)}`;
+    return true;
+  }) === true, String(await page.evaluate(() => [...document.querySelectorAll(".story .cap-host .cap")].map((c) => c.textContent).join(" | "))));
+  await settle(page); await shot(page, `${SHOTS}/02c-two-captions.png`);
   ok("a story is ONE place's: Marina Bay Sands has two photos, so two bars and 2 / 2 -- no other shop's pointer", (await count(page, ".story .bars .bar")) === 2 && /2 \/ 2/.test(await text(page, ".story .hint")), `${await count(page, ".story .bars .bar")} bars, ${await text(page, ".story .hint")}`);
   await page.keyboard.press("Escape"); await sleep(300);
   // Gardens by the Bay (m008 10:20, m009 13:00) is interleaved in time with Marina Bay Sands (m007 07:05, m010 19:50):
@@ -285,6 +299,20 @@ try {
   const turnOf = (page, sel) => page.$eval(sel, (c) => { const m = new DOMMatrixReadOnly(getComputedStyle(c).transform); return +((Math.atan2(m.b, m.a) * 180) / Math.PI).toFixed(1); });
   ok("the preview follows: Editorial face, dark pill, moved up 5%, tilted 8 degrees left", await page.$eval('[data-testid="caption-frame"] .cap', (c) => { const s = getComputedStyle(c); return /Playfair Display/.test(s.fontFamily) && s.backgroundColor === "rgba(8, 9, 12, 0.66)" && c.getAttribute("style").replace(/\s/g, "").includes("--cap-y:77.00%"); }) && Math.abs((await turnOf(page, '[data-testid="caption-frame"] .cap')) + 8) < 0.5, `${await page.$eval('[data-testid="caption-frame"] .cap', (c) => getComputedStyle(c).fontFamily)} | turned ${await turnOf(page, '[data-testid="caption-frame"] .cap')}°`);
   ok("...and the tilt handle is there to drag", (await page.$('[data-testid="caption-frame"] .cap .turn')) !== null);
+  // A second caption on the same photo: it lands above the first, keeps its face, and owns the controls.
+  await clickText(page, ".caps button", "+ caption");
+  ok("a second caption is added, empty and chosen", /Caption 2 of 2/.test(await text(page, ".sheet")) && (await page.$eval(".sheet textarea", (t) => t.value)) === "");
+  await page.type(".sheet textarea", "and the queue was worth it");
+  await clickText(page, '[role="group"][aria-label="Font"] button', "Caps");
+  ok("both captions are on the photo, the new one above and chosen", await page.evaluate(() => {
+    const caps = [...document.querySelectorAll('[data-testid="caption-frame"] .cap')];
+    if (caps.length !== 2) return `${caps.length} in the preview`;
+    const y = (el) => +el.getAttribute("style").replace(/\s/g, "").match(/--cap-y:([\d.]+)%/)[1];
+    if (!(y(caps[1]) < y(caps[0]))) return `${y(caps[0])} then ${y(caps[1])}`;
+    if (!caps[1].classList.contains("selected") || caps[0].querySelector(".turn")) return "the wrong one is chosen";
+    return /Cinzel/.test(getComputedStyle(caps[1]).fontFamily) ? true : `second is ${getComputedStyle(caps[1]).fontFamily}`;
+  }) === true, String(await page.evaluate(() => [...document.querySelectorAll('[data-testid="caption-frame"] .cap')].map((c) => c.textContent.trim()).join(" | "))));
+  ok("...and the picker names them both", /1\. Satay by the/.test(await text(page, ".caps")) && /2\. and the queue/.test(await text(page, ".caps")), await text(page, ".caps"));
   await settle(page); await shot(page, `${SHOTS}/13-admin-editor.png`);
   await clickText(page, ".sheet button", "Pick on map"); await page.waitForSelector(".picker canvas");
   ok("map picker renders", true);
@@ -302,9 +330,12 @@ try {
   const lib = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
   ok("membership persisted: the edited photo is now only in Friends", JSON.stringify(lib.find((m) => m.id === editId).galleries) === JSON.stringify([friendsId]), JSON.stringify(lib.find((m) => m.id === editId).galleries));
   ok("the exact Google Maps link and the place name were saved", lib.find((m) => m.id === editId).mapsUrl === GMAPS_CID && lib.find((m) => m.id === editId).place === "Lau Pa Sat", JSON.stringify([lib.find((m) => m.id === editId).mapsUrl, lib.find((m) => m.id === editId).place]));
-  ok("...and the caption with its style", lib.find((m) => m.id === editId).caption === "Satay by the water" && JSON.stringify(lib.find((m) => m.id === editId).captionStyle) === JSON.stringify({ x: 0.5, y: 0.77, rot: -8, font: "editorial", size: "m", bg: "dark", ink: "light", align: "center" }), JSON.stringify(lib.find((m) => m.id === editId).captionStyle));
+  const savedCaps = lib.find((m) => m.id === editId).captions;
+  ok("...and both captions with their styles", savedCaps?.length === 2 && JSON.stringify(savedCaps[0]) === JSON.stringify({ text: "Satay by the water", x: 0.5, y: 0.77, rot: -8, font: "editorial", size: "m", bg: "dark", ink: "light", align: "center" }) && savedCaps[1].text === "and the queue was worth it" && savedCaps[1].font === "caps" && savedCaps[1].y < savedCaps[0].y, JSON.stringify(savedCaps));
+  ok("...and the single caption still names the first, for alt text and lists", lib.find((m) => m.id === editId).caption === "Satay by the water" && lib.find((m) => m.id === editId).captionStyle.font === "editorial");
   // ...and the story shows exactly that: the same renderer, on the photo, where it was put.
   await page.goto(`${V}/g/${friendsId}#m/${editId}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story .cap-host .cap", { timeout: 15000 });
+  ok("the viewer's story wears both captions", (await count(page, ".story .cap-host .cap")) === 2 && /and the queue was worth it/.test(await text(page, ".story .cap-host")), await text(page, ".story .cap-host"));
   ok("the viewer's story wears the styled caption: Editorial face in a dark pill, 77% down, on the photo", await page.$eval(".story .cap-host .cap", (c) => { const s = getComputedStyle(c), r = c.getBoundingClientRect(), f = c.closest(".story").getBoundingClientRect(); return c.textContent === "Satay by the water" && /Playfair Display/.test(s.fontFamily) && s.backgroundColor === "rgba(8, 9, 12, 0.66)" && Math.abs((r.top + r.height / 2 - f.top) / f.height - 0.77) < 0.03; }), await page.$eval(".story .cap-host .cap", (c) => { const r = c.getBoundingClientRect(), f = c.closest(".story").getBoundingClientRect(); return `${getComputedStyle(c).fontFamily} | centre at ${((r.top + r.height / 2 - f.top) / f.height).toFixed(2)}`; }));
   ok("...tilted exactly as it was in the admin, and with no handle for visitors to grab", Math.abs((await turnOf(page, ".story .cap-host .cap")) + 8) < 0.5 && (await page.$(".story .cap-host .cap .turn")) === null, `turned ${await turnOf(page, ".story .cap-host .cap")}°`);
   ok("...with the bundled font actually loaded", await page.evaluate(() => document.fonts.check('16px "Playfair Display"')));

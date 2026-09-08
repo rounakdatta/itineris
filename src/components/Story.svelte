@@ -3,6 +3,7 @@
   import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink, isVideo, fmtDuration } from "../lib/data.js";
   import { markSeen } from "../lib/seen.svelte.js";
   import Caption from "./Caption.svelte";
+  import { captionsOf } from "../../server/caption.js";
 
   const SEGMENT_MS = 5000;
   const DISMISS_PX = 110;   // drag down this far to close
@@ -51,6 +52,7 @@
   const loaded = $derived(!!current && loadedId === current.id);
   const failed = $derived(!!current && failedId === current.id);
   const link = $derived(placeLink(current));
+  const captions = $derived(current ? captionsOf(current) : []);
   // What the Next stop pill says about the place we are arriving at.
   const nextStop = $derived.by(() => {
     if (!handoff || !current) return null;
@@ -197,7 +199,7 @@
     role="dialog"
     aria-modal="true"
     tabindex="-1"
-    aria-label={`Story: ${current.place || current.caption || "photo"}`}
+    aria-label={`Story: ${current.place || captions.map((c) => c.text).join(" · ") || "photo"}`}
   >
     <div class="bars" aria-hidden="true">
       {#each items as m, i (m.id)}
@@ -254,9 +256,13 @@
         <img class="media" class:contain={landscape} class:loaded src={fullUrl} alt={current.caption || current.place || ""} draggable="false"
           onload={() => (loadedId = id)} onerror={() => (failedId = id)} />
       {/if}
-      {#if current.caption}
-        <!-- The caption sits ON the photo, where the author dragged it, in the face and pill they chose (Caption.svelte, shared with the admin's preview). -->
-        <div class="cap-host"><Caption text={current.caption} style={current.captionStyle} animate /></div>
+      {#if captions.length}
+        <!-- Captions sit ON the photo, where the author put them, in the faces and
+             pills they chose (Caption.svelte, shared with the admin's preview).
+             Several can share a photo; they arrive one after another. -->
+        <div class="cap-host">
+          {#each captions as c, i (i)}<Caption text={c.text} style={c} animate delay={i * 110} />{/each}
+        </div>
       {/if}
       {#if !loaded && !failed}<span class="loading" aria-label={video_ ? "Loading video" : "Loading photo"} role="status"></span>{/if}
       {#if failed}<p class="failed" role="alert">Couldn't load this {video_ ? "video" : "photo"}</p>{/if}

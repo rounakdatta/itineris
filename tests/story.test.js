@@ -34,6 +34,25 @@ describe("Story", () => {
     expect(cap.classList.contains("animate")).toBe(true); expect(cap.getAttribute("role")).toBeNull();   // visitors cannot drag it
     expect(cap.querySelector(".turn")).toBeNull();                                                        // ...or tilt it
   });
+  it("several captions on one photo: each in its own place and face, animating in one after another", async () => {
+    trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, caption: "Kaya toast", captions: [
+      { text: "Kaya toast", x: 0.5, y: 0.82, font: "clean" },
+      { text: "6am, before the queue", x: 0.4, y: 0.62, font: "caps", bg: "dark" },
+      { text: "   ", x: 0.5, y: 0.3 },
+    ] } : m));
+    trip.openStory("a"); render(Story);
+    const caps = [...dialog().querySelectorAll(".cap-host .cap")];
+    expect(caps).toHaveLength(2);                                   // the empty one is not a caption
+    expect(caps[0]).toHaveTextContent("Kaya toast"); expect(caps[1]).toHaveTextContent("6am, before the queue");
+    const style = (el) => el.getAttribute("style").replace(/\s/g, "");
+    expect(style(caps[1])).toContain("--cap-y:62.00%"); expect(style(caps[1])).toContain("Cinzel"); expect(style(caps[1])).toContain("--cap-bg:rgba(8,9,12,0.66)");
+    expect(style(caps[0])).toContain("--cap-delay:120ms"); expect(style(caps[1])).toContain("--cap-delay:230ms");
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("Story: Chinatown");
+    // a photo with no place is named by its captions instead
+    trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, place: "" } : m));
+    await tick();
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("Story: Kaya toast · 6am, before the queue");
+  });
   it("a tilted caption carries its angle into the story", async () => {
     trip.moments = trip.moments.map((m) => (m.id === "a" ? { ...m, captionStyle: { rot: -8.5, font: "editorial" } } : m));
     trip.openStory("a"); render(Story);

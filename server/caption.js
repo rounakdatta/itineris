@@ -31,6 +31,11 @@ export const DEFAULT_STYLE = Object.freeze({ x: 0.5, y: 0.82, rot: 0, font: "cle
 export const X_RANGE = [0.06, 0.94];
 export const Y_RANGE = [0.12, 0.92];
 export const ROT_RANGE = [-180, 180];   // any angle: a tilted caption is half of photo captioning
+// A photo can carry a few captions -- a place in one corner, a joke on the
+// subject, a time. More than a handful and it stops being a photograph, and the
+// tap targets in the editor stop being usable.
+export const MAX_CAPTIONS = 5;
+export const MAX_CAPTION_TEXT = 2000;
 const HEX = /^#[0-9a-f]{6}$/i;
 export const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 export const isBg = (bg) => typeof bg === "string" && (bg === "none" || bg === "dark" || bg === "light" || HEX.test(bg));
@@ -73,6 +78,52 @@ export function validateStyle(raw) {
   if ("ink" in raw) { if (!INKS.includes(raw.ink)) return { error: "ink must be light or dark" }; out.ink = raw.ink; }
   if ("align" in raw) { if (!ALIGNS.includes(raw.align)) return { error: "align must be left, center or right" }; out.align = raw.align; }
   return { style: out };
+}
+
+// The style half of a stored caption ({ text, ...style } -> { ...style }).
+export const styleOf = ({ text, ...style }) => style;   // eslint-disable-line no-unused-vars
+
+// Every caption on a moment, in paint order, whatever shape it was stored in:
+// the `captions` list when there is one, else the single `caption` +
+// `captionStyle` that 0.13.0 wrote.
+export function captionsOf(m) {
+  const list = Array.isArray(m?.captions) ? m.captions : null;
+  if (list?.length) {
+    return list
+      .filter((c) => c && typeof c.text === "string" && c.text.trim())
+      .slice(0, MAX_CAPTIONS)
+      .map((c) => ({ text: c.text.trim(), ...normalizeStyle(c) }));
+  }
+  const text = typeof m?.caption === "string" ? m.caption.trim() : "";
+  return text ? [{ text, ...normalizeStyle(m?.captionStyle) }] : [];
+}
+
+// Strict, for the server. An entry with no text is not a caption and is dropped;
+// anything else wrong is an error naming the entry.
+export function validateCaptions(raw) {
+  if (!Array.isArray(raw)) return { error: "must be an array" };
+  if (raw.length > MAX_CAPTIONS) return { error: `at most ${MAX_CAPTIONS} captions on one photo` };
+  const captions = [];
+  for (const [i, item] of raw.entries()) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return { error: `[${i}] must be an object` };
+    if (typeof item.text !== "string") return { error: `[${i}].text must be a string` };
+    const text = item.text.trim().slice(0, MAX_CAPTION_TEXT);
+    if (!text) continue;
+    const { style, error } = validateStyle(item);
+    if (error) return { error: `[${i}]: ${error}` };
+    captions.push({ text, ...style });
+  }
+  return { captions };
+}
+
+// Where a new caption should land: the first one where the single one used to
+// sit, each next one a step above the last, wearing the same face -- a series
+// on one photo should look like a series.
+export function nextCaption(existing = [], text = "") {
+  const last = existing[existing.length - 1];
+  if (!last) return { text, ...DEFAULT_STYLE };
+  const style = normalizeStyle(last);
+  return { text, ...style, y: +clamp(style.y - 0.14, Y_RANGE).toFixed(4), rot: 0 };
 }
 
 export function isDefaultStyle(raw) {

@@ -164,12 +164,37 @@ try {
     const rl = await s1.api("GET", `/admin/api/resolve-link?url=${encodeURIComponent(FULL)}`);
     ok("resolve-link reads name, the place's coordinates and a stable link out of a full URL (no network)", rl.status === 200 && rl.body.name === "Lau Pa Sat" && rl.body.lat === 1.280638 && rl.body.lng === 103.850453 && rl.body.mapsUrl === CID_URL, JSON.stringify(rl.body));
     ok("PATCH rejects a non-Google mapsUrl", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { mapsUrl: "https://example.com/place" })).status === 400);
-    const styled = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: { x: 0.2, y: 0.7, rot: -8.25, font: "script", size: "l", bg: "#ffb020", align: "left", junk: true } });
+    // A style belongs to words: it is stored with the caption it dresses, so this patches both.
+    const styled = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { caption: "Chicken rice", captionStyle: { x: 0.2, y: 0.7, rot: -8.25, font: "script", size: "l", bg: "#ffb020", align: "left", junk: true } });
     ok("PATCH captionStyle: kept, filled with defaults, junk dropped, 0.13.0's face name upgraded", styled.status === 200 && JSON.stringify(styled.body.captionStyle) === JSON.stringify({ x: 0.2, y: 0.7, rot: -8.3, font: "elegant", size: "l", bg: "#ffb020", ink: "light", align: "left" }), JSON.stringify(styled.body.captionStyle));
+    ok("...and it is one caption in the list, words and look together", styled.body.captions.length === 1 && styled.body.captions[0].text === "Chicken rice" && styled.body.captions[0].font === "elegant", JSON.stringify(styled.body.captions));
     ok("PATCH captionStyle rejects an impossible angle", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: { rot: 400 } })).status === 400);
     ok("PATCH captionStyle rejects an unknown face", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: { font: "comic" } })).status === 400);
     ok("PATCH captionStyle rejects a stringy position", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: { x: "0.5" } })).status === 400);
-    ok("PATCH captionStyle: null clears it", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: null })).body.captionStyle === null);
+    const plain = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: null });
+    ok("PATCH captionStyle: null puts that caption back to the plain look, words intact", plain.body.caption === "Chicken rice" && plain.body.captionStyle.font === "clean" && plain.body.captionStyle.y === 0.82, JSON.stringify(plain.body.captionStyle));
+    const gone = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { caption: "" });
+    ok("...and taking the words away leaves no caption and no style at all", gone.body.caption === "" && gone.body.captionStyle === null && gone.body.captions.length === 0, JSON.stringify([gone.body.caption, gone.body.captionStyle, gone.body.captions]));
+    // --- a few captions on one photo ---
+    const many = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captions: [
+      { text: "  Satay by the water ", font: "editorial", rot: -8, junk: 1 },
+      { text: "", y: 0.3 },
+      { text: "6am, before the queue", font: "caps", y: 0.62, bg: "dark" },
+    ] });
+    ok("PATCH captions: kept in order, trimmed, blanks dropped, junk ignored", many.status === 200 && many.body.captions.length === 2 && many.body.captions[0].text === "Satay by the water" && many.body.captions[0].font === "editorial" && many.body.captions[1].y === 0.62 && !("junk" in many.body.captions[0]), JSON.stringify(many.body.captions?.map((c) => `${c.text}/${c.font}/${c.y}`)));
+    ok("...and the single caption + style still name the first one, for anything that reads them", many.body.caption === "Satay by the water" && many.body.captionStyle.font === "editorial" && many.body.captionStyle.rot === -8 && !("text" in many.body.captionStyle), JSON.stringify([many.body.caption, many.body.captionStyle]));
+    const pubMany = (await readJson(path.join(d1, "data", "galleries", `${gid}.json`))).moments.find((m) => m.id === b.id);
+    ok("...published with the gallery", pubMany?.captions?.length === 2 && pubMany.caption === "Satay by the water", JSON.stringify(pubMany?.captions?.map((c) => c.text)));
+    // Editing the first line the old way must not drop the others.
+    const legacy = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { caption: "Satay, actually" });
+    ok("an old-style caption edit rewrites the first and keeps the rest", legacy.body.captions.length === 2 && legacy.body.captions[0].text === "Satay, actually" && legacy.body.captions[0].font === "editorial" && legacy.body.captions[1].text === "6am, before the queue", JSON.stringify(legacy.body.captions?.map((c) => c.text)));
+    const restyle = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captionStyle: { font: "poster" } });
+    ok("...and an old-style restyle only restyles the first", restyle.body.captions[0].font === "poster" && restyle.body.captions[1].font === "caps", JSON.stringify(restyle.body.captions?.map((c) => c.font)));
+    const emptied = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { caption: "   " });
+    ok("...and clearing it promotes the next one instead of losing it", emptied.body.captions.length === 1 && emptied.body.caption === "6am, before the queue", JSON.stringify(emptied.body.captions?.map((c) => c.text)));
+    ok("PATCH captions refuses a sixth", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captions: Array.from({ length: 6 }, (_, i) => ({ text: `c${i}` })) })).status === 400);
+    ok("PATCH captions refuses a bad entry, naming it", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captions: [{ text: "ok" }, { text: "x", font: "comic" }] })).body.error.includes("[1]"));
+    ok("PATCH captions: an empty list clears them all", (await s1.api("PATCH", `/admin/api/moments/${b.id}`, { captions: [] })).body.caption === "");
     const linked = await s1.api("PATCH", `/admin/api/moments/${b.id}`, { lat: 1.280638, lng: 103.850453, place: "Lau Pa Sat", mapsUrl: CID_URL });
     ok("PATCH stores the exact link", linked.status === 200 && linked.body.mapsUrl === CID_URL);
     ok("...and the public gallery carries it", (await readJson(path.join(d1, "data", "galleries", `${gid}.json`))).moments.find((m) => m.id === b.id)?.mapsUrl === CID_URL);
