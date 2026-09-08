@@ -51,6 +51,16 @@ export const api = {
 export const dayKey = (iso) => iso.slice(0, 10);
 export const clockOf = (iso) => iso.slice(11, 16);
 export const mediaUrl = (rel) => `/${rel}`;
+// A still for any moment. A video's `src` is the .mp4 itself, which an <img>
+// cannot draw -- it has to be one of the poster tiers. Everything that shows a
+// moment as a picture goes through here so that can only be got right once.
+export const stillUrl = (media, tier = "medium") => {
+  const m = media ?? {};
+  const rel = tier === "thumb"
+    ? (m.thumb ?? m.medium ?? m.poster ?? m.src)
+    : (m.medium ?? m.poster ?? m.thumb ?? m.src);
+  return rel ? mediaUrl(rel) : "";
+};
 export const galleryUrl = (id) => `${location.origin}/g/${id}`;
 export const storyUrl = (galleryId, momentId) => `${location.origin}${galleryId ? `/g/${galleryId}` : "/"}#m/${momentId}`;
 

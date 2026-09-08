@@ -436,6 +436,11 @@ try {
     const libV = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.media?.type === "video");
     ok("the library has a video moment placed and timed from the file", !!libV && libV.lat === 1.29 && libV.t === "2026-03-19T10:00:00+08:00", JSON.stringify(libV && { t: libV.t, lat: libV.lat, media: libV.media.src }));
     ok("the library list marks it ▶", await waitFor(page, () => document.querySelector(".cell .flag.vid") !== null));
+    // The editor has to show a still: an <img> cannot draw the .mp4 itself.
+    await tapEl(page, await page.$(`.cell[data-id="${libV.id}"]`)); await page.waitForSelector(".sheet .top img");
+    ok("the editor shows the video as a still, loaded, and marks it ▶", await page.$eval(".sheet .top img", (i) => i.complete && i.naturalWidth > 0 && /\.webp$/.test(i.getAttribute("src"))) && (await page.$(".sheet .shot .vid")) !== null, await page.$eval(".sheet .top img", (i) => `${i.getAttribute("src")} ${i.naturalWidth}px`));
+    await settle(page); await shot(page, `${SHOTS}/19-admin-video-editor.png`);
+    await clickText(page, ".sheet button", "Cancel"); await waitFor(page, () => !document.querySelector(".sheet"));
     await fetch(`${A}/admin/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ add: [libV.id] }) });
     await page.goto(`${V}/g/${friendsId}#m/${libV.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story video.media", { timeout: 20000 });
     ok("the story plays it: a <video> over its poster, muted, with a sound button and its length", (await page.$eval(".story video.media", (v) => v.muted && v.hasAttribute("playsinline") && /-1280\.mp4$/.test(v.getAttribute("src")) && /-960\.webp$/.test(v.getAttribute("poster")))) && (await page.$('.story .sound[aria-label="Turn sound on"]')) !== null && (await text(page, ".story .dur")) === "0:20");
