@@ -17,6 +17,21 @@ const galleries = [{ id: "g1", title: "Home", home: true }, { id: "g2", title: "
 beforeEach(() => { vi.clearAllMocks(); });
 
 describe("MomentEditor", () => {
+  it("a video shows a still, never the .mp4 an <img> cannot draw, and says it is one", () => {
+    const video = { ...moment, media: { type: "video", src: "media/abc-1280.mp4", w: 720, h: 1280, poster: "media/abc-1600.webp", medium: "media/abc-960.webp", thumb: "media/abc-400.webp", duration: 12 }, caption: "Spice level 7" };
+    const { container } = render(MomentEditor, { moment: video, galleries });
+    const thumb = container.querySelector(".top img");
+    expect(thumb.getAttribute("src")).toBe("/media/abc-960.webp");
+    expect(container.querySelector(".shot .vid")).not.toBeNull();                       // marked as a video
+    // ...and the caption preview underneath shows the same still, not the file
+    expect(screen.getByTestId("caption-frame").querySelector("img.photo").getAttribute("src")).toBe("/media/abc-960.webp");
+  });
+  it("a queued item with no poster yet shows a placeholder rather than a broken image", () => {
+    const queued = { ...moment, media: { type: "video", src: "", w: 0, h: 0 } };
+    const { container } = render(MomentEditor, { moment: queued, pending: true, galleries });
+    expect(container.querySelector(".top img")).toBeNull();
+    expect(container.querySelector(".shot.empty")).toHaveTextContent("🎬");
+  });
   it("shows the photo's local time in a native picker with its offset", () => {
     render(MomentEditor, { moment, galleries });
     expect(document.querySelector('input[type="datetime-local"]').value).toBe("2026-03-14T08:40");

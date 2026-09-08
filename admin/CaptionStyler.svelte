@@ -4,14 +4,14 @@
   // few choices that matter -- face, size, pill, ink, alignment.
   import Caption from "../src/components/Caption.svelte";
   import { FONTS, GROUPS, SIZES, ACCENTS, ALIGNS, MAX_CAPTIONS, normalizeStyle, isDefaultStyle } from "../server/caption.js";
-  import { mediaUrl } from "./lib/api.js";
+  import { stillUrl } from "./lib/api.js";
 
   // `captions` is the whole list; `selected` is the one the controls act on.
   let { moment, captions = [], selected = 0, pending = false, onChange, onSelect, onAdd, onRemove } = $props();
   const current = $derived(captions[selected] ?? null);
   const st = $derived(normalizeStyle(current));
   const landscape = $derived(!!moment.media && moment.media.w > moment.media.h);
-  const img = $derived(pending ? moment.media.src : mediaUrl(moment.media.medium ?? moment.media.poster ?? moment.media.src));
+  const img = $derived(pending ? moment.media.src : stillUrl(moment.media));
   const set = (patch) => onChange?.({ ...st, ...patch });
   const short = (t) => { const s = (t ?? "").trim().replace(/\s+/g, " "); return s.length > 14 ? `${s.slice(0, 13)}…` : s || "empty"; };
   const SIZE_LABEL = { s: "S", m: "M", l: "L", xl: "XL" };

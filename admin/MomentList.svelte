@@ -1,5 +1,5 @@
 <script>
-  import { dayKey, clockOf, mediaUrl } from "./lib/api.js";
+  import { dayKey, clockOf, stillUrl } from "./lib/api.js";
 
   let { moments, selectedId = null, selectMode = false, selection, onSelect } = $props();
 
@@ -23,7 +23,7 @@
         aria-label={`${clockOf(m.t)} ${m.place || m.caption || m.filename || m.id}`}
         title={m.caption || m.filename || m.id}
       >
-        <img src={mediaUrl(m.media.thumb ?? m.media.src)} alt="" loading="lazy" />
+        <img src={stillUrl(m.media, "thumb")} alt="" loading="lazy" />
         <span class="t">{clockOf(m.t)}</span>
         <span class="flags">
           {#if m.galleries?.length === 0}<i class="flag private" title="not in any gallery — private">🔒</i>{/if}

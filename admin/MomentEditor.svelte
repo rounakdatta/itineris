@@ -1,5 +1,5 @@
 <script>
-  import { api, mediaUrl, splitIso, joinIso, OFFSETS, storyUrl } from "./lib/api.js";
+  import { api, stillUrl, splitIso, joinIso, OFFSETS, storyUrl } from "./lib/api.js";
   import MapPicker from "./MapPicker.svelte";
   import CaptionStyler from "./CaptionStyler.svelte";
   import { captionsOf, nextCaption, normalizeStyle } from "../server/caption.js";
@@ -11,6 +11,10 @@
   // A photo can carry a few captions; the textarea and the styler act on the
   // chosen one. `captionsOf` accepts either shape, so a photo captioned before
   // 0.18.0 opens as a list of one.
+  // What the sheet shows as this moment's picture (see stillUrl: a video's own
+  // file is not one). A queued item's poster is already an object URL.
+  const isVideo = (m) => m?.type === "video" || /\.(mp4|mov|m4v|webm)$/i.test(m?.src ?? "");
+  const still = $derived(pending ? (moment.media.src || "") : stillUrl(moment.media));
   let captions = $state(captionsOf(moment));
   let picked = $state(0);
   const caption = $derived(captions[picked]?.text ?? "");
@@ -105,7 +109,16 @@
 <aside class="sheet" role="dialog" aria-modal="true" aria-label="Edit moment">
   <div class="grab" aria-hidden="true"></div>
   <div class="top">
-    <img src={pending ? moment.media.src : mediaUrl(moment.media.src)} alt="" />
+    <!-- A still, never the video file. A queued item carries its own poster,
+         drawn on the device; if that failed there is nothing to show yet. -->
+    {#if still}
+      <div class="shot">
+        <img src={still} alt="" />
+        {#if isVideo(moment.media)}<span class="vid" aria-hidden="true">▶</span>{/if}
+      </div>
+    {:else}
+      <div class="shot empty" aria-hidden="true">{isVideo(moment.media) ? "🎬" : "📷"}</div>
+    {/if}
     <div class="meta">
       <div class="muted small">{moment.filename ?? moment.id}{#if moment.camera} · {moment.camera}{/if}</div>
       {#if !pending}<div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy} · by {moment.uploadedBy}{/if}</div>{/if}
@@ -208,7 +221,10 @@
   @media (min-width: 760px) { .sheet { left: 50%; right: auto; bottom: 50%; translate: -50% 50%; width: 600px; max-height: 88vh; border-radius: 18px; } }
   .grab { width: 40px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); margin: 4px auto 12px; }
   .top { display: flex; gap: 12px; margin-bottom: 14px; }
-  .top img { width: 96px; height: 128px; object-fit: cover; border-radius: 10px; flex: 0 0 auto; background: var(--bg); }
+  .shot { position: relative; width: 96px; height: 128px; flex: 0 0 auto; }
+  .top img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; background: var(--bg); }
+  .shot.empty { display: grid; place-items: center; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 26px; }
+  .shot .vid { position: absolute; left: 6px; bottom: 6px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 9px; line-height: 20px; text-align: center; }
   .meta { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
   .small { font-size: 12px; overflow-wrap: anywhere; }
   label, .lbl { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
