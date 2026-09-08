@@ -1,354 +1,61 @@
+<div align="center">
+  <img src="brand/itineris-mark.png" alt="itineris logo" width="200">
+</div>
+
 # itineris
 
-<img src="brand/itineris-mark.png" alt="the itineris mark: a walking figure drawn out of an italic it, carrying an orange backpack" width="132" align="right" />
+A travel journal that lives on a map. Photos and videos become pins where they
+were taken, a pin opens as a story, and a gallery is shared by link — so the
+viewer is deliberately public and only `/admin` sits behind auth. Live at
+[itineris.taptappers.club](https://itineris.taptappers.club).
 
-A travel journal you can look at from several angles at once: a map, a timeline
-strip, and a full-screen story viewer — all rendering the *same* selection. (A
-photo wall stands in for the map only when nothing in a gallery has a location;
-there is no toggle — the data decides.)
+## How broad it is
 
-## The idea
+- **The map is the interface** — Google Maps, one photo pin per place, its rating on the pin, a story ring that opens it.
+- **Stories per place** — a place's photos play together, then the map travels to the next pin.
+- **Captions on the photo** — up to five, dragged anywhere, tilted to any angle, in twelve faces.
+- **Videos** — transcoded to H.264 with a poster frame.
+- **Offline** — whatever you looked at reopens without a signal.
+- **Uploads that survive bad networks** — a queue in IndexedDB, with retries.
 
-Two primitives, different shapes in spacetime:
+## How to navigate
 
-| | shape | examples | file |
-|---|---|---|---|
-| **Moment** | a point in time and space | photo, video, note | `public/data/moments.json` |
-| **Track** | an interval in time, a line in space | run, ride, walk, flight | `public/data/tracks.json` |
+- `src/` — the viewer: map, strip, story, service worker.
+- `admin/` — the upload and tagging app at `/admin`.
+- `server/` — its API, media ingest, Google Places, and the caption model both apps share.
+- `charts/itineris/` — the Helm chart. `brand/` — the mark every icon comes from.
 
-Places, days and trips are *derived* by grouping, never stored.
+## Going ahead and using it
 
-Everything downstream is one pipeline:
-
-```
-facets + day  ──►  visibleMoments / visibleTracks
-                          │
-        ┌─────────────────┼─────────────────┐
-        ▼                 ▼                 ▼
-      MAP             TIMELINE         WALL / STORY
-   markers+lines      scrubber          grid / full-screen
-```
-
-**One selection, three renderers.** Adding a new angle — "coffee", "swims",
-"train journeys" — is a row in `FACETS` in `src/lib/data.js`, not a new screen.
-
-Tags are **authored, never inferred**. Nothing in this repo classifies photos.
-
-## Run it
-
-```sh
+```bash
 npm install
-npm run dev      # http://localhost:5173  (viewer, demo gallery)
-npm run dev -- --host   # to open it on your phone over LAN
+npm run dev          # viewer on :5173  (add -- --host for a phone on the LAN)
+npm run dev:admin    # the admin app; npm run server for its API
 ```
 
-The demo trip is generated, not committed: every `dev`/`build`/`test` script
-first runs `scripts/make-seed.js`, which writes `seed/` (the private library,
-the public projection of one demo gallery, placeholder media) deterministically
-and mirrors the public half into `public/`.
+The demo trip is generated, not committed: `dev`, `build` and `test` all run
+`scripts/make-seed.js` first.
 
-## Layout
-
-```
-src/
-├── lib/
-│   ├── data.js            facets, colours, day/time helpers, GeoJSON builders
-│   └── trip.svelte.js     the single reactive store (Svelte 5 runes)
-└── components/
-    ├── MapView.svelte     MapLibre — created once, never re-rendered
-    ├── FacetBar.svelte    filter chips with live counts
-    ├── Timeline.svelte    day chips + scrubbable strip of moments
-    ├── PhotoWall.svelte   chronological grid
-    └── Story.svelte       full-screen viewer: tap, hold, swipe-down
+```bash
+npm test             # vitest + jsdom
+npm run test:server  # the API, on a fresh, a legacy and an existing volume
+npm run test:e2e     # real headless Chromium via nix, with screenshots
+npm run check:live   # production, then again with the network unreachable
 ```
 
-### Two things worth knowing
+## How it ships
 
-**The map is never torn down.** `MapView` is mounted once for the life of the
-app. View switches overlay it rather than replacing it, and state changes push
-new data into existing sources (`setData`, `flyTo`, `setFilter`). This is the
-whole reason the camera survives a filter change.
+A `v*` tag is the release: it sets the chart version, the appVersion and the
+image the chart deploys, in one move. CI pushes two images and the chart to
+GHCR; `homelab.setup` pins the chart version.
 
-**Timestamps carry their own offset.** `"2026-03-14T08:40+08:00"` — days are
-derived by slicing the string, never by parsing into a `Date`. The host
-timezone never enters the picture.
+## What else
 
-## Story viewer controls
+- Phones strip GPS from photos handed to a website, so pictures picked on a phone arrive unplaced — the admin can place a whole selection at once.
+- The Maps key reaches the browser via `/config.json`, mounted by the chart. Place details are looked up server-side, once per place.
+- Caption faces are bundled: SIL OFL 1.1, except Permanent Marker (Apache 2.0). Licences in `src/assets/fonts/`.
 
-A story is **one place's** photos and videos, like one account's stories on
-Instagram: the bars at the top and the `2 / 3` count are that place's alone,
-never the whole trip's. Past its last item the next place's story begins
-(places in the order they were first visited, however their photos interleave
-in time); past the last place the viewer closes. A photo with no place is a
-story of one.
+---
 
-**Captions, placed, tilted and styled.** Captions sit *on* the photo, not under
-it, where the author put them — and a photo can carry **a few of them** (five
-at most: a place in one corner, an aside on the subject, a time). In the admin,
-typing a caption brings up a phone-shaped preview of that photo with the
-caption live on it:
-
-- **place it** — drag it anywhere, or nudge with the arrow keys (Shift for 5%);
-- **tilt it to any angle** — grab the handle above it (it snaps to tidy angles
-  unless you hold Alt), or use the slider; `[` and `]` turn it a degree at a
-  time, 15 with Shift, and Straighten puts it upright;
-- **choose a face** — twelve, in three moods, so the picker is a choice rather
-  than a list:
-  - *Plain*: Clean (the system sans), Grotesk (Space Grotesk), Mono;
-  - *Classic*: Editorial (Playfair Display), Elegant (Cormorant Garamond
-    italic), Caps (Cinzel), Poster (Bebas Neue);
-  - *Playful*: Rounded (Baloo 2), Marker (Permanent Marker), Retro (Pacifico),
-    Punchy (Shrikhand), Tall (Amatic SC).
-
-  Every real face is bundled (`src/assets/fonts/`, latin subsets, licences
-  alongside) so they look the same offline and on every phone; a caption
-  downloads only the face it wears, and the service worker leaves them out of
-  the install precache. How big and how airy each looks at the same size
-  setting is tuned per face by rendering them all at caption size over a photo
-  — `scale`, `leading` and `spacing` in `server/caption.js`;
-- **size, alignment, and a pill** — none, dark, light or a colour whose ink is
-  picked by luminance; light or dark text when there is no pill;
-- **add another** — *+ caption* drops a new one a step above the last, wearing
-  the same face, so a series on one photo matches. Touching a caption in the
-  preview chooses it (the controls, the handle and the text box follow), and a
-  numbered picker names them for when they overlap.
-
-The story uses the same renderer (`Caption.svelte`) with the same fractions and
-a width-relative font size, so the preview is exactly what visitors see; they
-fade in one after another. Bare text always carries a double shadow so it reads
-on any photo.
-
-The model is `server/caption.js`. A moment's `captions` list is the truth —
-each entry is its words plus its look, validated entry by entry on PATCH and
-published with the gallery. The older single `caption` and `captionStyle` are
-kept in step with the first entry, so alt text, list titles and a phone still
-running an older bundle all keep working, and editing the first line the old
-way never drops the rest. (0.13.0's `script`/`serif` face names also still
-work, rewritten to their replacements on the next save.)
-
-**Next stop.** Crossing from one place to the next is shown, not silent: the
-story shrinks to a postcard at the top of the screen, the map beneath glides to
-the next pin (which pulses), and a pill under it names the place with its
-rating and how many photos and videos are waiting. After a moment — or on any
-touch — the postcard expands into that place's story. (`HANDOFF_MS` in
-`Story.svelte`; reduced-motion users get the pill without the shrink.)
-
-| | |
-|---|---|
-| tap right / `→` | next |
-| tap left / `←` | previous |
-| hold / `space` | pause |
-| swipe down / `esc` | close |
-
-## The mark
-
-<img src="brand/itineris-mark.png" alt="" width="160" />
-
-A walking figure drawn out of an italic *it* — the dot of the **i** its head,
-the **t** its stride — with an orange backpack. `brand/itineris-mark.png` is
-the master; every size the site serves comes from it:
-
-```sh
-node scripts/make-icons.mjs   # mark-96.png (the top bar), favicon.ico (16/32/48),
-                              # favicon-16/32.png, icon-192/512.png,
-                              # icon-maskable-512.png, apple-touch-icon.png, og-card.png
-```
-
-It rides in the top bar of both apps, beside the wordmark, on a small white
-chip (the drawing is on white, and the bar is dark).
-
-Each output trims the master's white air and puts back only what its slot
-wants: tight at 16 px so the backpack still reads, roomier for a home-screen
-tile, roomiest for `maskable` (Android crops to a circle, so the art stays
-inside the safe 80%). Outputs are committed to `public/` and `admin/public/`,
-so a build never needs sharp for this. The service worker precaches only the
-small ones; the 512s and the share card are fetched if something asks.
-
-## Offline
-
-The traveler is the person most likely to have no signal, and whoever gets a
-link is often on a plane, so both apps work without one.
-
-**Uploading in bad conditions.** Photos go into IndexedDB the moment they are
-picked — with an on-device thumbnail and client-read EXIF — and show up as a
-queue immediately, network or not. They upload one file per request with
-exponential backoff, wake on the browser's `online` event, and can be retried by
-hand. Caption, tags and galleries can be set while a photo is queued; they
-arrive with it. A 401 (the tinyauth session expired) pauses the queue and asks
-for a sign-in; the queue survives reloads, closed tabs and sleeping phones. The
-server dedups by content hash, so a retry after a lost response is harmless.
-(`admin/lib/outbox.js`)
-
-**Viewer.** A service worker (`src/sw/`) precaches the small shell (MapLibre,
-a megabyte, is loaded lazily and cached on first use so an update never has to
-re-download it to take over), serves pages from that cache, serves gallery data
-network-first with the last copy as fallback — marked `X-Itineris-Cache:
-fallback` and shown as *Saved copy* — and caches photos and map tiles as you
-browse. A new version installs in the background and, if it takes over while
-a page is open, the page offers **Updated · Reload**. Photos have 400/960/1600 px
-copies; phones get the 960 (older photos are backfilled on server start). There
-is **no download button**: whatever a visitor actually looked at is what comes
-back without a signal, which is the case that happens (a shared link opened on
-the way home, then again on the plane). The viewer is installable
-(`manifest.webmanifest`).
-
-**Where am I.** The top bar's locate button asks the browser for the visitor's
-position — only on that tap, never before — and draws it as a blue dot on
-either map, with the accuracy Google reports drawn around it. The camera goes
-there on the first fix and then leaves the view alone; tapping again removes the
-dot and forgets the position, which is never sent anywhere.
-(`src/lib/here.svelte.js`; the maps expose `data-me` for tests.)
-
-**Location.** EXIF GPS is read on upload, but phones strip it from photos
-handed to a website (Android redacts location for apps without
-`ACCESS_MEDIA_LOCATION`, which browsers lack; iOS likewise), so photos picked on
-a phone arrive unplaced. The admin marks them ⌖ and offers, in the queue and in
-every location picker: **📍 My location** (the device's position — right when
-you upload from where you shot), a **place search** (OpenStreetMap Nominatim,
-one request per search) that also fills the place name, a neighbour's location,
-tapping the map, or coordinates. Desktop uploads keep their GPS.
-
-**Videos.** Upload them like photos (`.mp4`/`.mov`, what phones record, HEVC
-included). The admin server (`server/video.js`, ffmpeg in the image) reads
-when and where the clip was shot (QuickTime's local creation date, else the
-UTC time in the zone of its GPS tag), keeps the original, makes an H.264
-`.mp4` every browser plays (longest edge 1280, rotation baked in, faststart)
-and a poster frame in the photo tiers. In the story a video autoplays muted
-over its poster with a speaker to turn sound on; the bar follows the video and
-the story moves on when it ends. Videos wear ▶ in the strip, the wall, the
-pins and the queue; the queue draws its own poster while the upload waits, and
-gives the server twenty minutes to transcode (the upload retries and dedups
-if the phone gives up first). Clips over 180 s are refused
-(`ITINERIS_MAX_VIDEO_SECONDS`).
-
-**Google Maps as the map.** Set `googleMaps.apiKey` in the chart values (a
-Maps JavaScript API key restricted to the site's hostname; 10,000 free map
-loads a month) and the viewer draws Google's map — its streets, its shop
-labels, tappable like in the Google Maps app — with the photos as round photo
-pins and the routes drawn on top (`GoogleMapView.svelte`, same contract as the
-MapLibre `MapView`). The key reaches browsers via `/config.json` (ConfigMap →
-nginx). Google's terms forbid caching its tiles, so with Google
-configured the map itself needs a connection (photos and stories do not), and
-the viewer falls back to MapLibre + Carto whenever it is offline or Google's
-script fails; with no key it is MapLibre everywhere, as before.
-
-**Places as pins.** On Google's map there is one pin per place: the photo in an
-Instagram-style story ring — bright until every photo behind it has been seen
-on this device, a count badge when there are several — and under it a small
-chip with the place's **name** and, when Google knows the place, its rating
-(`Yamo 4.6 ★`), Claude.ai-style. Photos are **pinned to a Google place** in the
-admin: pick one of *your places* (already in the journal), search Google Maps,
-paste a link, or tap the map — for the next uploads, a selection, or one photo
-in the editor. Pinned photos carry the Place ID, share one pin whatever they
-were called, and inherit the place's details from their siblings without
-another lookup. No day chips: the date shows, minimally, where a photo is open. Tap the
-ring or the chip and the story opens at once — there is no place card: what
-Google says is on the pin, and again in the story header while you watch. Those details are looked up **server-side**, once per
-place (Places API (New) Text Search biased to the photo's spot, matched only
-within 300 m), stored with the photo, published with the gallery and refreshed
-monthly (Google allows 30 days of caching; place IDs forever). Visitors never
-call Google for them; 1,000 lookups a month are free. The admin shows the
-Google line per photo with a ↻ to ask again. The same Secret's `apiKey` is used
-unless a server-only `placesApiKey` is present.
-
-**Google Maps, both ways.** Nobody has to leave the maps they use. In: paste
-or share a Google Maps link (the admin is a Web Share Target — Google Maps →
-Share → itineris) and the place's name, coordinates and exact link are read
-from the URL (`server/links.js`; short `maps.app.goo.gl` links are followed by
-the server, and only Google Maps hosts are ever fetched). Photos added while a
-shared place is active land there; a selection can be moved there. Out: every
-placed photo carries a **Google Maps ↗** link — the exact place when it came
-from a link, else a search that lands on the spot — on the place name in the
-story header. No Google API key, no quota, nothing to pay: these
-are plain Google Maps URLs.
-
-**Admin.** The same worker under `/admin/`: it opens offline with the last
-library and the queue. Edits to already-uploaded photos still need the network
-and fail visibly; uploads never do.
-
-Known limits: iOS has no Background Sync, so the queue drains when the app is
-opened — install it to the home screen so iOS keeps its storage. The map style,
-glyphs and tiles come from Carto's CDN until PMTiles are self-hosted.
-
-## Galleries
-
-Uploads are **private by default**. A gallery is a curated subset — any photos,
-any routes — with an **unguessable URL**: `/g/<12-char token>`. Share one link
-with one group, another with another; a photo can sit in as many galleries as
-you like. One gallery can be marked *home* and is what `/` shows; with no home
-gallery, `/` is a landing card that lists nothing.
-
-The public site never sees the library. The admin materialises one JSON per
-gallery under `data/galleries/<token>.json` using a **whitelist** projection
-(`pub()` in `server/store.js`) — uploader, filename, camera and the original's
-path can't leak without someone adding them there on purpose. Media is served by
-content hash, so a photo not linked from any gallery you hold is not discoverable.
-
-Deep links: `#m/<id>` opens a story (an old `#wall` link is ignored and cleaned
-up). Opening a story pushes one history entry, so the phone's back button
-closes it instead of leaving.
-
-## Admin (uploads and tagging)
-
-`server/` is a small Node service (Hono + sharp) that lives at `/admin/` on the
-same host, behind tinyauth. It never runs in the public nginx pod: Traefik routes
-`/admin` to it and everything else to nginx, and it trusts the `Remote-Email`
-header tinyauth injects — a request without one did not come through the proxy
-and gets a 401.
-
-Upload a photo and it reads EXIF as raw strings (never as a `Date`), keeps the
-capture time in the photo's own zone — from `OffsetTimeOriginal`, else from the
-GPS position, else flagged `tz: "unknown"` — writes content-hashed WebP
-derivatives (EXIF-free by construction) plus the untouched original, and appends
-an **untagged** moment to `moments.json` atomically. Tagging is yours, in the UI.
-Deleting a moment removes its public derivatives and keeps the original.
-
-Everything lands under one directory (`ITINERIS_DATA_DIR`): `data/`, `media/`,
-`originals/`. The public nginx mounts `data/` and `media/` from the same volume
-read-only; `originals/` is never served.
-
-```sh
-npm run build:admin && npm run server   # http://localhost:8080/admin/  (set Remote-Email yourself locally)
-npm run test:server                      # forges JPEGs with EXIF/GPS and exercises every route
-```
-
-## Tests
-
-```sh
-npm test               # vitest + jsdom + Testing Library: store, router, gestures, admin components
-npm run test:server    # forges JPEGs with EXIF/GPS and drives every API route on a fresh, a legacy and an existing volume
-npm run test:e2e       # real headless Chromium via nix: nginx + admin server + puppeteer walking the user journey, screenshots
-npm run check:live     # production: install the worker, look at a story, relaunch with the network unreachable, reopen from cache
-```
-
-CI runs the first two before building any image. The e2e needs `nix`; it
-resolves Chromium and a font from nixpkgs itself (`scripts/browser.mjs`).
-
-## Build and deploy
-
-The image is a two-stage Dockerfile: `node:24-alpine` runs `npm run build`,
-then `nginxinc/nginx-unprivileged` serves `dist/` on port 8080 as uid 101 —
-non-root, read-only root filesystem, every capability dropped.
-`nginx/default.conf` owns caching (fingerprinted assets are immutable, `data/`
-and `media/` revalidate, the app shell is `no-cache`) and `/healthz`.
-
-CI pushes the image to `ghcr.io/rounakdatta/itineris` and the chart in
-`charts/itineris` to `oci://ghcr.io/rounakdatta/charts`, matching the
-`agentfest` and `texas-fold-em` pipelines. **A `v*` tag is the release**: it
-sets the chart version, the appVersion, and therefore the image the chart
-deploys, in one move. Plain pushes to `main` publish `+<sha>` chart versions
-for tracing. `homelab.setup` consumes the chart through a Kustomize
-`helmCharts` block pinned to a version.
-
-The chart deliberately ships no Ingress: the deployment repo owns hostnames,
-TLS and whatever sits in front. For the public viewer that is nothing at all,
-on purpose — it is meant to be shared.
-
-## Not built yet
-
-- Video (needs ffmpeg for poster frames and transcoding — a separate decision)
-- Tracks: GPX upload for runs and rides; the model and the viewer already render them — and placing GPS-less photos by timestamp against a track, since phones strip location from photos picked in a browser
-- Journey playback ("▶" — fly the map through the trip while photos surface)
-- A Content-Security-Policy header, once it can be verified against the deployed site
-- Self-hosted PMTiles, so the map needs nothing from Carto
-- An edit queue for offline changes to photos already uploaded
+Everything hangs off a pin: a photo without a place is a photo, and a photo
+with one is somewhere you went.
