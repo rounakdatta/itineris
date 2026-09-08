@@ -9,7 +9,7 @@ import { ingestMedia, backfillMedium, MEDIUM } from "./ingest.js";
 import { isLocalIso } from "./time.js";
 import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
 import { lookupPlace, needsLookup, searchPlaces, fetchPlaceDetails, isStale, isPlaceId } from "./places.js";
-import { validateStyle } from "./caption.js";
+import { validateStyle, validateCaptions, captionsOf, normalizeStyle, styleOf, MAX_CAPTION_TEXT } from "./caption.js";
 
 const env = (k, d) => process.env[k] ?? d;
 const PORT = +env("ITINERIS_PORT", 8080);
@@ -67,9 +67,43 @@ app.get("/admin/api/tracks", async (c) => c.json(await store.tracks()));
 app.get("/admin/api/galleries", async (c) => c.json((await store.galleries()).map(galleryView)));
 
 // ---- moments -------------------------------------------------------------
+// Captions. The `captions` list is the truth; `caption` and `captionStyle` are
+// kept in step with its first entry, so everything that wants one line of text
+// -- alt text, list titles, a phone still running an older bundle -- keeps
+// working. Reconciling needs the moment as it stands (editing the first line of
+// a photo with three captions must not drop the other two), so this returns a
+// function to apply where that moment is in hand.
+const mirror = (captions) => ({ captions, caption: captions[0]?.text ?? "", captionStyle: captions[0] ? styleOf(captions[0]) : null });
+function captionFields(patch) {
+  if ("captions" in patch) {
+    const v = validateCaptions(patch.captions);
+    if (v.error) return { error: `captions: ${v.error}` };
+    return { apply: () => mirror(v.captions) };
+  }
+  if (!("caption" in patch) && !("captionStyle" in patch)) return {};
+  let style;
+  if ("captionStyle" in patch) {
+    if (patch.captionStyle === null) style = null;
+    else {
+      const v = validateStyle(patch.captionStyle);
+      if (v.error) return { error: `captionStyle: ${v.error}` };
+      style = v.style;
+    }
+  }
+  const text = "caption" in patch ? (STR(patch.caption, MAX_CAPTION_TEXT) ?? "").trim() : undefined;
+  return {
+    apply: (m) => {
+      const have = captionsOf(m);
+      const first = have[0] ?? null;
+      const t = text !== undefined ? text : (first?.text ?? "");
+      const s = style !== undefined ? style : (first ? styleOf(first) : null);
+      return mirror(t ? [{ text: t, ...normalizeStyle(s) }, ...have.slice(1)] : have.slice(1));
+    },
+  };
+}
+
 function momentPatch(patch, email) {
   const upd = {};
-  if ("caption" in patch) upd.caption = STR(patch.caption, 2000) ?? "";
   if ("place" in patch) upd.place = STR(patch.place, 200) ?? "";
   if ("tags" in patch) {
     if (!Array.isArray(patch.tags)) return { error: "tags must be an array" };
@@ -96,16 +130,9 @@ function momentPatch(patch, email) {
     if (id === undefined) return { error: "placeId must be a Google Place ID" };
     upd.placeId = id;
   }
-  // How the caption sits on the photo (position, face, size, pill, ink, alignment); null = the default look.
-  if ("captionStyle" in patch) {
-    if (patch.captionStyle === null) upd.captionStyle = null;
-    else {
-      const v = validateStyle(patch.captionStyle);
-      if (v.error) return { error: `captionStyle: ${v.error}` };
-      upd.captionStyle = v.style;
-    }
-  }
-  return { upd: { ...upd, editedBy: email, editedAt: new Date().toISOString() } };
+  const caps = captionFields(patch);
+  if (caps.error) return { error: caps.error };
+  return { upd: { ...upd, editedBy: email, editedAt: new Date().toISOString() }, captions: caps.apply ?? null };
 }
 
 app.post("/admin/api/upload", bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => {
@@ -119,9 +146,11 @@ app.post("/admin/api/upload", bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => {
   if (typeof body.meta === "string" && body.meta.trim()) {
     try { meta = JSON.parse(body.meta); } catch { return c.json({ error: "meta must be JSON" }, 400); }
   }
-  const { upd = {}, error: metaError } = momentPatch(meta, c.get("email"));
+  const { upd = {}, error: metaError, captions: metaCaptions } = momentPatch(meta, c.get("email"));
   if (metaError) return c.json({ error: `meta: ${metaError}` }, 400);
   delete upd.editedBy; delete upd.editedAt;
+  // A photo captioned while it was still in the phone's queue arrives with them.
+  Object.assign(upd, metaCaptions ? metaCaptions({}) : {});
   const wanted = new Set([
     ...(typeof body.gallery === "string" && TOKEN_RE.test(body.gallery) ? [body.gallery] : []),
     ...(Array.isArray(meta.galleries) ? meta.galleries.filter((g) => typeof g === "string" && TOKEN_RE.test(g)) : []),
@@ -196,10 +225,10 @@ const forgetGoogle = (m, upd) => ("place" in upd || "lat" in upd || "lng" in upd
 app.patch("/admin/api/moments/:id", async (c) => {
   const id = c.req.param("id");
   let patch; try { patch = await c.req.json(); } catch { return c.json({ error: "invalid json" }, 400); }
-  const { upd, error } = momentPatch(patch, c.get("email"));
+  const { upd, error, captions } = momentPatch(patch, c.get("email"));
   if (error) return c.json({ error }, 400);
   let result = null;
-  await store.updateMoments((list) => list.map((m) => (m.id === id ? (result = { ...forgetGoogle(m, upd), ...upd }) : m)));
+  await store.updateMoments((list) => list.map((m) => (m.id === id ? (result = { ...forgetGoogle(m, upd), ...upd, ...(captions ? captions(m) : {}) }) : m)));
   if (!result) return c.json({ error: "not found" }, 404);
   enrichPlaces((m) => m.id === id);
   const galleries = await store.galleries();

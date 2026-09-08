@@ -2,13 +2,27 @@
   import { api, mediaUrl, splitIso, joinIso, OFFSETS, storyUrl } from "./lib/api.js";
   import MapPicker from "./MapPicker.svelte";
   import CaptionStyler from "./CaptionStyler.svelte";
+  import { captionsOf, nextCaption, normalizeStyle } from "../server/caption.js";
 
   // `pending`: a queued photo that has not been uploaded yet. Same fields, but
   // saving writes to the on-device queue (onSaveLocal) instead of the server.
   let { moment, pending = false, galleries = [], suggestions = [], neighbours = { prev: null, next: null }, known = [], placesEnabled = false, onSaved, onSaveLocal, onDeleted, onClose } = $props();
 
-  let caption = $state(moment.caption ?? "");
-  let captionStyle = $state(moment.captionStyle ?? null);   // where and how the caption sits on the photo; null = default
+  // A photo can carry a few captions; the textarea and the styler act on the
+  // chosen one. `captionsOf` accepts either shape, so a photo captioned before
+  // 0.18.0 opens as a list of one.
+  let captions = $state(captionsOf(moment));
+  let picked = $state(0);
+  const caption = $derived(captions[picked]?.text ?? "");
+  const editCaption = (text) => {
+    if (!captions.length) { captions = [nextCaption([], text)]; picked = 0; return; }
+    captions = captions.map((c, i) => (i === picked ? { ...c, text } : c));
+  };
+  const styleCaption = (style) => { captions = captions.map((c, i) => (i === picked ? { ...(style ? { ...style } : normalizeStyle(null)), text: c.text } : c)); };
+  const addCaption = () => { captions = [...captions, nextCaption(captions, "")]; picked = captions.length - 1; };
+  const removeCaption = (i) => { captions = captions.filter((_, j) => j !== i); picked = Math.max(0, Math.min(picked, captions.length - 1)); };
+  // What travels to the server: the ones with something written in them.
+  const written = $derived(captions.filter((c) => c.text.trim()).map((c) => ({ ...c, text: c.text.trim() })));
   let place = $state(moment.place ?? "");
   let tags = $state([...moment.tags]);
   let lat = $state(moment.lat ?? "");
@@ -39,10 +53,9 @@
   const numLat = $derived(lat === "" || lat === null ? null : +lat);
   const numLng = $derived(lng === "" || lng === null ? null : +lng);
   const dirty = $derived(
-    caption !== (moment.caption ?? "") || place !== (moment.place ?? "") || tags.join() !== moment.tags.join() ||
+    JSON.stringify(written) !== JSON.stringify(captionsOf(moment)) || place !== (moment.place ?? "") || tags.join() !== moment.tags.join() ||
     String(lat) !== String(moment.lat ?? "") || String(lng) !== String(moment.lng ?? "") || t !== moment.t || (mapsUrl ?? null) !== (moment.mapsUrl ?? null) || (placeId ?? null) !== (moment.placeId ?? moment.google?.placeId ?? null) ||
-    inGalleries.slice().sort().join() !== (moment.galleries ?? []).slice().sort().join() ||
-    JSON.stringify(captionStyle ?? null) !== JSON.stringify(moment.captionStyle ?? null)
+    inGalleries.slice().sort().join() !== (moment.galleries ?? []).slice().sort().join()
   );
   const offered = $derived(suggestions.filter((s) => !tags.includes(s) && (!tagDraft || s.includes(tagDraft.toLowerCase()))).slice(0, 12));
   const homeGallery = $derived(galleries.find((g) => g.home));
@@ -68,10 +81,10 @@
       if (hasLat !== hasLng) throw new Error("Give both latitude and longitude, or neither.");
       if (pending) {
         const locEdited = String(lat) !== String(moment.lat ?? "") || String(lng) !== String(moment.lng ?? "");
-        await onSaveLocal?.({ caption, captionStyle, place, tags, galleries: inGalleries, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null, mapsUrl: hasLat ? mapsUrl ?? null : null, placeId: hasLat ? placeId ?? null : null, t, locEdited: moment.locEdited || locEdited, timeEdited: moment.timeEdited || t !== moment.t });
+        await onSaveLocal?.({ captions: written, place, tags, galleries: inGalleries, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null, mapsUrl: hasLat ? mapsUrl ?? null : null, placeId: hasLat ? placeId ?? null : null, t, locEdited: moment.locEdited || locEdited, timeEdited: moment.timeEdited || t !== moment.t });
         return;
       }
-      const body = { caption, captionStyle, place, tags, t, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null, mapsUrl: hasLat ? mapsUrl ?? null : null, placeId: hasLat ? placeId ?? null : null };
+      const body = { captions: written, place, tags, t, lat: hasLat ? +lat : null, lng: hasLng ? +lng : null, mapsUrl: hasLat ? mapsUrl ?? null : null, placeId: hasLat ? placeId ?? null : null };
       let saved = await api.patch(moment.id, body);
       const before = new Set(moment.galleries ?? []), after = new Set(inGalleries);
       for (const gid of after) if (!before.has(gid)) await api.patchGallery(gid, { add: [moment.id] });
@@ -115,9 +128,10 @@
     </div>
   </div>
 
-  <label>Caption<textarea rows="2" bind:value={caption} placeholder="What was this?"></textarea></label>
-  {#if caption.trim()}
-    <CaptionStyler {moment} {pending} {caption} style={captionStyle} onChange={(s) => (captionStyle = s)} />
+  <label>{captions.length > 1 ? `Caption ${picked + 1} of ${captions.length}` : "Caption"}<textarea rows="2" value={caption} oninput={(e) => editCaption(e.currentTarget.value)} placeholder="What was this?"></textarea></label>
+  {#if captions.some((c) => c.text.trim())}
+    <CaptionStyler {moment} {pending} {captions} selected={picked}
+      onChange={styleCaption} onSelect={(i) => (picked = i)} onAdd={addCaption} onRemove={removeCaption} />
   {/if}
   <label>Place<input bind:value={place} placeholder="Chinatown Complex" /></label>
 

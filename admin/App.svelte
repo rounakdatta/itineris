@@ -42,7 +42,7 @@
     id: pendingItem.id, pending: true, filename: pendingItem.name,
     t: pendingItem.meta.t ?? exifToIso(pendingItem.exif, pendingItem.createdAt), tz: pendingItem.meta.timeEdited ? "manual" : pendingItem.exif?.offset ? "exif" : "unknown",
     lat: pendingItem.meta.lat ?? null, lng: pendingItem.meta.lng ?? null, mapsUrl: pendingItem.meta.mapsUrl ?? null, placeId: pendingItem.meta.placeId ?? null,
-    place: pendingItem.meta.place ?? "", caption: pendingItem.meta.caption ?? "", tags: pendingItem.meta.tags ?? [], galleries: pendingItem.meta.galleries ?? [],
+    place: pendingItem.meta.place ?? "", caption: pendingItem.meta.caption ?? "", captions: pendingItem.meta.captions ?? [], tags: pendingItem.meta.tags ?? [], galleries: pendingItem.meta.galleries ?? [],
     media: { src: pendingUrl ?? "", w: 0, h: 0 },
   });
 

@@ -86,6 +86,12 @@ const moments = M.map(([t, placeKey, tags, caption], i) => {
     place: p.name,
     spot: placeKey,   // the seed's own key for the place (NOT a Google Place ID)
     caption,
+    // The demo shows what several captions on one photo look like: the words
+    // where they were put, in the faces they were given. (m010, the light show.)
+    ...(id === "m010" ? { captions: [
+      { text: caption, x: 0.5, y: 0.86, rot: 0, font: "clean", size: "m", bg: "none", ink: "light", align: "center" },
+      { text: "10 minutes, twice a night", x: 0.42, y: 0.2, rot: -7, font: "caps", size: "s", bg: "dark", ink: "light", align: "center" },
+    ] } : {}),
     tags,
     media: { type: "photo", src: `media/${id}.svg`, w: 1080, h: 1920 },
     // Seed "Google" details are obviously fake and dated so a server with a key

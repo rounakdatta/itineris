@@ -82,9 +82,11 @@ never the whole trip's. Past its last item the next place's story begins
 in time); past the last place the viewer closes. A photo with no place is a
 story of one.
 
-**Captions, placed, tilted and styled.** A caption sits *on* the photo, not
-under it, where the author put it. In the admin, typing a caption brings up a
-phone-shaped preview of that photo with the caption live on it:
+**Captions, placed, tilted and styled.** Captions sit *on* the photo, not under
+it, where the author put them — and a photo can carry **a few of them** (five
+at most: a place in one corner, an aside on the subject, a time). In the admin,
+typing a caption brings up a phone-shaped preview of that photo with the
+caption live on it:
 
 - **place it** — drag it anywhere, or nudge with the arrow keys (Shift for 5%);
 - **tilt it to any angle** — grab the handle above it (it snaps to tidy angles
@@ -97,14 +99,24 @@ phone-shaped preview of that photo with the caption live on it:
   so they look the same offline and on every phone; the service worker leaves
   them out of the install precache and fetches only the one a caption uses;
 - **size, alignment, and a pill** — none, dark, light or a colour whose ink is
-  picked by luminance; light or dark text when there is no pill.
+  picked by luminance; light or dark text when there is no pill;
+- **add another** — *+ caption* drops a new one a step above the last, wearing
+  the same face, so a series on one photo matches. Touching a caption in the
+  preview chooses it (the controls, the handle and the text box follow), and a
+  numbered picker names them for when they overlap.
 
 The story uses the same renderer (`Caption.svelte`) with the same fractions and
-a width-relative font size, so the preview is exactly what visitors see. Bare
-text always carries a double shadow so it reads on any photo. The model is
-`server/caption.js` (`captionStyle` on a moment, validated on PATCH, published
-with the gallery; 0.13.0's `script`/`serif` names still work and are rewritten
-to their replacements on the next save).
+a width-relative font size, so the preview is exactly what visitors see; they
+fade in one after another. Bare text always carries a double shadow so it reads
+on any photo.
+
+The model is `server/caption.js`. A moment's `captions` list is the truth —
+each entry is its words plus its look, validated entry by entry on PATCH and
+published with the gallery. The older single `caption` and `captionStyle` are
+kept in step with the first entry, so alt text, list titles and a phone still
+running an older bundle all keep working, and editing the first line the old
+way never drops the rest. (0.13.0's `script`/`serif` face names also still
+work, rewritten to their replacements on the next save.)
 
 **Next stop.** Crossing from one place to the next is shown, not silent: the
 story shrinks to a postcard at the top of the screen, the map beneath glides to

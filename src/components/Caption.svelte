@@ -7,7 +7,9 @@
   import "../lib/caption-fonts.css";
   import { captionVars, normalizeStyle, X_RANGE, Y_RANGE, ROT_RANGE, clamp } from "../../server/caption.js";
 
-  let { text = "", style = null, editable = false, animate = false, onMove = null, onRotate = null, onCommit = null } = $props();
+  // `selected` matters only in the editor: several captions can share a photo,
+  // so one of them owns the handle and the controls.
+  let { text = "", style = null, editable = false, selected = false, animate = false, delay = 0, onMove = null, onRotate = null, onCommit = null, onSelect = null } = $props();
   const st = $derived(normalizeStyle(style));
   const vars = $derived(captionVars(style));
 
@@ -22,6 +24,7 @@
   function down(e) {
     if (!editable) return;
     e.preventDefault(); e.stopPropagation();
+    onSelect?.();                 // touching a caption is how you choose it
     const p = frac(e); grab = { dx: st.x - p.x, dy: st.y - p.y }; dragging = true;
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* synthetic pointer */ }
   }
@@ -31,7 +34,7 @@
   // The handle sits above the caption and turns with it, so dragging it is
   // simply "point the caption's top at my finger".
   function turnDown(e) {
-    if (!editable) return;
+    if (!editable || !selected) return;
     e.preventDefault(); e.stopPropagation();
     turning = true;
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* synthetic pointer */ }
@@ -50,6 +53,7 @@
 
   function key(e) {
     if (!editable) return;
+    onSelect?.();
     const step = e.shiftKey ? 0.05 : 0.01;
     const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (d) {
@@ -69,12 +73,12 @@
 {#if text}
   <div class="cap-layer" class:editable bind:this={layer}>
     <div
-      class="cap" class:editable class:dragging class:animate
-      style={vars}
+      class="cap" class:editable class:selected class:dragging class:animate
+      style={`${vars};--cap-delay:${120 + delay}ms`}
       role={editable ? "button" : null} tabindex={editable ? 0 : null}
       aria-label={editable ? "Caption. Drag to place it; arrow keys nudge, [ and ] turn it." : null}
       onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onkeydown={key}
-    >{text}{#if editable}<span
+    >{text}{#if editable && selected}<span
         class="turn" class:on={turning} aria-hidden="true" title="Drag to tilt (hold Alt for any angle)"
         onpointerdown={turnDown} onpointermove={turnMove} onpointerup={turnUp} onpointercancel={turnUp}
       ></span>{/if}</div>
@@ -94,12 +98,13 @@
     padding: var(--cap-pad); border-radius: 0.55em;
     white-space: pre-wrap; overflow-wrap: anywhere;
   }
-  .cap.animate { animation: cap-in 460ms cubic-bezier(.2,.8,.2,1) 120ms both; }
+  .cap.animate { animation: cap-in 460ms cubic-bezier(.2,.8,.2,1) var(--cap-delay, 120ms) both; }
   @keyframes cap-in {
     from { opacity: 0; transform: translate(-50%, -50%) translateY(10px) rotate(var(--cap-rot)); }
     to { opacity: 1; transform: translate(-50%, -50%) translateY(0) rotate(var(--cap-rot)); }
   }
-  .cap.editable { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; outline: 1.5px dashed rgba(255, 255, 255, 0.7); outline-offset: 5px; }
+  .cap.editable { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; outline: 1.5px dashed rgba(255, 255, 255, 0.35); outline-offset: 5px; }
+  .cap.editable.selected { outline: 1.5px dashed rgba(255, 255, 255, 0.85); }
   .cap.editable:focus-visible { outline: 2px solid #7aa2f7; }
   .cap.dragging { cursor: grabbing; }
   /* The tilt handle: a grip on a short stalk above the caption, turning with it. */

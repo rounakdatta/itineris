@@ -3,14 +3,17 @@
   // of THIS photo with the real Caption renderer, draggable; underneath, the
   // few choices that matter -- face, size, pill, ink, alignment.
   import Caption from "../src/components/Caption.svelte";
-  import { FONTS, SIZES, ACCENTS, ALIGNS, normalizeStyle, isDefaultStyle } from "../server/caption.js";
+  import { FONTS, SIZES, ACCENTS, ALIGNS, MAX_CAPTIONS, normalizeStyle, isDefaultStyle } from "../server/caption.js";
   import { mediaUrl } from "./lib/api.js";
 
-  let { moment, caption = "", style = null, pending = false, onChange } = $props();
-  const st = $derived(normalizeStyle(style));
+  // `captions` is the whole list; `selected` is the one the controls act on.
+  let { moment, captions = [], selected = 0, pending = false, onChange, onSelect, onAdd, onRemove } = $props();
+  const current = $derived(captions[selected] ?? null);
+  const st = $derived(normalizeStyle(current));
   const landscape = $derived(!!moment.media && moment.media.w > moment.media.h);
   const img = $derived(pending ? moment.media.src : mediaUrl(moment.media.medium ?? moment.media.poster ?? moment.media.src));
   const set = (patch) => onChange?.({ ...st, ...patch });
+  const short = (t) => { const s = (t ?? "").trim().replace(/\s+/g, " "); return s.length > 14 ? `${s.slice(0, 13)}…` : s || "empty"; };
   const SIZE_LABEL = { s: "S", m: "M", l: "L", xl: "XL" };
   const ALIGN_LABEL = { left: "Left", center: "Centre", right: "Right" };
 </script>
@@ -19,10 +22,22 @@
   <div class="frame" data-testid="caption-frame">
     {#if landscape}<img class="blur" src={img} alt="" />{/if}
     <img class="photo" class:contain={landscape} src={img} alt="" />
-    <Caption text={caption} style={st} editable onMove={(x, y) => set({ x, y })} onRotate={(rot) => set({ rot })} />
+    {#each captions as c, i (i)}
+      <Caption text={c.text} style={i === selected ? st : c} editable selected={i === selected}
+        onSelect={() => onSelect?.(i)} onMove={(x, y) => set({ x, y })} onRotate={(rot) => set({ rot })} />
+    {/each}
     <div class="hint" aria-hidden="true">drag to place · grab the handle to tilt</div>
   </div>
   <div class="controls">
+    {#if captions.length > 1 || onAdd}
+      <div class="row caps" role="group" aria-label="Captions on this photo">
+        {#each captions as c, i (i)}
+          <button type="button" class="opt cap-pick" class:on={i === selected} aria-pressed={i === selected} onclick={() => onSelect?.(i)}>{i + 1}. {short(c.text)}</button>
+        {/each}
+        {#if onAdd}<button type="button" class="opt add" disabled={captions.length >= MAX_CAPTIONS} title={captions.length >= MAX_CAPTIONS ? `${MAX_CAPTIONS} is the limit` : "Add another caption"} onclick={() => onAdd?.()}>+ caption</button>{/if}
+        {#if captions.length > 1 && onRemove}<button type="button" class="opt ghost" onclick={() => onRemove?.(selected)} aria-label={`Remove caption ${selected + 1}`}>Remove</button>{/if}
+      </div>
+    {/if}
     <div class="row" role="group" aria-label="Font">
       {#each Object.entries(FONTS) as [k, f] (k)}
         <button type="button" class="opt" class:on={st.font === k} style={`font-family:${f.family};font-weight:${f.weight};${f.upper ? "text-transform:uppercase;" : ""}`} aria-pressed={st.font === k} onclick={() => set({ font: k })}>{f.label}</button>
@@ -71,6 +86,10 @@
   .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset; }
   .dot.on { border-color: #fff; box-shadow: 0 0 0 2px #111; }
   .sep { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
+  .caps { gap: 6px; padding-bottom: 2px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+  .cap-pick { max-width: 15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opt.add { border-style: dashed; }
+  .opt:disabled { opacity: 0.45; cursor: default; }
   .tilt { gap: 10px; }
   .tilt .lbl { margin: 0; font-size: 12px; color: var(--muted); }
   .tilt input[type="range"] { flex: 1 1 120px; min-width: 100px; accent-color: #7aa2f7; margin: 0; }
