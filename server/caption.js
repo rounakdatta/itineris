@@ -1,22 +1,35 @@
 // Caption styling, shared by the story (viewer), the admin's live preview and
 // the server's validation -- so what the editor shows is exactly what visitors
-// get. A small curated set, not a design tool: five faces, four sizes, a
-// transparent/dark/light/coloured pill, light or dark ink, and a position the
-// author drags to (fractions of the story frame).
-// Faces chosen the way a photographer would caption a print: an editorial
-// didone, an airy garamond italic, engraved gallery capitals, a modern grotesk,
-// a poster condensed -- plus the system sans and mono. The five non-system
-// faces are bundled (src/assets/fonts, OFL 1.1) so a caption looks the same on
-// every phone and offline.
+// get. A curated set, not a design tool: a dozen faces in three moods, four
+// sizes, a transparent/dark/light/coloured pill, light or dark ink, an angle,
+// and a position the author drags to (fractions of the story frame).
+//
+// The moods make the picker a choice rather than a list: the plain faces, the
+// classic ones a print gets captioned with, and the playful ones a photo gets
+// stickered with. Every non-system face is bundled (src/assets/fonts, licences
+// alongside) so a caption looks the same on every phone and offline. `scale`
+// and `leading` even out how big and how airy each face actually looks at the
+// same size setting -- set by rendering them all at caption size and looking,
+// not by guessing.
 const has = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
+export const GROUPS = [
+  { id: "plain", label: "Plain" },
+  { id: "classic", label: "Classic" },
+  { id: "playful", label: "Playful" },
+];
 export const FONTS = {
-  clean:     { label: "Clean",     family: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif', weight: 600 },
-  grotesk:   { label: "Grotesk",   family: '"Space Grotesk", "Helvetica Neue", Arial, sans-serif', weight: 500, spacing: "-0.005em" },
-  editorial: { label: "Editorial", family: '"Playfair Display", "Iowan Old Style", Georgia, "Times New Roman", serif', weight: 700, scale: 1.05 },
-  elegant:   { label: "Elegant",   family: '"Cormorant Garamond", "Palatino Linotype", Palatino, Georgia, serif', weight: 400, italic: true, scale: 1.3 },
-  caps:      { label: "Caps",      family: 'Cinzel, "Trajan Pro", "Times New Roman", serif', weight: 400, upper: true, spacing: "0.1em", scale: 1.02 },
-  poster:    { label: "Poster",    family: '"Bebas Neue", Impact, "Arial Narrow", "Roboto Condensed", sans-serif', weight: 400, upper: true, spacing: "0.05em", scale: 1.35 },
-  mono:      { label: "Mono",      family: 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace', weight: 500, scale: 0.95 },
+  clean:     { group: "plain",   label: "Clean",     family: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif', weight: 600 },
+  grotesk:   { group: "plain",   label: "Grotesk",   family: '"Space Grotesk", "Helvetica Neue", Arial, sans-serif', weight: 500, spacing: "-0.005em" },
+  mono:      { group: "plain",   label: "Mono",      family: 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace', weight: 500, scale: 0.95 },
+  editorial: { group: "classic", label: "Editorial", family: '"Playfair Display", "Iowan Old Style", Georgia, "Times New Roman", serif', weight: 700, scale: 1.05 },
+  elegant:   { group: "classic", label: "Elegant",   family: '"Cormorant Garamond", "Palatino Linotype", Palatino, Georgia, serif', weight: 400, italic: true, scale: 1.3 },
+  caps:      { group: "classic", label: "Caps",      family: 'Cinzel, "Trajan Pro", "Times New Roman", serif', weight: 400, upper: true, spacing: "0.1em", scale: 1.02 },
+  poster:    { group: "classic", label: "Poster",    family: '"Bebas Neue", Impact, "Arial Narrow", "Roboto Condensed", sans-serif', weight: 400, upper: true, spacing: "0.05em", scale: 1.35 },
+  rounded:   { group: "playful", label: "Rounded",   family: '"Baloo 2", "Comic Neue", "Trebuchet MS", sans-serif', weight: 800, scale: 0.98 },
+  marker:    { group: "playful", label: "Marker",    family: '"Permanent Marker", "Segoe Print", "Bradley Hand", cursive', weight: 400, scale: 1.06, leading: 1.34 },
+  retro:     { group: "playful", label: "Retro",     family: 'Pacifico, "Brush Script MT", cursive', weight: 400, scale: 1.12, leading: 1.5 },
+  punchy:    { group: "playful", label: "Punchy",    family: 'Shrikhand, "Playfair Display", Georgia, serif', weight: 400, scale: 0.95, leading: 1.34 },
+  tall:      { group: "playful", label: "Tall",      family: '"Amatic SC", Haettenschweiler, "Arial Narrow", sans-serif', weight: 700, scale: 1.55, spacing: "0.02em", leading: 1.12 },
 };
 // 0.13.0's faces, kept working: the handwriting was childish and the system
 // serif is bettered by Playfair, so both point to their replacements.
@@ -157,6 +170,6 @@ export function captionVars(raw) {
     `--cap-x:${(s.x * 100).toFixed(2)}%`, `--cap-y:${(s.y * 100).toFixed(2)}%`, `--cap-rot:${s.rot}deg`,
     `--cap-font:${f.family}`, `--cap-weight:${f.weight}`, `--cap-style:${f.italic ? "italic" : "normal"}`, `--cap-size:${(SIZES[s.size] * (f.scale ?? 1)).toFixed(3)}`,
     `--cap-transform:${f.upper ? "uppercase" : "none"}`, `--cap-spacing:${f.spacing ?? "normal"}`,
-    `--cap-align:${s.align}`, `--cap-bg:${bg}`, `--cap-ink:${ink}`, `--cap-shadow:${shadow}`, `--cap-pad:${pad}`,
+    `--cap-align:${s.align}`, `--cap-leading:${f.leading ?? 1.28}`, `--cap-bg:${bg}`, `--cap-ink:${ink}`, `--cap-shadow:${shadow}`, `--cap-pad:${pad}`,
   ].join(";");
 }

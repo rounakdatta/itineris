@@ -3,7 +3,7 @@
   // of THIS photo with the real Caption renderer, draggable; underneath, the
   // few choices that matter -- face, size, pill, ink, alignment.
   import Caption from "../src/components/Caption.svelte";
-  import { FONTS, SIZES, ACCENTS, ALIGNS, MAX_CAPTIONS, normalizeStyle, isDefaultStyle } from "../server/caption.js";
+  import { FONTS, GROUPS, SIZES, ACCENTS, ALIGNS, MAX_CAPTIONS, normalizeStyle, isDefaultStyle } from "../server/caption.js";
   import { mediaUrl } from "./lib/api.js";
 
   // `captions` is the whole list; `selected` is the one the controls act on.
@@ -38,9 +38,17 @@
         {#if captions.length > 1 && onRemove}<button type="button" class="opt ghost" onclick={() => onRemove?.(selected)} aria-label={`Remove caption ${selected + 1}`}>Remove</button>{/if}
       </div>
     {/if}
-    <div class="row" role="group" aria-label="Font">
-      {#each Object.entries(FONTS) as [k, f] (k)}
-        <button type="button" class="opt" class:on={st.font === k} style={`font-family:${f.family};font-weight:${f.weight};${f.upper ? "text-transform:uppercase;" : ""}`} aria-pressed={st.font === k} onclick={() => set({ font: k })}>{f.label}</button>
+    <!-- One group, three moods; each chip is written in the face it offers. -->
+    <div class="fonts" role="group" aria-label="Font">
+      {#each GROUPS as g (g.id)}
+        <div class="fgroup">
+          <span class="glabel" aria-hidden="true">{g.label}</span>
+          <div class="frow">
+          {#each Object.entries(FONTS).filter(([, f]) => f.group === g.id) as [k, f] (k)}
+            <button type="button" class="opt" class:on={st.font === k} style={`font-family:${f.family};font-weight:${f.weight};${f.upper ? "text-transform:uppercase;" : ""}${f.italic ? "font-style:italic;" : ""}`} aria-pressed={st.font === k} onclick={() => set({ font: k })}>{f.label}</button>
+          {/each}
+          </div>
+        </div>
       {/each}
     </div>
     <div class="row" role="group" aria-label="Size">
@@ -86,6 +94,12 @@
   .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset; }
   .dot.on { border-color: #fff; box-shadow: 0 0 0 2px #111; }
   .sep { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
+  .fonts { display: flex; flex-direction: column; gap: 8px; }
+  /* The mood is a heading over its row, not a column beside it: "Playful" is
+     wider than a chip's worth of space, and a wrapped chip would tuck under it. */
+  .fgroup { display: flex; flex-direction: column; gap: 4px; }
+  .frow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .glabel { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
   .caps { gap: 6px; padding-bottom: 2px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
   .cap-pick { max-width: 15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .opt.add { border-style: dashed; }

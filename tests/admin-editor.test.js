@@ -111,6 +111,11 @@ describe("MomentEditor: pinned to a Google place", () => {
   it("with a caption, the styler appears: a face, a pill, a nudge, and Save sends captionStyle", async () => {
     render(MomentEditor, { moment: { ...moment, caption: "Kaya toast" }, galleries, onSaved: vi.fn(), onClose: () => {} });
     expect(screen.getByTestId("caption-frame").querySelector(".cap")).toHaveTextContent("Kaya toast");
+    // twelve faces, in three labelled moods, each chip written in the face it offers
+    const picker = screen.getByRole("group", { name: "Font" });
+    expect(picker.querySelectorAll("button")).toHaveLength(12);
+    expect([...picker.querySelectorAll(".glabel")].map((e) => e.textContent)).toEqual(["Plain", "Classic", "Playful"]);
+    expect(screen.getByRole("button", { name: "Punchy" }).getAttribute("style")).toContain("Shrikhand");
     await fireEvent.click(screen.getByRole("button", { name: "Editorial" }));
     await fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     await fireEvent.keyDown(screen.getByRole("button", { name: /Caption\. Drag/ }), { key: "ArrowRight" });
@@ -129,16 +134,17 @@ describe("MomentEditor: pinned to a Google place", () => {
     await fireEvent.click(screen.getByRole("button", { name: "+ caption" }));
     expect(screen.getByLabelText("Caption 2 of 2")).toHaveValue("");                       // the new one is empty and chosen
     await fireEvent.input(screen.getByLabelText("Caption 2 of 2"), { target: { value: "6am, before the queue" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Caps" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Retro" }));   // a playful face
     const shown = [...screen.getByTestId("caption-frame").querySelectorAll(".cap")];
     expect(shown.map((c) => c.textContent.trim())).toEqual(["Kaya toast", "6am, before the queue"]);
+    expect(shown[1].getAttribute("style")).toContain("Pacifico");                          // ...and wears it
     expect(shown[1].classList.contains("selected")).toBe(true);                            // the chosen one owns the handle
     expect(shown[0].querySelector(".turn")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(api.patch).toHaveBeenCalledWith("m1", expect.objectContaining({ captions: [
       expect.objectContaining({ text: "Kaya toast", y: 0.82 }),
-      expect.objectContaining({ text: "6am, before the queue", font: "caps", y: 0.68 }),   // stacked above the first, not on top of it
+      expect.objectContaining({ text: "6am, before the queue", font: "retro", y: 0.68 }),   // stacked above the first, not on top of it
     ] }));
     // choosing the first one puts the controls back on it; Remove drops the chosen one
     await fireEvent.click(screen.getByRole("button", { name: /^1\. Kaya toast/ }));

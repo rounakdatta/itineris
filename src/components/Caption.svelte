@@ -93,7 +93,7 @@
     max-width: 86%; width: max-content; box-sizing: border-box;
     font-family: var(--cap-font); font-weight: var(--cap-weight); font-style: var(--cap-style); text-align: var(--cap-align);
     text-transform: var(--cap-transform); letter-spacing: var(--cap-spacing);
-    font-size: 17px; font-size: calc(var(--cap-size) * 4.7cqw); line-height: 1.28;
+    font-size: 17px; font-size: calc(var(--cap-size) * 4.7cqw); line-height: var(--cap-leading, 1.28);
     color: var(--cap-ink); background: var(--cap-bg); text-shadow: var(--cap-shadow);
     padding: var(--cap-pad); border-radius: 0.55em;
     white-space: pre-wrap; overflow-wrap: anywhere;

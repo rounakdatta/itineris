@@ -1,8 +1,14 @@
-/* Caption faces bundled with the app (SIL OFL 1.1; licences in src/assets/fonts/).
-   Vite hashes the files; the service worker keeps them out of the install
-   precache and caches each one the first time a caption actually uses it. */
+/* Caption faces bundled with the app (licences in src/assets/fonts/: SIL OFL 1.1,
+   except Permanent Marker, which is Apache 2.0). Vite hashes the files; the
+   service worker keeps them out of the install precache and caches each one the
+   first time a caption actually uses it. */
 @font-face { font-family: "Playfair Display"; font-style: normal; font-weight: 700; font-display: swap; src: url("../assets/fonts/playfair-latin.woff2") format("woff2"); }
 @font-face { font-family: "Cormorant Garamond"; font-style: italic; font-weight: 400; font-display: swap; src: url("../assets/fonts/cormorant-latin.woff2") format("woff2"); }
 @font-face { font-family: "Cinzel"; font-style: normal; font-weight: 400; font-display: swap; src: url("../assets/fonts/cinzel-latin.woff2") format("woff2"); }
 @font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 500; font-display: swap; src: url("../assets/fonts/grotesk-latin.woff2") format("woff2"); }
 @font-face { font-family: "Bebas Neue"; font-style: normal; font-weight: 400; font-display: swap; src: url("../assets/fonts/bebasneue-latin.woff2") format("woff2"); }
+@font-face { font-family: "Baloo 2"; font-style: normal; font-weight: 800; font-display: swap; src: url("../assets/fonts/baloo-latin.woff2") format("woff2"); }
+@font-face { font-family: "Permanent Marker"; font-style: normal; font-weight: 400; font-display: swap; src: url("../assets/fonts/marker-latin.woff2") format("woff2"); }
+@font-face { font-family: "Pacifico"; font-style: normal; font-weight: 400; font-display: swap; src: url("../assets/fonts/pacifico-latin.woff2") format("woff2"); }
+@font-face { font-family: "Shrikhand"; font-style: normal; font-weight: 400; font-display: swap; src: url("../assets/fonts/shrikhand-latin.woff2") format("woff2"); }
+@font-face { font-family: "Amatic SC"; font-style: normal; font-weight: 700; font-display: swap; src: url("../assets/fonts/amatic-latin.woff2") format("woff2"); }

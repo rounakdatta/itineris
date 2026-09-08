@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeStyle, validateStyle, captionVars, isDefaultStyle, luminance, captionsOf, validateCaptions, nextCaption, styleOf, DEFAULT_STYLE, FONTS, LEGACY_FONTS, MAX_CAPTIONS } from "../server/caption.js";
+import { normalizeStyle, validateStyle, captionVars, isDefaultStyle, luminance, captionsOf, validateCaptions, nextCaption, styleOf, DEFAULT_STYLE, FONTS, GROUPS, LEGACY_FONTS, MAX_CAPTIONS } from "../server/caption.js";
 
 describe("caption style: the shared model", () => {
   it("normalizes anything odd to the default, and clamps the position clear of the chrome", () => {
@@ -17,7 +17,25 @@ describe("caption style: the shared model", () => {
     expect(normalizeStyle({ font: "script" }).font).toBe("elegant");
     expect(normalizeStyle({ font: "serif" }).font).toBe("editorial");
     expect(validateStyle({ font: "script" }).style.font).toBe("elegant");   // a re-save writes the new name
-    expect(Object.keys(FONTS)).toEqual(["clean", "grotesk", "editorial", "elegant", "caps", "poster", "mono"]);
+    expect(Object.keys(FONTS)).toEqual(["clean", "grotesk", "mono", "editorial", "elegant", "caps", "poster", "rounded", "marker", "retro", "punchy", "tall"]);
+  });
+  it("the faces come in three moods, every one placed, and nothing shadows a legacy name", () => {
+    expect(GROUPS.map((g) => g.id)).toEqual(["plain", "classic", "playful"]);
+    const ids = new Set(GROUPS.map((g) => g.id));
+    for (const [k, f] of Object.entries(FONTS)) {
+      expect(ids.has(f.group), `${k} is in a real group`).toBe(true);
+      expect(typeof f.label, `${k} has a label`).toBe("string");
+      expect(f.family, `${k} has a stack with a fallback`).toMatch(/,/);
+    }
+    expect(GROUPS.every((g) => Object.values(FONTS).some((f) => f.group === g.id))).toBe(true);
+    for (const legacy of Object.keys(LEGACY_FONTS)) expect(FONTS[legacy]).toBeUndefined();   // a legacy name must stay an alias
+    // the playful five, and the bundled family each one asks for first
+    expect(["rounded", "marker", "retro", "punchy", "tall"].map((k) => FONTS[k].family.split(",")[0].replace(/"/g, ""))).toEqual(["Baloo 2", "Permanent Marker", "Pacifico", "Shrikhand", "Amatic SC"]);
+  });
+  it("each face carries its own leading, so a script does not crowd its second line", () => {
+    expect(captionVars({ font: "clean" })).toContain("--cap-leading:1.28");
+    expect(captionVars({ font: "retro" })).toContain("--cap-leading:1.5");
+    expect(captionVars({ font: "tall" })).toContain("--cap-leading:1.12");
   });
   it("validates strictly for the server: bad values are errors, unknown keys are dropped", () => {
     expect(validateStyle({ x: 0.2, y: 0.7, rot: -8.25, font: "editorial", bg: "dark", extra: 1 })).toEqual({ style: { ...DEFAULT_STYLE, x: 0.2, y: 0.7, rot: -8.3, font: "editorial", bg: "dark" } });
