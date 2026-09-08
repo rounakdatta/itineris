@@ -303,16 +303,27 @@ try {
   await clickText(page, ".caps button", "+ caption");
   ok("a second caption is added, empty and chosen", /Caption 2 of 2/.test(await text(page, ".sheet")) && (await page.$eval(".sheet textarea", (t) => t.value)) === "");
   await page.type(".sheet textarea", "and the queue was worth it");
-  await clickText(page, '[role="group"][aria-label="Font"] button', "Caps");
+  await clickText(page, '[role="group"][aria-label="Font"] button', "Retro");
   ok("both captions are on the photo, the new one above and chosen", await page.evaluate(() => {
     const caps = [...document.querySelectorAll('[data-testid="caption-frame"] .cap')];
     if (caps.length !== 2) return `${caps.length} in the preview`;
     const y = (el) => +el.getAttribute("style").replace(/\s/g, "").match(/--cap-y:([\d.]+)%/)[1];
     if (!(y(caps[1]) < y(caps[0]))) return `${y(caps[0])} then ${y(caps[1])}`;
     if (!caps[1].classList.contains("selected") || caps[0].querySelector(".turn")) return "the wrong one is chosen";
-    return /Cinzel/.test(getComputedStyle(caps[1]).fontFamily) ? true : `second is ${getComputedStyle(caps[1]).fontFamily}`;
+    return /Pacifico/.test(getComputedStyle(caps[1]).fontFamily) ? true : `second is ${getComputedStyle(caps[1]).fontFamily}`;
   }) === true, String(await page.evaluate(() => [...document.querySelectorAll('[data-testid="caption-frame"] .cap')].map((c) => c.textContent.trim()).join(" | "))));
   ok("...and the picker names them both", /1\. Satay by the/.test(await text(page, ".caps")) && /2\. and the queue/.test(await text(page, ".caps")), await text(page, ".caps"));
+  ok("twelve faces, in three moods, each chip written in the face it offers", await page.evaluate(() => {
+    const g = document.querySelector('[role="group"][aria-label="Font"]');
+    const moods = [...g.querySelectorAll(".glabel")].map((e) => e.textContent);
+    const chips = [...g.querySelectorAll("button")];
+    if (chips.length !== 12) return `${chips.length} faces`;
+    if (String(moods) !== "Plain,Classic,Playful") return `moods ${moods}`;
+    const punchy = chips.find((c) => c.textContent.trim() === "Punchy");
+    return /Shrikhand/.test(getComputedStyle(punchy).fontFamily) ? true : `Punchy chip is ${getComputedStyle(punchy).fontFamily}`;
+  }) === true, String(await page.evaluate(() => [...document.querySelectorAll('[role="group"][aria-label="Font"] button')].map((b) => b.textContent.trim()).join(" "))));
+  await page.$eval('[role="group"][aria-label="Font"]', (el) => el.scrollIntoView({ block: "center" })); await settle(page);
+  await shot(page, `${SHOTS}/13c-admin-font-picker.png`);
   await settle(page); await shot(page, `${SHOTS}/13-admin-editor.png`);
   await clickText(page, ".sheet button", "Pick on map"); await page.waitForSelector(".picker canvas");
   ok("map picker renders", true);
@@ -331,14 +342,14 @@ try {
   ok("membership persisted: the edited photo is now only in Friends", JSON.stringify(lib.find((m) => m.id === editId).galleries) === JSON.stringify([friendsId]), JSON.stringify(lib.find((m) => m.id === editId).galleries));
   ok("the exact Google Maps link and the place name were saved", lib.find((m) => m.id === editId).mapsUrl === GMAPS_CID && lib.find((m) => m.id === editId).place === "Lau Pa Sat", JSON.stringify([lib.find((m) => m.id === editId).mapsUrl, lib.find((m) => m.id === editId).place]));
   const savedCaps = lib.find((m) => m.id === editId).captions;
-  ok("...and both captions with their styles", savedCaps?.length === 2 && JSON.stringify(savedCaps[0]) === JSON.stringify({ text: "Satay by the water", x: 0.5, y: 0.77, rot: -8, font: "editorial", size: "m", bg: "dark", ink: "light", align: "center" }) && savedCaps[1].text === "and the queue was worth it" && savedCaps[1].font === "caps" && savedCaps[1].y < savedCaps[0].y, JSON.stringify(savedCaps));
+  ok("...and both captions with their styles", savedCaps?.length === 2 && JSON.stringify(savedCaps[0]) === JSON.stringify({ text: "Satay by the water", x: 0.5, y: 0.77, rot: -8, font: "editorial", size: "m", bg: "dark", ink: "light", align: "center" }) && savedCaps[1].text === "and the queue was worth it" && savedCaps[1].font === "retro" && savedCaps[1].y < savedCaps[0].y, JSON.stringify(savedCaps));
   ok("...and the single caption still names the first, for alt text and lists", lib.find((m) => m.id === editId).caption === "Satay by the water" && lib.find((m) => m.id === editId).captionStyle.font === "editorial");
   // ...and the story shows exactly that: the same renderer, on the photo, where it was put.
   await page.goto(`${V}/g/${friendsId}#m/${editId}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story .cap-host .cap", { timeout: 15000 });
   ok("the viewer's story wears both captions", (await count(page, ".story .cap-host .cap")) === 2 && /and the queue was worth it/.test(await text(page, ".story .cap-host")), await text(page, ".story .cap-host"));
   ok("the viewer's story wears the styled caption: Editorial face in a dark pill, 77% down, on the photo", await page.$eval(".story .cap-host .cap", (c) => { const s = getComputedStyle(c), r = c.getBoundingClientRect(), f = c.closest(".story").getBoundingClientRect(); return c.textContent === "Satay by the water" && /Playfair Display/.test(s.fontFamily) && s.backgroundColor === "rgba(8, 9, 12, 0.66)" && Math.abs((r.top + r.height / 2 - f.top) / f.height - 0.77) < 0.03; }), await page.$eval(".story .cap-host .cap", (c) => { const r = c.getBoundingClientRect(), f = c.closest(".story").getBoundingClientRect(); return `${getComputedStyle(c).fontFamily} | centre at ${((r.top + r.height / 2 - f.top) / f.height).toFixed(2)}`; }));
   ok("...tilted exactly as it was in the admin, and with no handle for visitors to grab", Math.abs((await turnOf(page, ".story .cap-host .cap")) + 8) < 0.5 && (await page.$(".story .cap-host .cap .turn")) === null, `turned ${await turnOf(page, ".story .cap-host .cap")}°`);
-  ok("...with the bundled font actually loaded", await page.evaluate(() => document.fonts.check('16px "Playfair Display"')));
+  ok("...with both bundled faces actually loaded, the classic one and the playful one", await page.evaluate(() => document.fonts.check('16px "Playfair Display"') && document.fonts.check('16px Pacifico')));
   ok("...which the worker fetched on demand, not at install", await page.evaluate(async () => { const k = (await caches.keys()).find((n) => n.startsWith("itineris-viewer-shell-")); const shell = k ? (await (await caches.open(k)).keys()).map((r) => r.url) : []; return !shell.some((u) => /\.woff2$/.test(u)); }));
   await settle(page); await shot(page, `${SHOTS}/13b-story-caption.png`);
   await page.keyboard.press("Escape"); await sleep(300);

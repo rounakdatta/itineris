@@ -92,12 +92,20 @@ caption live on it:
 - **tilt it to any angle** — grab the handle above it (it snaps to tidy angles
   unless you hold Alt), or use the slider; `[` and `]` turn it a degree at a
   time, 15 with Shift, and Straighten puts it upright;
-- **choose a face** — Clean (the system sans), Grotesk (Space Grotesk),
-  Editorial (Playfair Display), Elegant (Cormorant Garamond italic), Caps
-  (Cinzel), Poster (Bebas Neue) or Mono. The five real faces are bundled under
-  the OFL (`src/assets/fonts/`, latin subsets, ~88 KB in total, hashed by Vite)
-  so they look the same offline and on every phone; the service worker leaves
-  them out of the install precache and fetches only the one a caption uses;
+- **choose a face** — twelve, in three moods, so the picker is a choice rather
+  than a list:
+  - *Plain*: Clean (the system sans), Grotesk (Space Grotesk), Mono;
+  - *Classic*: Editorial (Playfair Display), Elegant (Cormorant Garamond
+    italic), Caps (Cinzel), Poster (Bebas Neue);
+  - *Playful*: Rounded (Baloo 2), Marker (Permanent Marker), Retro (Pacifico),
+    Punchy (Shrikhand), Tall (Amatic SC).
+
+  Every real face is bundled (`src/assets/fonts/`, latin subsets, licences
+  alongside) so they look the same offline and on every phone; a caption
+  downloads only the face it wears, and the service worker leaves them out of
+  the install precache. How big and how airy each looks at the same size
+  setting is tuned per face by rendering them all at caption size over a photo
+  — `scale`, `leading` and `spacing` in `server/caption.js`;
 - **size, alignment, and a pill** — none, dark, light or a colour whose ink is
   picked by luminance; light or dark text when there is no pill;
 - **add another** — *+ caption* drops a new one a step above the last, wearing
