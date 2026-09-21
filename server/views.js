@@ -41,8 +41,12 @@ export function clientIp(header) {
 }
 
 // A plain token bucket, per address. The per-day dedupe already stops anyone
-// running the NUMBER up; this stops them running the DISK up.
-export function makeLimiter({ perMinute = 60, max = 8192 } = {}) {
+// running the NUMBER up -- a repeat visitor writes nothing at all -- so this
+// only has to stop somebody running the DISK up with a script that invents a
+// new browser every request. It must therefore be far looser than real
+// traffic: whole households, offices and mobile carriers share one address,
+// and a limit tight enough to catch them stops counting real people.
+export function makeLimiter({ perMinute = 240, max = 8192 } = {}) {
   const buckets = new Map();
   return function allow(who, now = Date.now()) {
     const b = buckets.get(who) ?? { tokens: perMinute, at: now };

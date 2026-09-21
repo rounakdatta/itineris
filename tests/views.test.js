@@ -78,6 +78,14 @@ describe("who the request came from", () => {
 });
 
 describe("the rate limit", () => {
+  it("is nowhere near anything a real address does", () => {
+    // A household, an office and a mobile carrier all look like one address.
+    // The dedupe means a repeat visitor writes nothing, so this only has to
+    // catch a script inventing a new browser every request -- and a limit
+    // tight enough to catch a NAT stops counting real people instead.
+    const allow = makeLimiter();
+    for (let i = 0; i < 200; i++) expect(allow("one-office", 1000)).toBe(true);
+  });
   it("lets an ordinary visitor through", () => {
     const allow = makeLimiter({ perMinute: 60 });
     for (let i = 0; i < 10; i++) expect(allow("1.2.3.4", 1000 + i * 100)).toBe(true);

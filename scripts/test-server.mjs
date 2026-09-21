@@ -525,6 +525,16 @@ try {
     ok("...and the hashes are never served to the creator either",
       list.body.every((x) => !("seen" in x)) && !hashes[g.id].seen.some((h) => JSON.stringify(list.body).includes(h)));
 
+    // A busy address still gets the number; it just stops adding to it. An
+    // eye that vanishes because a household was busy reads as broken.
+    const before = (await see(g.id, { ip: "9.9.9.9", ua: "counted" })).body.views;
+    let last = before;
+    for (let i = 0; i < 400; i++) last = (await see(g.id, { ip: "9.9.9.9", ua: `flood-${i}` })).body.views;
+    ok("a flood from one address stops counting rather than 429-ing", last >= before && last < before + 400, `${before} -> ${last}`);
+    const capped = await see(g.id, { ip: "9.9.9.9", ua: "another" });
+    ok("...and still answers with the count", capped.status === 200 && capped.body.views === last && capped.body.counted === false, JSON.stringify(capped.body));
+    ok("...while somebody at a different address is unaffected", (await see(g.id, { ip: "9.9.9.10", ua: "elsewhere" })).body.counted === true);
+
     await owner8("DELETE", `/creator/api/galleries/${g.id}`);
     ok("deleting a gallery forgets its count", !JSON.parse(await readFile(path.join(d8, "library", "views.json"), "utf8"))[g.id]);
   } finally { s8.server.kill(); }

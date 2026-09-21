@@ -139,18 +139,23 @@ app.get(`${BASE}/api/me`, async (c) => {
 // way: this is the one thing a visitor's browser tells the server. It refuses
 // tokens that are not a published gallery, dedupes per visitor per day, and
 // keeps nothing but a salted hash -- see server/views.js.
-const viewLimit = makeLimiter({ perMinute: 30 });
+const viewLimit = makeLimiter();
 app.post(`${BASE}/api/views/:token`, async (c) => {
   const token = c.req.param("token");
   const ip = clientIp((k) => c.req.header(k));
-  if (!viewLimit(ip)) return c.json({ error: "slow down" }, 429);
-  // Looking at your own gallery is not a view. Checking your work all
-  // afternoon should not be the number you show people.
-  const who = identify(c);
   const id = (await store.slugs())[token] ?? token;
-  if (who && (await store.ownerOf(id)) === who.uid) return c.json({ views: await store.viewsOf(id), mine: true });
+  // Two reasons not to count somebody, and neither is their problem: they are
+  // the owner looking at their own gallery, or their address has been busy.
+  // Both still get the number -- an eye that vanishes reads as broken, and
+  // the count is public either way.
+  const who = identify(c);
+  const mine = who && (await store.ownerOf(id)) === who.uid;
+  if (mine || !viewLimit(ip)) {
+    const n = await store.viewsOf(id);
+    return n === 0 && !(await store.ownerOf(id)) ? c.json({ error: "no such gallery" }, 404) : c.json({ views: n, counted: false });
+  }
   const n = await store.recordView(token, { ip, ua: c.req.header("user-agent") ?? "" });
-  return n === null ? c.json({ error: "no such gallery" }, 404) : c.json({ views: n });
+  return n === null ? c.json({ error: "no such gallery" }, 404) : c.json({ views: n, counted: true });
 });
 
 app.use(`${BASE}/api/*`, async (c, next) => {

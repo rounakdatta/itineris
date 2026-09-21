@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, storyBytes, fmtDuration, placeLink, placeGroup, placeGroups, groupByPlace, placeKey, isLoose, LOOSE } from "../src/lib/data.js";
+import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, storyBytes, fmtDuration, placeLink, placeGroup, placeGroups, groupByPlace, placeKey, isLoose, LOOSE, fitPadding } from "../src/lib/data.js";
 import { moments, tracks } from "./fixtures.js";
 
 describe("time helpers never touch the host zone", () => {
@@ -119,5 +119,24 @@ describe("videos", () => {
     expect(storySrc(video)).toBe("/media/v-960.webp");
     expect(storyBytes(video)).toBe("/media/v-1280.mp4");
     expect(fmtDuration(75.4)).toBe("1:15"); expect(fmtDuration(5)).toBe("0:05"); expect(fmtDuration(undefined)).toBe("");
+  });
+});
+
+describe("how much room the map leaves around the photos", () => {
+  it("scales the sides with the window rather than using a flat 40px", () => {
+    // A pin is 44px wide. At a flat 40px the outermost pin on a wide screen
+    // sat half a marker from the edge, reading as a trip that carried on past
+    // the window.
+    expect(fitPadding(390).left).toBe(64);        // a phone: the floor
+    expect(fitPadding(1280).left).toBe(115);
+    expect(fitPadding(3840).left).toBe(160);      // ...and a ceiling, so a wide
+    expect(fitPadding(3840).right).toBe(160);     //    monitor does not zoom out
+  });
+  it("never leaves less room than one pin needs", () => {
+    for (const w of [0, 100, 320, 768, 1024, 1920, 5120]) expect(fitPadding(w).left).toBeGreaterThan(44);
+  });
+  it("clears the app's own chrome, which the two engines cover differently", () => {
+    expect(fitPadding(390)).toMatchObject({ top: 90, bottom: 130 });       // full-bleed: the dock is over the map
+    expect(fitPadding(390, { top: 90, bottom: 40 }).bottom).toBe(40);      // inset above the dock
   });
 });
