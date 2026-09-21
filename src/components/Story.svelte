@@ -1,6 +1,6 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink, isVideo, fmtDuration } from "../lib/data.js";
+  import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink, isVideo, fmtDuration, isLoose } from "../lib/data.js";
   import { markSeen } from "../lib/seen.svelte.js";
   import Caption from "./Caption.svelte";
   import { captionsOf } from "../../server/caption.js";
@@ -61,7 +61,16 @@
     const videos = g.filter((x) => isVideo(x.media)).length, photos = g.length - videos;
     const what = [photos ? `${photos} photo${photos === 1 ? "" : "s"}` : "", videos ? `${videos} video${videos === 1 ? "" : "s"}` : ""].filter(Boolean).join(" & ");
     const first = g[0] ?? current;
-    return { name: current.place?.trim() || current.caption?.trim() || "Photo", rating: Number.isFinite(google?.rating) ? google.rating.toFixed(1) : null, what, thumb: mediaUrl(first.media.thumb ?? first.media.src), video: isVideo(first.media) };
+    // Photos that belong to nowhere are not a stop, and calling them one -- or
+    // naming the pill "Photo", which is what it used to do -- reads as a bug.
+    const loose = isLoose(current);
+    return {
+      loose,
+      eyebrow: loose ? "Also on this trip" : "Next stop",
+      name: loose ? "Not on the map" : current.place?.trim() || current.caption?.trim() || "Photo",
+      rating: Number.isFinite(google?.rating) ? google.rating.toFixed(1) : null,
+      what, thumb: mediaUrl(first.media.thumb ?? first.media.src), video: isVideo(first.media),
+    };
   });
   function startHandoff() { clearTimeout(handoffTimer); handoff = true; trip.handoff = true; handoffTimer = setTimeout(endHandoff, HANDOFF_MS); }
   function endHandoff() {
@@ -283,7 +292,7 @@
       <div class="nextstop">
         <span class="avatar" aria-hidden="true"><img src={nextStop.thumb} alt="" />{#if nextStop.video}<span class="v">▶</span>{/if}</span>
         <span class="words">
-          <span class="eyebrow">Next stop</span>
+          <span class="eyebrow">{nextStop.eyebrow}</span>
           <span class="name">{nextStop.name}</span>
           <span class="sub">{#if nextStop.rating}<b>{nextStop.rating}<i>★</i></b>{/if}<span>{nextStop.what}</span></span>
         </span>

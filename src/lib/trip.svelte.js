@@ -1,4 +1,4 @@
-import { momentMatches, trackMatches, placeGroups, placeKey } from "./data.js";
+import { momentMatches, trackMatches, placeGroups, placeKey, isLoose } from "./data.js";
 
 const GALLERY_PATH = /^\/g\/([a-z0-9-]{4,40})\/?$/;
 
@@ -40,6 +40,9 @@ class Trip {
   // (places in the order they were first visited); past the last place, the
   // viewer closes. A photo with no place is a story of one.
   storyPlaces = $derived(placeGroups(this.visibleMoments));
+  // Everything that belongs to no place: no pin can carry it, so the brand mark
+  // does, as one story the way an account's own story works.
+  loose = $derived(this.visibleMoments.filter(isLoose));
   storyGroup = $derived(this.storyMoment ? (this.storyPlaces.find((g) => g.moments.some((m) => m.id === this.storyMoment.id))?.moments ?? [this.storyMoment]) : []);
   storyPos = $derived(this.storyMoment ? this.storyGroup.findIndex((m) => m.id === this.storyMoment.id) : -1);
   storyPlace = $derived(this.storyMoment ? placeKey(this.storyMoment) : null);

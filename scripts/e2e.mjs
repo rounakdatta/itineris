@@ -71,6 +71,10 @@ try {
   ok("no desktop zoom buttons on a phone", (await count(page, ".maplibregl-ctrl-zoom-in")) === 0);
   // Every gallery is an advert for making one. It sits above the strip, clear
   // of Google's logo and terms, and gets out of the way while a story plays.
+  // The seed places every photo, so the mark stays a mark. The ring is only
+  // earned by photos that belong nowhere -- see the no-GPS section below.
+  ok("the wordmark is gone; the gallery's name is the heading", (await page.$(".brand .word")) === null && (await text(page, ".brand")).startsWith("itineris"));
+  ok("...and no story ring on the mark when every photo is placed", (await page.$(".mine-story")) === null);
   ok("a Make my own button at the bottom of the gallery", (await text(page, ".mine")) === "Make my own" && (await page.$eval(".mine", (a) => a.getAttribute("href"))) === "/creator/");
   {
     const m = await page.$eval(".mine", (el) => { const r = el.getBoundingClientRect(); const d = document.querySelector(".dock").getBoundingClientRect(); return { b: Math.round(r.bottom), dockTop: Math.round(d.top), l: Math.round(r.left), r: Math.round(r.right), w: innerWidth }; });
@@ -516,6 +520,9 @@ try {
   await page.goto(`${V}/g/${nowhere.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".wall .cell", { timeout: 20000 });
   ok("a gallery with no locations opens on the wall (the one case the map is not the view), clean URL", (await page.$(".wall .cell")) !== null && (await hash(page)) === "" && (await page.$(".chrome .toggle")) === null, await hash(page));
   ok("...and says why there is no map (no city pretends to be the place)", /No locations yet/.test(await text(page, ".chrome .top")), await text(page, ".chrome .top"));
+  // Every photo is already in the grid here, so a ring meaning "these have no
+  // pin" would be pointing at all of them. It belongs to the map, not the wall.
+  ok("...and no story ring on the wall, where the grid already shows everything", (await page.$(".mine-story")) === null);
   await settle(page); await shot(page, `${SHOTS}/23-viewer-no-locations.png`);
   await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
   await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");

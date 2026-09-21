@@ -129,15 +129,24 @@ export function placeLink(m) {
 export function placeGroup(moments, m) {
   if (!m) return [];
   const key = placeKey(m);
-  const g = key.startsWith("#") ? [m] : moments.filter((x) => placeKey(x) === key);
+  const g = key.startsWith("#") ? [m] : moments.filter((x) => placeKey(x) === key);   // "#" = a spot of its own
   return g.length ? g : [m];
 }
 
 // One pin per PLACE on the map: photos sharing a name collapse into a group
 // (first photo's spot and thumbnail, count, whatever Google said about it).
 // A photo without a name is its own place.
-// The same Google place is one pin whatever it was called; else the name; else the photo alone.
-export const placeKey = (m) => (m.google?.placeId ? `g:${m.google.placeId}` : (m.place ?? "").trim().toLowerCase() || `#${m.id}`);
+// Photos that belong to no place at all -- no name, no Google place, and
+// nowhere on the map to put them. A phone hands every browser-picked photo over
+// with its GPS stripped, so these are ordinary, not an edge case, and they used
+// to be one story each, reachable only by scrolling the strip. They share one
+// key so they play as a single story: the journal's own, told on the mark.
+export const LOOSE = "~loose";
+export const isLoose = (m) => !hasCoords(m) && !(m.place ?? "").trim() && !m.google?.placeId;
+// The same Google place is one pin whatever it was called; else the name; else
+// the photo alone -- a photo WITH coordinates but no name still earns its own
+// pin, so it keeps a key of its own and never joins the loose ones.
+export const placeKey = (m) => (isLoose(m) ? LOOSE : m.google?.placeId ? `g:${m.google.placeId}` : (m.place ?? "").trim().toLowerCase() || `#${m.id}`);
 // Every moment grouped by place, in the order the places were first visited.
 // Unlike groupByPlace (pins) this keeps photos without coordinates: a story
 // must be able to reach them. A photo with no place is a group of one.

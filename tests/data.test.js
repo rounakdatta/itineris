@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, storyBytes, fmtDuration, placeLink, placeGroup, groupByPlace, placeKey } from "../src/lib/data.js";
+import { FACETS, daysOf, dayKey, clockOf, momentMatches, trackMatches, bboxOf, momentsFC, tracksFC, hasCoords, hasAnyCoords, storySrc, storyBytes, fmtDuration, placeLink, placeGroup, placeGroups, groupByPlace, placeKey, isLoose, LOOSE } from "../src/lib/data.js";
 import { moments, tracks } from "./fixtures.js";
 
 describe("time helpers never touch the host zone", () => {
@@ -83,8 +83,30 @@ describe("one pin per place", () => {
     const g = groupByPlace(ms);
     expect(g.map((x) => [x.key, x.moments.length])).toEqual([["chinatown", 2], ["maxwell", 1], ["merlion", 1], ["#e", 1], ["g:ChIJmax", 2]]);   // d has no coords: no pin
     expect(g[0].first.id).toBe("a"); expect(g[4].google).toMatchObject({ placeId: "ChIJmax" }); expect(g[4].name).toBe("Maxwell Hawker");
-    expect(placeKey({ place: "  Lau Pa Sat ", id: "z" })).toBe("lau pa sat"); expect(placeKey({ place: "", id: "z" })).toBe("#z");
+    expect(placeKey({ place: "  Lau Pa Sat ", id: "z" })).toBe("lau pa sat");
     expect(placeKey({ place: "Anything", google: { placeId: "ChIJx" }, id: "y" })).toBe("g:ChIJx");
+    // A photo WITH coordinates but no name is still somewhere: its own pin,
+    // its own key. Only a photo with nowhere at all joins the loose ones.
+    expect(placeKey({ place: "", id: "z", lat: 1.28, lng: 103.84 })).toBe("#z");
+    expect(placeKey({ place: "", id: "z" })).toBe(LOOSE);
+  });
+  it("photos that belong to no place share one story, and never a pin", () => {
+    // A phone strips GPS from anything picked in a browser, so this is the
+    // ordinary case, not an edge one. They used to be a story each, reachable
+    // only by scrolling the strip.
+    const ms = [
+      { id: "a", place: "Maxwell", lat: 1.28, lng: 103.84, tags: [] },
+      { id: "b", place: "", tags: [] },
+      { id: "c", place: "", tags: [] },
+      { id: "d", place: "", lat: 1.29, lng: 103.85, tags: [] },        // placed, unnamed: its own pin
+      { id: "e", place: "Named but unplaced", tags: [] },              // a place, just not on the map
+    ];
+    expect(ms.filter(isLoose).map((m) => m.id)).toEqual(["b", "c"]);
+    const groups = placeGroups(ms);
+    expect(groups.find((g) => g.key === LOOSE).moments.map((m) => m.id)).toEqual(["b", "c"]);
+    expect(groups.map((g) => g.key)).toHaveLength(4);                  // maxwell, loose, #d, named-but-unplaced
+    // Nothing without coordinates can be a pin, loose or not.
+    expect(groupByPlace(ms).map((g) => g.key)).toEqual(["maxwell", "#d"]);
   });
   it("Google's own place link wins over everything", () => {
     expect(placeLink({ ...moments[0], mapsUrl: "https://maps.google.com/?cid=5", google: { placeId: "x", mapsUri: "https://maps.google.com/?cid=777" } })).toBe("https://maps.google.com/?cid=777");
