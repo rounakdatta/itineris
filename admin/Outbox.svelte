@@ -134,7 +134,7 @@
         {#each items as it (it.id)}
           <div class="tile" class:rejected={it.state === "rejected"} class:uploading={it.state === "uploading"}>
             <button class="pick" onclick={() => onEdit?.(it.id)} aria-label={`Edit queued photo ${it.name}`} title={it.error ?? it.name}>
-              {#if urls.get(it.id)}<img src={urls.get(it.id)} alt="" />{:else}<span class="noimg">{(it.type ?? "").startsWith("video/") ? "🎬" : "📷"}</span>{/if}
+              {#if urls.get(it.id)}<img src={urls.get(it.id)} alt="" />{:else}<span class="noimg" aria-hidden="true">{#if (it.type ?? "").startsWith("video/")}<svg viewBox="0 0 24 24" width="18" height="18"><rect x="2.6" y="5.4" width="13.4" height="13.2" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 11.2 21.4 8v8l-5.4-3.2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>{:else}<svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 7.6h3.4l1.5-2.2h6.2l1.5 2.2H20v11H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12.8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>{/if}</span>{/if}
               {#if (it.type ?? "").startsWith("video/")}<span class="vid" aria-hidden="true">▶</span>{/if}
               {#if it.state === "uploading"}
                 <span class="bar"><span class="fill" style:width="{Math.round((it.progress ?? 0) * 100)}%"></span></span>
@@ -155,7 +155,7 @@
       </div>
       {#if noLoc}
         <p class="muted small"><span class="cross" aria-hidden="true"><svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2.6" /><path d="M12 1.6v3.6M12 18.8v3.6M1.6 12h3.6M18.8 12h3.6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></svg></span> {noLoc === total ? (total === 1 ? "This photo has" : "These photos have") : `${noLoc} of these ${noLoc === 1 ? "has" : "have"}`} no location in the file — phones remove GPS from photos picked in a browser. Tap a photo to place it, or if you're still there:</p>
-        <p class="small"><button class="btn small" onclick={useMyLocation} disabled={locBusy}>{locBusy ? "Locating…" : `📍 Use my location for ${noLoc === total ? (total === 1 ? "it" : "all") : `these ${noLoc}`}`}</button></p>
+        <p class="small"><button class="btn small icon" onclick={useMyLocation} disabled={locBusy}>{#if locBusy}Locating…{:else}<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg> Use my location for {noLoc === total ? (total === 1 ? "it" : "all") : `these ${noLoc}`}{/if}</button></p>
       {/if}
       {#if locNote}<p class="muted small" role="status">{locNote}</p>{/if}
       {#if rejected.length}<p class="muted small">Refused files stay here so you can see why (tap one); remove them when done.</p>{/if}
@@ -186,6 +186,8 @@
   }
   .pinlink:hover, .pinlink[aria-expanded="true"] { color: var(--text); }
   .pinlink svg { opacity: 0.75; }
+  .btn.icon { display: inline-flex; align-items: center; gap: 5px; }
+  .btn.icon svg { opacity: 0.85; }
   .drop h2 { margin: 0 0 6px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
   .drop h2 + .hint { margin-bottom: 18px; }
   .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }

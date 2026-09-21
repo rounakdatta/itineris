@@ -30,7 +30,11 @@ describe("MomentEditor", () => {
     const queued = { ...moment, media: { type: "video", src: "", w: 0, h: 0 } };
     const { container } = render(MomentEditor, { moment: queued, pending: true, galleries });
     expect(container.querySelector(".top img")).toBeNull();
-    expect(container.querySelector(".shot.empty")).toHaveTextContent("🎬");
+    // Drawn, not an emoji: a machine with no emoji font renders one as a
+    // tofu box, and even where they do render they sit badly next to the SVGs
+    // the rest of the app uses.
+    expect(container.querySelector(".shot.empty svg")).not.toBeNull();
+    expect(container.querySelector(".shot.empty").textContent.trim()).toBe("");
   });
   it("shows the photo's local time in a native picker with its offset", () => {
     render(MomentEditor, { moment, galleries });

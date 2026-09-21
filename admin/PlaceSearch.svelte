@@ -47,7 +47,7 @@
 
 <div class="ps" class:compact>
   <div class="tools">
-    <input class="q" type="search" bind:value={q} placeholder={placesEnabled ? "Search Google Maps — “Yamo”, or paste a link" : "Search a place, or paste a Google Maps link"} aria-label="Search a place"
+    <input class="q" type="search" bind:value={q} placeholder={placesEnabled ? "Search Google Maps, or paste a link" : "Search a place, or paste a link"} aria-label="Search a place"
       onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(); } }} />
     <button type="button" class="btn tiny" onclick={search} disabled={searching || !q.trim()}>{searching ? "…" : "Search"}</button>
   </div>
