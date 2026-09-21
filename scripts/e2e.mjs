@@ -35,7 +35,7 @@ const waitFor = async (page, fn, ms = 8000) => { const t0 = Date.now(); while (D
 const dataDir = path.join(SCRATCH, "e2e-data"); rmSync(dataDir, { recursive: true, force: true });
 const admin = spawn(process.execPath, ["server/index.js"], { env: { ...process.env, ITINERIS_PORT: "4332", ITINERIS_DATA_DIR: dataDir, ITINERIS_SEED_DIR: "seed", ITINERIS_ADMIN_UI_DIR: "dist-admin" }, stdio: ["ignore", "pipe", "pipe"] });
 let adminLog = ""; admin.stdout.on("data", (d) => (adminLog += d)); admin.stderr.on("data", (d) => (adminLog += d));
-for (let i = 0; i < 100; i++) { try { if ((await fetch(`http://127.0.0.1:${ADMIN_PORT}/admin/healthz`)).ok) break; } catch {} await sleep(100); }
+for (let i = 0; i < 100; i++) { try { if ((await fetch(`http://127.0.0.1:${ADMIN_PORT}/creator/healthz`)).ok) break; } catch {} await sleep(100); }
 const proxy = await startAuthProxy({ port: 4333, target: ADMIN_PORT, email: WHO });
 
 // --- nginx on a docroot that is dist/ plus the admin's data + media -----------
@@ -69,6 +69,22 @@ try {
   ok("facet chips with counts", /Spots\s*17/.test(await text(page, ".chrome nav")) && /Activities\s*7/.test(await text(page, ".chrome nav")), await text(page, ".chrome nav"));
   ok("no day chips: the strip is the whole dock", (await page.$(".days")) === null && !/Whole trip/.test(await text(page, ".dock")));
   ok("no desktop zoom buttons on a phone", (await count(page, ".maplibregl-ctrl-zoom-in")) === 0);
+  // Every gallery is an advert for making one. It sits above the strip, clear
+  // of Google's logo and terms, and gets out of the way while a story plays.
+  ok("a Make my own button at the bottom of the gallery", (await text(page, ".mine")) === "Make my own" && (await page.$eval(".mine", (a) => a.getAttribute("href"))) === "/creator/");
+  {
+    const m = await page.$eval(".mine", (el) => { const r = el.getBoundingClientRect(); const d = document.querySelector(".dock").getBoundingClientRect(); return { b: Math.round(r.bottom), dockTop: Math.round(d.top), l: Math.round(r.left), r: Math.round(r.right), w: innerWidth }; });
+    ok("...above the photo strip and inside the screen", m.b <= m.dockTop && m.l >= 0 && m.r <= m.w, JSON.stringify(m));
+    // The credit line both map engines draw along the bottom is not ours to sit on.
+    const clash = await page.evaluate(() => {
+      // The whole control container, not just the text: its padding is part of
+      // what the credit needs to stay legible.
+      const a = document.querySelector(".maplibregl-ctrl-bottom-right")?.getBoundingClientRect();
+      const b = document.querySelector(".mine").getBoundingClientRect();
+      return a ? !(b.bottom <= a.top || b.top >= a.bottom || b.right <= a.left || b.left >= a.right) : false;
+    });
+    ok("...and clear of the map's attribution", clash === false);
+  }
   await settle(page, { map: true }); await shot(page, `${SHOTS}/01-viewer-home.png`);
 
   console.log("--- viewer: story by tap, swipe, back button ---");
@@ -264,8 +280,19 @@ try {
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("without a key the map is MapLibre again", await waitFor(page, () => !!document.querySelector(".map:not([data-engine])") && !document.querySelector('.map[data-engine="google"]')));
 
-  console.log("--- admin: photos, select, new gallery from selection ---");
-  await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" });
+  console.log("--- creator: signed out, you are offered a way in ---");
+  // Straight at the server, past the proxy that forges the identity header:
+  // nobody, which is what a stranger following "Make my own" looks like.
+  await page.goto(`http://127.0.0.1:${ADMIN_PORT}/creator/`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".hello", { timeout: 10000 });
+  ok("signed out: the sign-in screen, not the editor", /Make your own/.test(await text(page, ".hello h1")) && (await page.$(".cell")) === null && (await page.$("[data-testid=file-input]")) === null);
+  // Asked from here rather than from the page: the answer is the same with no
+  // session either way, and a deliberate 401 should not look like a page error.
+  ok("...and the library is refused outright", (await fetch(`http://127.0.0.1:${ADMIN_PORT}/creator/api/library`)).status === 401);
+  await settle(page); await shot(page, `${SHOTS}/09-creator-signin.png`);
+
+  console.log("--- creator: photos, select, new gallery from selection ---");
+  await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".cell");
   ok("signed-in identity shown", (await text(page, "header")).includes(WHO));
   ok("20 photos, none private (all in the demo gallery)", (await count(page, ".cell")) === 20 && (await count(page, ".flag.private")) === 0);
@@ -280,7 +307,7 @@ try {
   await clickText(page, ".bulk button", "Add");
   ok("new gallery appears in the filter", await waitFor(page, () => [...document.querySelectorAll(".filter option")].some((o) => /Friends \(2\)/.test(o.textContent))));
 
-  console.log("--- admin: galleries tab ---");
+  console.log("--- creator: galleries tab ---");
   await clickText(page, ".tabs button", "Galleries"); await page.waitForSelector(".gallery");
   ok("two galleries listed", (await count(page, ".gallery")) === 2);
   const links = await page.$$eval(".gallery code", (els) => els.map((e) => e.textContent));
@@ -293,9 +320,9 @@ try {
   ok("Show photos filters to the gallery", (await count(page, ".cell")) === 2 && (await page.$eval(".filter select", (s) => s.value)) === friendsId);
   ok("leaving the context ended selection mode", (await page.$(".bulk")) === null && (await page.$$eval(".toolbar button", (bs) => bs.at(-1).textContent.trim())) === "Select");
 
-  console.log("--- admin: editor ---");
+  console.log("--- creator: editor ---");
   const editId = await page.$eval(".cell", (c) => c.dataset.id);
-  const editRec = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.id === editId);
+  const editRec = (await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.id === editId);
   await (await page.$(".cell")).tap(); await page.waitForSelector(".sheet");
   ok("native time picker holds the photo's local time", (await page.$eval('.sheet input[type="datetime-local"]', (i) => i.value)) === editRec.t.slice(0, 16) && (await page.$eval(".sheet select", (s) => s.value)) === editRec.t.slice(-6), `${editId} ${editRec.t}`);
   ok("gallery checklist: in both", (await page.$$eval(".sheet .gal input", (is) => is.filter((i) => i.checked).length)) === 2);
@@ -350,7 +377,7 @@ try {
   await page.evaluate(() => { const home = [...document.querySelectorAll(".sheet .gal")].find((l) => /home/.test(l.textContent)); home.querySelector("input").click(); });
   await clickText(page, ".sheet button", "Save");
   ok("save closes the editor", await waitFor(page, () => !document.querySelector(".sheet")));
-  const lib = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
+  const lib = await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json();
   ok("membership persisted: the edited photo is now only in Friends", JSON.stringify(lib.find((m) => m.id === editId).galleries) === JSON.stringify([friendsId]), JSON.stringify(lib.find((m) => m.id === editId).galleries));
   ok("the exact Google Maps link and the place name were saved", lib.find((m) => m.id === editId).mapsUrl === GMAPS_CID && lib.find((m) => m.id === editId).place === "Lau Pa Sat", JSON.stringify([lib.find((m) => m.id === editId).mapsUrl, lib.find((m) => m.id === editId).place]));
   const savedCaps = lib.find((m) => m.id === editId).captions;
@@ -365,9 +392,9 @@ try {
   ok("...which the worker fetched on demand, not at install", await page.evaluate(async () => { const k = (await caches.keys()).find((n) => n.startsWith("itineris-viewer-shell-")); const shell = k ? (await (await caches.open(k)).keys()).map((r) => r.url) : []; return !shell.some((u) => /\.woff2$/.test(u)); }));
   await settle(page); await shot(page, `${SHOTS}/13b-story-caption.png`);
   await page.keyboard.press("Escape"); await sleep(300);
-  await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
+  await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
 
-  console.log("--- admin: a Google Maps link pasted for the next photos ---");
+  console.log("--- creator: a Google Maps link pasted for the next photos ---");
   await page.$eval('.drop input[aria-label="Search a place"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);
   await page.focus('.drop input[aria-label="Search a place"]'); await page.keyboard.press("Enter");
   const bannerUp = () => /Lau Pa Sat/.test(document.querySelector(".shared")?.textContent ?? "") && /Add photos at “Lau Pa Sat”/.test(document.querySelector(".drop .btn.primary")?.textContent ?? "");
@@ -384,13 +411,13 @@ try {
   ok("one tap pins the next photos to that place", new RegExp(kname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(await text(page, ".shared")) && (await text(page, ".drop .btn.primary")).includes(kname), await text(page, ".shared"));
   await tap(page, '.shared button[aria-label="Dismiss place"]'); await sleep(200);
 
-  console.log("--- admin: upload in bad conditions ---");
+  console.log("--- creator: upload in bad conditions ---");
   const UP = path.join(SCRATCH, "e2e-uploads"); mkdirSync(UP, { recursive: true });
   writeFileSync(path.join(UP, "q1.jpg"), await fakeJpeg({ date: "2026:03:19 10:00:00", offset: "+08:00", lat: 1.29, lng: 103.85, seed: 7 }));
   writeFileSync(path.join(UP, "q2.jpg"), await fakeJpeg({ seed: 8, w: 1200, h: 1600 }));
   await clickText(page, ".tabs button", "Photos"); await page.waitForSelector('[data-testid="file-input"]');
   await page.select(".filter select", "all");   // otherwise uploads land in the filtered gallery, which is the feature
-  const before = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).length;
+  const before = (await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json()).length;
   await page.setOfflineMode(true);
   await (await page.$('[data-testid="file-input"]')).uploadFile(path.join(UP, "q1.jpg"), path.join(UP, "q2.jpg"));
   // "Instantly" = without waiting for any network; on-device thumbnails and EXIF
@@ -409,7 +436,7 @@ try {
   await clickText(page, ".queue .status button", "Retry now"); await sleep(700);
   ok("Retry while offline: still queued, still honest", (await count(page, ".queue .tile")) === 2 && /Offline/.test(await text(page, ".queue .status")), await text(page, ".queue .status"));
   // Network back, server unreachable for a while: the queue must retry on its own.
-  proxy.state.failPattern = /\/admin\/api\/upload/;
+  proxy.state.failPattern = /\/creator\/api\/upload/;
   await page.setOfflineMode(false);
   ok("server unreachable: queue reports it is retrying automatically", await waitFor(page, () => /retrying|Connection trouble/.test(document.querySelector(".queue .status")?.textContent ?? ""), 20000), await text(page, ".queue .status"));
   await settle(page); await shot(page, `${SHOTS}/16-admin-queue-retrying.png`);
@@ -420,13 +447,13 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".queue .tile", { timeout: 15000 });
   ok("the admin wears the mark too", await page.$eval("header .brand .mark", (i) => i.complete && i.naturalWidth > 0), await page.$eval("header .brand .mark", (i) => i.getAttribute("src")).catch(() => "(no mark)"));
   ok("the admin itself opens OFFLINE: shell from the worker, library from the last copy, queue from IndexedDB", (await count(page, ".queue .tile")) === 2 && (await waitFor(page, () => document.querySelectorAll(".cell").length > 0)) && /Offline|Saved copy/.test(await text(page, "header")), `${await count(page, ".cell")} cells; ${await text(page, "header")}`);
-  ok("OFFLINE: the library really came from the worker's saved copy", (await page.evaluate(() => fetch("/admin/api/library").then((r) => r.headers.get("x-itineris-cache")))) === "fallback");
+  ok("OFFLINE: the library really came from the worker's saved copy", (await page.evaluate(() => fetch("/creator/api/library").then((r) => r.headers.get("x-itineris-cache")))) === "fallback");
   await settle(page); await shot(page, `${SHOTS}/17-admin-offline-reload.png`);
   proxy.state.down = false; await page.setOfflineMode(false);
   proxy.state.failPattern = null;
   await clickText(page, ".queue .status button", "Retry now");
   ok("uploads complete once the server is back", await waitFor(page, () => !document.querySelector(".queue"), 40000), await text(page, ".queue .status"));
-  const libAfter = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
+  const libAfter = await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json();
   const q = libAfter.find((m) => m.caption === "Tagged before it ever left the phone");
   ok("arrived annotated: caption + tag from the queue, EXIF time kept", !!q && q.tags.includes("queued") && q.t === "2026-03-19T10:00:00+08:00", JSON.stringify(q && { tags: q.tags, t: q.t }));
   ok("both queued photos are in the library, private", libAfter.length === before + 2 && libAfter.filter((m) => m.galleries.length === 0).length >= 2, `${before} -> ${libAfter.length}`);
@@ -445,7 +472,7 @@ try {
     ok("a video queues like a photo, marked as one", await waitFor(page, () => document.querySelector(".queue .tile .vid") !== null, 15000));
     ok("...with a poster drawn on the device", await waitFor(page, () => { const i = document.querySelector(".queue .tile img"); return !!i && i.complete && i.naturalWidth > 0; }, 15000));
     ok("it uploads and the server finishes the video", await waitFor(page, () => !document.querySelector(".queue"), 120000));
-    const libV = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.media?.type === "video");
+    const libV = (await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.media?.type === "video");
     ok("the library has a video moment placed and timed from the file", !!libV && libV.lat === 1.29 && libV.t === "2026-03-19T10:00:00+08:00", JSON.stringify(libV && { t: libV.t, lat: libV.lat, media: libV.media.src }));
     ok("the library list marks it ▶", await waitFor(page, () => document.querySelector(".cell .flag.vid") !== null));
     // The editor has to show a still: an <img> cannot draw the .mp4 itself.
@@ -453,7 +480,7 @@ try {
     ok("the editor shows the video as a still, loaded, and marks it ▶", await page.$eval(".sheet .top img", (i) => i.complete && i.naturalWidth > 0 && /\.webp$/.test(i.getAttribute("src"))) && (await page.$(".sheet .shot .vid")) !== null, await page.$eval(".sheet .top img", (i) => `${i.getAttribute("src")} ${i.naturalWidth}px`));
     await settle(page); await shot(page, `${SHOTS}/19-admin-video-editor.png`);
     await clickText(page, ".sheet button", "Cancel"); await waitFor(page, () => !document.querySelector(".sheet"));
-    await fetch(`${A}/admin/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ add: [libV.id] }) });
+    await fetch(`${A}/creator/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ add: [libV.id] }) });
     await page.goto(`${V}/g/${friendsId}#m/${libV.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story video.media", { timeout: 20000 });
     ok("the story plays it: a <video> over its poster, muted, with a sound button and its length", (await page.$eval(".story video.media", (v) => v.muted && v.hasAttribute("playsinline") && /-1280\.mp4$/.test(v.getAttribute("src")) && /-960\.webp$/.test(v.getAttribute("poster")))) && (await page.$('.story .sound[aria-label="Turn sound on"]')) !== null && (await text(page, ".story .dur")) === "0:20");
     ok("...and the browser can actually decode it", await page.waitForFunction(() => { const v = document.querySelector(".story video.media"); return v && v.readyState >= 2; }, { timeout: 20000 }).then(() => true).catch(() => false), await page.$eval(".story video.media", (v) => `readyState ${v.readyState} error ${v.error?.code ?? "none"}`));
@@ -461,12 +488,12 @@ try {
     await settle(page); await shot(page, `${SHOTS}/18-story-video.png`);
     await page.keyboard.press("Escape"); await sleep(300);
     // put the Friends gallery back the way the later checks expect it
-    await fetch(`${A}/admin/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ remove: [libV.id] }) });
-    await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
+    await fetch(`${A}/creator/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ remove: [libV.id] }) });
+    await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
   }
 
   console.log("--- photos without GPS: a gallery with no locations, then bulk Set location ---");
-  const lib2 = await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json();
+  const lib2 = await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json();
   const noGps = lib2.find((m) => m.lat === null && m.galleries.length === 0);
   ok("a photo arrived without GPS (as phones do)", !!noGps, noGps?.id);
   await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
@@ -474,19 +501,19 @@ try {
   await clickText(page, ".bulk button", "Gallery"); await page.select(".bulk select", "__new__");
   page.once("dialog", (d) => d.accept("Nowhere in particular")); await clickText(page, ".bulk button", "Add");
   ok("gallery of one unplaced photo created", await waitFor(page, () => [...document.querySelectorAll(".filter option")].some((o) => /Nowhere in particular \(1\)/.test(o.textContent))));
-  const nowhere = (await (await fetch(`${A}/admin/api/galleries`, { headers: { "remote-email": WHO } })).json()).find((g) => g.title === "Nowhere in particular");
+  const nowhere = (await (await fetch(`${A}/creator/api/galleries`, { headers: { "remote-email": WHO } })).json()).find((g) => g.title === "Nowhere in particular");
   await page.goto(`${V}/g/${nowhere.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".wall .cell", { timeout: 20000 });
   ok("a gallery with no locations opens on the wall (the one case the map is not the view), clean URL", (await page.$(".wall .cell")) !== null && (await hash(page)) === "" && (await page.$(".chrome .toggle")) === null, await hash(page));
   ok("...and says why there is no map (no city pretends to be the place)", /No locations yet/.test(await text(page, ".chrome .top")), await text(page, ".chrome .top"));
   await settle(page); await shot(page, `${SHOTS}/23-viewer-no-locations.png`);
-  await page.goto(`${A}/admin/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
+  await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
   await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
   await tapEl(page, await page.$(`.cell[data-id="${noGps.id}"]`));
   await clickText(page, ".bulk button", "Location"); await page.waitForSelector('.bulk input[aria-label="Latitude"]');
   await page.type('.bulk input[aria-label="Latitude"]', "37.7749"); await page.type('.bulk input[aria-label="Longitude"]', "-122.4194");
   await clickText(page, ".bulk button", "Apply to 1");
   ok("bulk Set location applied", await waitFor(page, () => !document.querySelector(".bulk .loc")));
-  const placedNow = (await (await fetch(`${A}/admin/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.id === noGps.id);
+  const placedNow = (await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.id === noGps.id);
   ok("...and stored", Math.abs(placedNow.lat - 37.7749) < 1e-4 && Math.abs(placedNow.lng + 122.4194) < 1e-4, `${placedNow.lat},${placedNow.lng}`);
   await page.goto(`${V}/g/${nowhere.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick", { timeout: 20000 });
   ok("now that gallery opens on the map, fitted to San Francisco", (await page.$(".wall")) === null && await waitFor(page, () => document.querySelector('.map[data-idle="1"]') !== null, 30000));
@@ -585,7 +612,7 @@ try {
 }
 // The dead-link scenario 404s on purpose; the bad-network scenario makes uploads 502 and
 // takes servers down on purpose.
-const real = problems.filter((p) => !/favicon|nope-not-real|\/admin\/api\/upload|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION_RESET|ERR_CONNECTION_REFUSED|status of 502|status of 503/.test(p));
+const real = problems.filter((p) => !/favicon|nope-not-real|\/creator\/api\/upload|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION_RESET|ERR_CONNECTION_REFUSED|status of 502|status of 503/.test(p));
 console.log(`\nbrowser problems: ${real.length}`); for (const p of real) console.log("  ! " + p);
 if (real.length) fail++;
 console.log(fail ? `\n${fail} FAILED` : "\nall passed"); console.log(`shots: ${SHOTS}`);

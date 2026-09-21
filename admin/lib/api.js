@@ -1,25 +1,32 @@
+// Where the creator app lives. It was /admin behind tinyauth; it is /creator
+// and signs people in itself.
+export const BASE = "/creator";
+
 const J = async (r) => {
-  if (r.status === 401) throw new Error("Not signed in. Reload the page to go through the login.");
+  if (r.status === 401) throw new Error("Signed out. Sign in again to continue.");
   if (!r.ok) { let msg = `${r.status}`; try { msg = (await r.json()).error ?? msg; } catch { /* text */ } throw new Error(msg); }
   return r.json();
 };
 const json = (method, body) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 export const api = {
-  me: () => fetch("/admin/api/me").then(J),
-  library: () => fetch("/admin/api/library").then(J),
+  // Answers without a session too: { signedIn: false, signInUrl } is how the
+  // app knows to show the sign-in screen rather than an error.
+  me: () => fetch(`${BASE}/api/me`).then(J),
+  signOut: () => fetch(`${BASE}/auth/signout`, { method: "POST" }).then(J),
+  library: () => fetch("/creator/api/library").then(J),
   // Same, plus whether the service worker served a saved copy (we are offline,
   // or the server is unreachable even though the browser thinks it is online).
-  libraryWithMeta: async () => { const r = await fetch("/admin/api/library"); return { body: await J(r), fromCache: r.headers.get("x-itineris-cache") === "fallback" }; },
-  patch: (id, body) => fetch(`/admin/api/moments/${id}`, json("PATCH", body)).then(J),
-  bulk: (ids, body) => fetch("/admin/api/moments", json("PATCH", { ids, ...body })).then(J),
-  resolveLink: (url) => fetch(`/admin/api/resolve-link?url=${encodeURIComponent(url)}`).then(J),
-  refreshGoogle: (id) => fetch(`/admin/api/moments/${id}/google`, { method: "POST" }).then(J),
-  searchPlaces: (q, bias) => fetch(`/admin/api/places/search?q=${encodeURIComponent(q)}${bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lng) ? `&lat=${bias.lat}&lng=${bias.lng}` : ""}`).then(J),
-  remove: (id) => fetch(`/admin/api/moments/${id}`, { method: "DELETE" }).then(J),
-  createGallery: (body) => fetch("/admin/api/galleries", json("POST", body)).then(J),
-  patchGallery: (id, body) => fetch(`/admin/api/galleries/${id}`, json("PATCH", body)).then(J),
-  removeGallery: (id) => fetch(`/admin/api/galleries/${id}`, { method: "DELETE" }).then(J),
+  libraryWithMeta: async () => { const r = await fetch("/creator/api/library"); return { body: await J(r), fromCache: r.headers.get("x-itineris-cache") === "fallback" }; },
+  patch: (id, body) => fetch(`/creator/api/moments/${id}`, json("PATCH", body)).then(J),
+  bulk: (ids, body) => fetch("/creator/api/moments", json("PATCH", { ids, ...body })).then(J),
+  resolveLink: (url) => fetch(`/creator/api/resolve-link?url=${encodeURIComponent(url)}`).then(J),
+  refreshGoogle: (id) => fetch(`/creator/api/moments/${id}/google`, { method: "POST" }).then(J),
+  searchPlaces: (q, bias) => fetch(`/creator/api/places/search?q=${encodeURIComponent(q)}${bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lng) ? `&lat=${bias.lat}&lng=${bias.lng}` : ""}`).then(J),
+  remove: (id) => fetch(`/creator/api/moments/${id}`, { method: "DELETE" }).then(J),
+  createGallery: (body) => fetch("/creator/api/galleries", json("POST", body)).then(J),
+  patchGallery: (id, body) => fetch(`/creator/api/galleries/${id}`, json("PATCH", body)).then(J),
+  removeGallery: (id) => fetch(`/creator/api/galleries/${id}`, { method: "DELETE" }).then(J),
   // One file per request, with progress. Rejects with {status} so the queue can
   // tell "signed out" (401) and "server down" (5xx, network) from "this file was
   // refused" (a JSON body with errors), which is the difference between retrying
@@ -30,7 +37,7 @@ export const api = {
       fd.append("files", item.file, item.name);
       fd.append("meta", JSON.stringify(item.metaForServer ?? {}));
       const x = new XMLHttpRequest();
-      x.open("POST", "/admin/api/upload");
+      x.open("POST", "/creator/api/upload");
       // A video is transcoded before the server answers: give it the time (the queue retries; the server dedups).
       x.timeout = (item.type ?? "").startsWith("video/") ? 20 * 60_000 : 180_000;
       x.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);

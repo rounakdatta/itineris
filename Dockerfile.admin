@@ -28,6 +28,6 @@ USER 101
 ENV ITINERIS_PORT=8080 \
     ITINERIS_DATA_DIR=/srv/itineris \
     ITINERIS_SEED_DIR=/app/seed \
-    ITINERIS_ADMIN_UI_DIR=/app/dist-admin
+    ITINERIS_CREATOR_UI_DIR=/app/dist-admin
 EXPOSE 8080
 CMD ["node", "server/index.js"]
