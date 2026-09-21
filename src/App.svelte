@@ -26,6 +26,10 @@
   onMount(() => {
     loadConfig().then((c) => { config = c; engine = chooseMapEngine(c, navigator.onLine !== false); trip.mapEngine = engine; });
     trip.load().then(() => {
+      // Nothing is published at "/" -- no home gallery. An empty world map and
+      // a card saying "ask for one" is a dead end; the thing a stranger who
+      // typed the bare domain actually wants is to make one.
+      if (trip.status === "landing") { location.replace("/creator/"); return; }
       if (!trip.loaded) return;
       // The map is the view. Only when no photo or route has a location -- the
       // map would be an empty globe -- does the photo wall stand in for it.
@@ -60,10 +64,14 @@
     overlays it instead of replacing it, so the map instance -- and its camera
     position -- survives every view switch.
   -->
-  {#if engine === "google"}
-    <GoogleMapView {config} onFail={(e) => useMapLibre(e?.message)} />
-  {:else if engine === "maplibre"}
-    <MapView />
+  <!-- Not while we are on our way to /creator: a world map that exists for one
+       frame and then vanishes is worse than no map. -->
+  {#if trip.status !== "landing"}
+    {#if engine === "google"}
+      <GoogleMapView {config} onFail={(e) => useMapLibre(e?.message)} />
+    {:else if engine === "maplibre"}
+      <MapView />
+    {/if}
   {/if}
 
   {#if trip.view === "wall" && trip.loaded}
@@ -193,21 +201,37 @@
   .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* The gallery's name is the heading now, so it reads as the title it is. */
   .title { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* The same ring the map pins wear, so it reads as "a story" on sight. */
+  /* The same ring the map pins wear, so it reads as "a story" on sight -- but
+     this one turns while it is unseen. A pin is self-evidently a photo you can
+     tap; a logo is not, and nobody looks at a logo. The motion is the whole
+     reason anyone discovers the photos that have no place. Only this one ring
+     turns: thirteen spinning pins would be noise, and would cost exactly the
+     attention this is trying to buy. */
   .mine-story {
     flex: 0 0 auto; position: relative; width: 36px; height: 36px; padding: 3px; border: 0; border-radius: 50%;
-    background: conic-gradient(from 200deg, #f9ce34, #ee2a7b, #6228d7, #f9ce34);
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); cursor: pointer;
+    background: none; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); cursor: pointer;
     transition: transform 160ms, box-shadow 160ms;
   }
-  .mine-story .mark { width: 100%; height: 100%; border-radius: 50%; display: block; border: 2px solid #fff; }
-  .mine-story.seen { background: #cfcfcf; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.75); }
+  /* The gradient lives on its own layer so it can rotate without taking the
+     mark with it. A conic-gradient cannot be animated directly; rotating the
+     element that carries it can, and it stays on the compositor. */
+  .mine-story::before {
+    content: ""; position: absolute; inset: 0; z-index: 0; border-radius: 50%;
+    background: conic-gradient(from 0deg, #f9ce34, #ffe9a8 6%, #fff 10%, #ff8a3d 22%, #ee2a7b 44%, #a33ad6 62%, #6228d7 74%, #ee2a7b 88%, #f9ce34);
+    animation: ring-turn 3.4s linear infinite;
+  }
+  .mine-story .mark { position: relative; z-index: 1; width: 100%; height: 100%; border-radius: 50%; display: block; border: 2px solid #fff; }
+  /* Watched: flat, grey, still. The absence of motion is the signal. */
+  .mine-story.seen::before { background: #cfcfcf; animation: none; }
+  .mine-story.seen { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.75); }
   .mine-story:hover, .mine-story:focus-visible { transform: scale(1.06); }
   .mine-story .n {
-    position: absolute; right: -4px; top: -4px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px;
+    position: absolute; right: -4px; top: -4px; z-index: 2; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px;
     border: 2px solid #0b0d10; background: #111; color: #fff;
     font: 700 9.5px/12px system-ui, -apple-system, sans-serif; text-align: center; box-sizing: border-box;
   }
+  @keyframes ring-turn { to { transform: rotate(1turn); } }
+  @media (prefers-reduced-motion: reduce) { .mine-story::before { animation: none; } }
   .toggle {
     flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
     background: var(--panel); backdrop-filter: blur(12px); color: var(--text); cursor: pointer;

@@ -524,6 +524,34 @@ try {
   // pin" would be pointing at all of them. It belongs to the map, not the wall.
   ok("...and no story ring on the wall, where the grid already shows everything", (await page.$(".mine-story")) === null);
   await settle(page); await shot(page, `${SHOTS}/23-viewer-no-locations.png`);
+
+  // A gallery with BOTH kinds: now the ring has a job, and has to be doing it.
+  // Nobody looks at a logo, so the turning is the whole reason the photos with
+  // no place get discovered -- "is an animation declared" is not enough, the
+  // pixels have to move.
+  await fetch(`${A}/creator/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ add: [noGps.id] }) });
+  await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".mine-story", { timeout: 20000 });
+  // (MapLibre by here -- the Google section removed its config.json -- so the
+  // placed photos are canvas pins, not .gpin nodes.)
+  ok("a mixed gallery puts a story ring on the mark", (await page.$(".mine-story")) !== null && (await page.$(".map")) !== null);
+  {
+    const a = await page.evaluate(() => { const cs = getComputedStyle(document.querySelector(".mine-story"), "::before"); return { name: cs.animationName, iter: cs.animationIterationCount, conic: cs.backgroundImage.includes("conic") }; });
+    ok("...and while unseen it turns, in Instagram's colours", a.name !== "none" && a.iter === "infinite" && a.conic, JSON.stringify(a));
+    const clip = await page.$eval(".mine-story", (e) => { const r = e.getBoundingClientRect(); return { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.ceil(r.width), height: Math.ceil(r.height) }; });
+    const frames = [];
+    for (let i = 0; i < 4; i++) { frames.push(await page.screenshot({ clip, encoding: "base64" })); await sleep(340); }
+    ok("...and the pixels really move", new Set(frames).size >= 3, `${new Set(frames).size} distinct of ${frames.length}`);
+    ok("...while the mark inside stays upright", await page.evaluate(() => getComputedStyle(document.querySelector(".mine-story .mark")).animationName === "none"));
+    await (await page.$(".mine-story")).tap();
+    await page.waitForSelector(".story", { timeout: 10000 });
+    await page.keyboard.press("Escape"); await waitFor(page, () => !document.querySelector(".story"));
+    await sleep(600);
+    const after = await page.evaluate(() => { const el = document.querySelector(".mine-story"); return { seen: el.classList.contains("seen"), anim: getComputedStyle(el, "::before").animationName }; });
+    ok("...and it goes grey and still once watched", after.seen && after.anim === "none", JSON.stringify(after));
+  }
+  await fetch(`${A}/creator/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ remove: [noGps.id] }) });
+
   await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
   await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
   await tapEl(page, await page.$(`.cell[data-id="${noGps.id}"]`));
