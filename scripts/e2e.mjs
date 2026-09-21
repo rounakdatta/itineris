@@ -48,7 +48,14 @@ symlinkSync(path.join(dataDir, "media"), path.join(nd, "docroot", "media"));
 writeFileSync(path.join(nd, "conf", "security-headers.conf"), readFileSync(path.join(ROOT, "nginx/security-headers.conf")));
 writeFileSync(path.join(nd, "conf", "default.conf"), readFileSync(path.join(ROOT, "nginx/default.conf"), "utf8")
   .replace("/etc/nginx/security-headers.conf", path.join(nd, "conf", "security-headers.conf")).replaceAll("/etc/nginx/security-headers.conf", path.join(nd, "conf", "security-headers.conf"))
-  .replace("root /usr/share/nginx/html;", `root ${path.join(nd, "docroot")};`).replace("listen 8080;", "listen 127.0.0.1:4331;"));
+  .replace("root /usr/share/nginx/html;", `root ${path.join(nd, "docroot")};`).replace("listen 8080;", "listen 127.0.0.1:4331;")
+  // In production Traefik path-routes /creator on the SAME host to the creator
+  // pod (see ingress-admin.yaml); nginx never sees it. The viewer relies on
+  // that being one origin -- it posts a view to /creator/api/views/<id> -- so
+  // the harness has to reproduce the routing or it is testing a layout that
+  // does not exist anywhere. Deliberately anonymous: a visitor is not signed
+  // in, and the creator app itself is reached through the auth proxy at A.
+  .replace("location / {", `location /creator/ {\n        proxy_pass http://127.0.0.1:${ADMIN_PORT};\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $remote_addr;\n    }\n\n    location / {`));
 writeFileSync(path.join(nd, "conf", "nginx.conf"), `pid ${nd}/nginx.pid;\nerror_log ${nd}/logs/error.log;\nevents {}\nhttp {\n  include ${NGINX_STORE}/conf/mime.types;\n  access_log ${nd}/logs/access.log;\n  client_body_temp_path ${nd}/tmp; proxy_temp_path ${nd}/tmp; fastcgi_temp_path ${nd}/tmp; uwsgi_temp_path ${nd}/tmp; scgi_temp_path ${nd}/tmp;\n  include ${nd}/conf/default.conf;\n}\n`);
 async function startNginx() {
   const p = spawn(path.join(NGINX_STORE, "bin", "nginx"), ["-c", path.join(nd, "conf", "nginx.conf"), "-p", nd, "-g", "daemon off;"], { stdio: "ignore" });
@@ -597,6 +604,35 @@ try {
   await settle(page, { map: true }); await shot(page, `${SHOTS}/20-viewer-friends.png`);
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("home gallery lost the photo moved out of it", (await count(page, ".tick")) === 19, String(await count(page, ".tick")));
+  console.log("--- viewer: how many people have seen this ---");
+  // The eye in the top right. The number is recorded server-side and comes
+  // back on the same request, so what matters here is that the round trip
+  // works across the two pods, that reloading does not inflate it, and that
+  // the pretty name and the token are one gallery with one count.
+  await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" });
+  ok("an eye appears once the count comes back", await waitFor(page, () => !!document.querySelector(".views"), 10000));
+  const eye1 = await text(page, ".views .count");
+  ok("...showing a real number", /^\d/.test(eye1), eye1);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitFor(page, () => !!document.querySelector(".views"), 10000);
+  ok("...that reloading does not inflate", (await text(page, ".views .count")) === eye1, `${eye1} -> ${await text(page, ".views .count")}`);
+  ok("...and reads as views to a screen reader", /views?$/.test((await page.$eval(".views", (e) => e.textContent)).trim()), await page.$eval(".views", (e) => e.textContent));
+  ok("...and says the exact number on hover", /^\d[\d,]* views?$/.test(await page.$eval(".views", (e) => e.title)), await page.$eval(".views", (e) => e.title));
+  ok("the eye is at the right-hand end of the bar, after the gallery's name",
+    await page.evaluate(() => {
+      const bar = document.querySelector(".top").getBoundingClientRect();
+      const v = document.querySelector(".views").getBoundingClientRect();
+      const brand = document.querySelector(".brand").getBoundingClientRect();
+      return { ok: v.left > brand.right - 1 && bar.right - v.right < 90 && v.top >= bar.top - 1 && v.bottom <= bar.bottom + 1, gapRight: Math.round(bar.right - v.right), afterBrand: Math.round(v.left - brand.right) };
+    }).then((r) => { if (!r.ok) console.log("        " + JSON.stringify(r)); return r.ok; }));
+  ok("...and it is out of the way once a story is open",
+    await page.evaluate(() => getComputedStyle(document.querySelector(".chrome")).opacity) === "1");
+  await shot(page, `${SHOTS}/20b-viewer-views.png`);
+  // The same gallery by its pretty name must not start a second count.
+  const listNow = await (await fetch(`${A}/creator/api/galleries`)).json();
+  const friends = listNow.find((x) => x.id === friendsId);
+  ok("the creator sees the same count on the gallery", String(friends?.views) === eye1, `${friends?.views} vs ${eye1}`);
+
   console.log("--- viewer: where am I ---");
   // The browser asks nobody until the button is tapped; then a blue dot, and the
   // camera goes there once. (There is no download button: the worker keeps

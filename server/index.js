@@ -13,6 +13,7 @@ import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
 import { lookupPlace, needsLookup, searchPlaces, fetchPlaceDetails, isStale, isPlaceId } from "./places.js";
 import { validateStyle, validateCaptions, captionsOf, normalizeStyle, styleOf, MAX_CAPTION_TEXT } from "./caption.js";
 import { slugProblem, cleanSlug } from "./slug.js";
+import { clientIp, makeLimiter } from "./views.js";
 import {
   SESSION_COOKIE, SESSION_DAYS, uidFor, normalizeEmail, signSession, readSession, newSession,
   randomState, authorizeUrl, exchangeCode, readIdToken, allowedBy, redirectUriFor, safeNext,
@@ -134,6 +135,24 @@ app.get(`${BASE}/api/me`, async (c) => {
   });
 });
 
+// PUBLIC on purpose, and registered above the session gate so it stays that
+// way: this is the one thing a visitor's browser tells the server. It refuses
+// tokens that are not a published gallery, dedupes per visitor per day, and
+// keeps nothing but a salted hash -- see server/views.js.
+const viewLimit = makeLimiter({ perMinute: 30 });
+app.post(`${BASE}/api/views/:token`, async (c) => {
+  const token = c.req.param("token");
+  const ip = clientIp((k) => c.req.header(k));
+  if (!viewLimit(ip)) return c.json({ error: "slow down" }, 429);
+  // Looking at your own gallery is not a view. Checking your work all
+  // afternoon should not be the number you show people.
+  const who = identify(c);
+  const id = (await store.slugs())[token] ?? token;
+  if (who && (await store.ownerOf(id)) === who.uid) return c.json({ views: await store.viewsOf(id), mine: true });
+  const n = await store.recordView(token, { ip, ua: c.req.header("user-agent") ?? "" });
+  return n === null ? c.json({ error: "no such gallery" }, 404) : c.json({ views: n });
+});
+
 app.use(`${BASE}/api/*`, async (c, next) => {
   const who = identify(c);
   if (!who) return c.json({ error: "not signed in" }, 401);
@@ -156,17 +175,20 @@ const withGalleries = (moments, galleries) => {
   for (const g of galleries) for (const id of g.momentIds ?? []) (idx.get(id) ?? idx.set(id, []).get(id)).push(g.id);
   return moments.map((m) => ({ ...m, galleries: idx.get(m.id) ?? [] }));
 };
-const galleryView = (g) => ({ ...g, count: (g.momentIds ?? []).length, trackCount: (g.trackIds ?? []).length });
+const galleryView = (g, views = {}) => ({ ...g, count: (g.momentIds ?? []).length, trackCount: (g.trackIds ?? []).length, views: views[g.id] ?? 0 });
+// The counts live outside anyone's library (a view is recorded by a stranger,
+// not by the owner), so they are fetched alongside rather than stored with it.
+const galleryViews = (galleries) => store.views().then((v) => galleries.map((g) => galleryView(g, v)));
 
 // ---- read ----------------------------------------------------------------
 app.get(`${BASE}/api/library`, async (c) => {
   const lib = c.get("lib");
   const [moments, tracks, galleries] = await Promise.all([lib.moments(), lib.tracks(), lib.galleries()]);
-  return c.json({ moments: withGalleries(moments, galleries), tracks, galleries: galleries.map(galleryView) });
+  return c.json({ moments: withGalleries(moments, galleries), tracks, galleries: await galleryViews(galleries) });
 });
 app.get(`${BASE}/api/moments`, async (c) => c.json(withGalleries(await c.get("lib").moments(), await c.get("lib").galleries())));
 app.get(`${BASE}/api/tracks`, async (c) => c.json(await c.get("lib").tracks()));
-app.get(`${BASE}/api/galleries`, async (c) => c.json((await c.get("lib").galleries()).map(galleryView)));
+app.get(`${BASE}/api/galleries`, async (c) => c.json(await galleryViews(await c.get("lib").galleries())));
 
 // ---- moments -------------------------------------------------------------
 // Captions. The `captions` list is the truth; `caption` and `captionStyle` are
@@ -494,7 +516,7 @@ app.patch(`${BASE}/api/galleries/:id`, async (c) => {
     });
   });
   if (bad) return c.json({ error: bad }, 400);
-  return result ? c.json(galleryView(result)) : c.json({ error: "not found" }, 404);
+  return result ? c.json((await galleryViews([result]))[0]) : c.json({ error: "not found" }, 404);
 });
 
 app.delete(`${BASE}/api/galleries/:id`, async (c) => {

@@ -1,6 +1,7 @@
 import { readFile, writeFile, rename, mkdir, cp, unlink, access, readdir, rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import { countView, visitorKey, dayOf, newSalt } from "./views.js";
 
 // ---------------------------------------------------------------------------
 // Layout under the data dir. Only data/ and media/ are ever served publicly.
@@ -152,6 +153,7 @@ export class Store {
       users: path.join(dataDir, "users"),
       owners: path.join(dataDir, "library", "owners.json"),
       slugs: path.join(dataDir, "library", "slugs.json"),
+      views: path.join(dataDir, "library", "views.json"),
       instance: path.join(dataDir, "library", "instance.json"),
       home: path.join(dataDir, "data", "home.json"),
       pubGalleries: path.join(dataDir, "data", "galleries"),
@@ -228,10 +230,58 @@ export class Store {
   }
   #instance() { return readJson(this.paths.instance, {}); }
 
+  // --- how many people have seen a gallery ----------------------------------
+  // The hashes that make the per-day dedupe work never leave this file, so
+  // `views()` hands back only the totals.
+  #viewFile() { return readJson(this.paths.views, {}); }
+  async views() {
+    return Object.fromEntries(Object.entries(await this.#viewFile()).map(([token, e]) => [token, e?.n ?? 0]));
+  }
+  async viewsOf(token) { return (await this.#viewFile())[token]?.n ?? 0; }
+
+  // The salt is per-instance and never leaves the volume: without it the
+  // stored hashes are not linkable to anything, even by whoever holds the file.
+  async #viewSalt() {
+    const inst = await this.#instance();
+    if (inst.viewSalt) return inst.viewSalt;
+    const viewSalt = newSalt();
+    await atomicWrite(this.paths.instance, { ...inst, viewSalt });
+    return viewSalt;
+  }
+
+  // Returns the gallery's total, or null if there is no such published
+  // gallery -- so this endpoint cannot be used to make up entries.
+  async recordView(name, { ip, ua, at = new Date() } = {}) {
+    if (!/^[a-z0-9][a-z0-9-]{1,40}$/.test(String(name ?? ""))) return null;
+    return this.serialize(async () => {
+      // A gallery reached by its pretty name is the same gallery: one count,
+      // whichever of its two URLs somebody was given.
+      const token = (await this.slugs())[name] ?? name;
+      if (!(await exists(path.join(this.paths.pubGalleries, `${token}.json`)))) return null;
+      const day = dayOf(at);
+      const salt = await this.#viewSalt();
+      const file = await this.#viewFile();
+      const { entry, n, fresh } = countView(file[token], visitorKey({ salt, ip, ua, token, day }), day);
+      if (fresh) await atomicWrite(this.paths.views, { ...file, [token]: entry });
+      return n;
+    });
+  }
+
+  // A gallery that is gone should not keep a count that a later token could
+  // inherit. Called from the same pass that prunes its published file.
+  async forgetViews(tokens) {
+    if (!tokens.length) return;
+    const file = await this.#viewFile();
+    let touched = false;
+    for (const t of tokens) if (t in file) { delete file[t]; touched = true; }
+    if (touched) await atomicWrite(this.paths.views, file);
+  }
+
   // Whose home gallery "/" shows. The first person to sign in; after that it
   // does not move, so somebody else making their own journal cannot take over
   // the front page.
   async ownerUid() { return (await this.#instance()).owner ?? null; }
+  async ownerOf(token) { return (await this.#owners())[token] ?? null; }
 
   // The single-tenant library from before 0.21 belongs to whoever signs in
   // first -- on a deployment that has been running, that is the person whose
@@ -287,11 +337,16 @@ export class Store {
           slugs[g.slug] = g.id;
         }
       }
+      const dropped = [];
       for (const id of wasMine) {
         if (keep.has(id)) continue;
         delete owners[id];
+        dropped.push(id);
         await unlink(path.join(this.paths.pubGalleries, `${id}.json`)).catch(() => {});
       }
+      // ...and its view count goes with it, so a later token cannot inherit
+      // somebody else's number.
+      await this.forgetViews(dropped);
       // A name this person's gallery has given up -- renamed, cleared, or the
       // whole gallery deleted -- stops answering, and the name is free for
       // anybody again. Someone else's names are not ours to touch.

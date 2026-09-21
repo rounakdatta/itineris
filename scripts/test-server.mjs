@@ -476,6 +476,60 @@ try {
   } finally { s7.server.kill(); }
 
   // =========================================================================
+  console.log("--- how many people have seen a gallery ---");
+  // A public, unauthenticated write: anybody with the link makes the number go
+  // up, which is the point. So what matters is what it refuses -- unknown
+  // tokens, the same visitor twice in a day, and the owner's own visits.
+  const d8 = path.join(root, "views");
+  const s8 = await startServer({ port: 4334, dataDir: d8, seedDir: "" });
+  const owner8 = async (method, p, body) => j(await fetch(`${s8.BASE}${p}`, { method, headers: { "remote-email": "ada@example.com", "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }));
+  // A visitor is an address and a browser; nobody signed in.
+  const see = async (token, { ip = "203.0.113.7", ua = "Mozilla/5.0 (iPhone)", headers = {} } = {}) =>
+    j(await fetch(`${s8.BASE}/creator/api/views/${token}`, { method: "POST", headers: { "x-forwarded-for": ip, "user-agent": ua, ...headers } }));
+  try {
+    const g = (await owner8("POST", "/creator/api/galleries", { title: "Seen by", slug: "seenby" })).body;
+
+    const first = await see(g.id);
+    ok("the first visitor is counted", first.status === 200 && first.body.views === 1, JSON.stringify(first.body));
+    for (let i = 0; i < 5; i++) await see(g.id);
+    ok("...and reloading all afternoon still counts once", (await see(g.id)).body.views === 1);
+    ok("a different person counts", (await see(g.id, { ip: "198.51.100.4" })).body.views === 2);
+    ok("...and so does a different browser on the same address", (await see(g.id, { ua: "Mozilla/5.0 (Android)" })).body.views === 3);
+
+    // The pretty name and the token are ONE gallery; counting both would
+    // double a number people are meant to trust.
+    ok("a name that is not a published gallery is refused", (await see("nosuchgallery")).status === 404);
+    ok("...and so is a shape that could never be one", (await see("../../etc/passwd")).status === 404);
+    // One gallery, one count, whichever of its two URLs somebody was given.
+    const viaName = await see("seenby", { ip: "203.0.113.7" });
+    ok("the pretty name counts the same gallery, not a second one", viaName.status === 200 && viaName.body.views === 3, JSON.stringify(viaName.body));
+    ok("...so the same visitor is still only counted once", (await see("seenby", { ip: "192.0.2.9" })).body.views === 4 && (await see(g.id, { ip: "192.0.2.9" })).body.views === 4);
+
+    ok("the owner looking at their own gallery is not a view",
+      (await j(await fetch(`${s8.BASE}/creator/api/views/${g.id}`, { method: "POST", headers: { "remote-email": "ada@example.com", "x-forwarded-for": "9.9.9.9" } }))).body.views === 4);
+    ok("...and not under the pretty name either",
+      (await j(await fetch(`${s8.BASE}/creator/api/views/seenby`, { method: "POST", headers: { "remote-email": "ada@example.com", "x-forwarded-for": "9.9.9.8" } }))).body.views === 4);
+    ok("...but somebody else who happens to be signed in is",
+      (await j(await fetch(`${s8.BASE}/creator/api/views/${g.id}`, { method: "POST", headers: { "remote-email": "bo@example.com", "x-forwarded-for": "9.9.9.9" } }))).body.views === 5);
+
+    const list = await owner8("GET", "/creator/api/galleries");
+    ok("the creator sees the count on their gallery", list.body.find((x) => x.id === g.id)?.views === 5, JSON.stringify(list.body.map((x) => x.views)));
+    const renamed = await owner8("PATCH", `/creator/api/galleries/${g.id}`, { title: "Seen by many" });
+    ok("...and editing the gallery does not reset it", renamed.body.views === 5, String(renamed.body.views));
+
+    // Nothing that identifies a visitor may reach the disk.
+    const raw = await readFile(path.join(d8, "library", "views.json"), "utf8");
+    ok("what is written down cannot be walked back to anybody",
+      !/203\.0\.113\.7|198\.51\.100\.4|iPhone|Android|Mozilla/.test(raw), raw.slice(0, 200));
+    const hashes = await readJson(path.join(d8, "library", "views.json"));
+    ok("...and the hashes are never served to the creator either",
+      list.body.every((x) => !("seen" in x)) && !hashes[g.id].seen.some((h) => JSON.stringify(list.body).includes(h)));
+
+    await owner8("DELETE", `/creator/api/galleries/${g.id}`);
+    ok("deleting a gallery forgets its count", !JSON.parse(await readFile(path.join(d8, "library", "views.json"), "utf8"))[g.id]);
+  } finally { s8.server.kill(); }
+
+  // =========================================================================
   console.log("--- signing in with Google, for real (against a fake Google) ---");
   const d6 = path.join(root, "oauth");
   const s6 = await startServer({ port: 4327, dataDir: d6, seedDir: "", env: {

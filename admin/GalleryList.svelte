@@ -1,6 +1,7 @@
 <script>
   import { api, galleryUrl, copyText } from "./lib/api.js";
   import { slugProblem, cleanSlug, slugFrom } from "../server/slug.js";
+  import { short, exact } from "../server/count.js";
 
   let { galleries, tracks = [], onChange, onShow } = $props();
   let creating = $state(false);
@@ -80,7 +81,7 @@
         <div>
           <h3>{g.title} {#if g.home}<span class="badge">home · shown at /</span>{/if}</h3>
           {#if g.description}<p class="muted desc">{g.description}</p>{/if}
-          <p class="muted small">{g.count} photo{g.count === 1 ? "" : "s"}{#if g.trackCount}{" · "}{g.trackCount} route{g.trackCount === 1 ? "" : "s"}{/if}</p>
+          <p class="muted small">{g.count} photo{g.count === 1 ? "" : "s"}{#if g.trackCount}{" · "}{g.trackCount} route{g.trackCount === 1 ? "" : "s"}{/if}{#if g.views}{" · "}<span class="views" title={exact(g.views)}><svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M1.8 12S5.9 5.4 12 5.4 22.2 12 22.2 12 18.1 18.6 12 18.6 1.8 12 1.8 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8" /></svg>{short(g.views)}<span class="sr"> {g.views === 1 ? "view" : "views"}</span></span>{/if}</p>
         </div>
       </div>
       <div class="link">
@@ -132,4 +133,10 @@
   .spacer { flex: 1; }
   .badge { font-size: 11px; text-transform: none; letter-spacing: 0; }
   .err { color: var(--danger); }
+  /* The same eye the viewer shows, so a creator recognises their own number.
+     Absent at zero rather than showing "0 views" on a gallery nobody has
+     opened yet -- that reads as a verdict. */
+  .views { display: inline-flex; align-items: center; gap: 4px; vertical-align: -2px; font-variant-numeric: tabular-nums; }
+  .views svg { opacity: 0.75; }
+  .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
