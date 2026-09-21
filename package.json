@@ -22,7 +22,9 @@
     "preserver": "node scripts/make-seed.js",
     "test:e2e": "node scripts/e2e.mjs",
     "shot:live": "node scripts/shot-live.mjs",
-    "check:live": "node scripts/check-live-offline.mjs"
+    "check:live": "node scripts/check-live-offline.mjs",
+    "test:pinch": "node scripts/pinch.mjs",
+    "pretest:pinch": "node scripts/make-seed.js"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
