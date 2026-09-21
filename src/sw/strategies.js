@@ -19,6 +19,11 @@ export function classify(url, { origin, scope = "/", dataPrefixes = [], apiPaths
   if (dataPrefixes.some((d) => p.startsWith(d))) return "data";
   if (apiPaths.some((a) => p === a)) return "data";
   if (p.startsWith(`${scope}api/`)) return "network";
+  // Signing in is a conversation with the SERVER: a redirect out to Google, the
+  // callback that sets the cookie, and sign-out. Serving the cached shell for
+  // those -- which "navigation" does, and did -- means tapping "Continue with
+  // Google" lands you back on the sign-in screen with nothing having happened.
+  if (p.startsWith(`${scope}auth/`)) return "network";
   return "navigation";
 }
 

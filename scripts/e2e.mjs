@@ -320,6 +320,17 @@ try {
   ok("Show photos filters to the gallery", (await count(page, ".cell")) === 2 && (await page.$eval(".filter select", (s) => s.value)) === friendsId);
   ok("leaving the context ended selection mode", (await page.$(".bulk")) === null && (await page.$$eval(".toolbar button", (bs) => bs.at(-1).textContent.trim())) === "Select");
 
+  // The worker's scope covers /creator/, so a navigation to the sign-in route
+  // is exactly the shape it likes to answer from cache -- and answering it
+  // means "Continue with Google" quietly reloads the app instead of going to
+  // Google. Assert the SERVER answered: with no client configured here, that
+  // is its 503, and never the app shell.
+  {
+    const controlled = await page.evaluate(() => !!navigator.serviceWorker.controller);
+    const r = await page.evaluate(async () => { const x = await fetch("/creator/auth/google", { redirect: "manual" }); return { status: x.status, type: x.type, body: (await x.text()).slice(0, 60) }; });
+    ok("the worker lets sign-in through to the server", controlled && !/<!doctype|<html/i.test(r.body), `controlled=${controlled} ${r.status} ${JSON.stringify(r.body)}`);
+  }
+
   console.log("--- creator: editor ---");
   const editId = await page.$eval(".cell", (c) => c.dataset.id);
   const editRec = (await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.id === editId);
@@ -612,7 +623,7 @@ try {
 }
 // The dead-link scenario 404s on purpose; the bad-network scenario makes uploads 502 and
 // takes servers down on purpose.
-const real = problems.filter((p) => !/favicon|nope-not-real|\/creator\/api\/upload|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION_RESET|ERR_CONNECTION_REFUSED|status of 502|status of 503/.test(p));
+const real = problems.filter((p) => !/favicon|nope-not-real|\/creator\/api\/upload|\/creator\/auth\/google|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION_RESET|ERR_CONNECTION_REFUSED|status of 502|status of 503/.test(p));
 console.log(`\nbrowser problems: ${real.length}`); for (const p of real) console.log("  ! " + p);
 if (real.length) fail++;
 console.log(fail ? `\n${fail} FAILED` : "\nall passed"); console.log(`shots: ${SHOTS}`);
