@@ -199,8 +199,9 @@
 <div class="map" data-engine="google" bind:this={container}></div>
 
 <style>
-  /* Ends above the timeline dock so Google's logo and terms stay visible (they must). */
-  .map { position: absolute; inset: 0 0 100px 0; background: #e5e3df; }
+  /* Ends above the timeline dock so Google's logo and terms stay visible (they
+     must). --dock-h is the dock's real height, so this cannot fall short of it. */
+  .map { position: absolute; inset: 0 0 var(--dock-h) 0; background: #e5e3df; }
   /* Pins are DOM nodes Google positions; they live outside Svelte's scoping.
      The marker anchors at the content's bottom centre: shift so the RING's
      centre sits on the spot (ring 44 + gap 4 + chip 20 = 68 tall). */

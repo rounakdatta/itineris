@@ -124,7 +124,14 @@
 </main>
 
 <style>
-  main { position: fixed; inset: 0; overflow: hidden; }
+  /* `inset: 0` sizes the shell to the LAYOUT viewport. Where a browser's
+     visible area is smaller than that -- a retracting mobile URL bar, and
+     whatever a desktop window manager does to a window taller than its screen
+     -- the bottom of the dock falls below the fold and the strip is sliced in
+     half. An explicit dynamic height wins over `bottom` when both are set, so
+     the shell tracks what is actually on screen. On a plain desktop window
+     100dvh is the layout viewport and nothing changes. */
+  main { position: fixed; inset: 0; height: 100dvh; overflow: hidden; }
 
   .chrome {
     position: absolute; top: 0; left: 0; right: 0; z-index: 20;
@@ -136,7 +143,7 @@
   .chrome.hidden { visibility: hidden; }
   .chrome.wall { background: var(--bg); border-bottom: 1px solid var(--line); }
   /* The worker's "Updated · Reload" pill: above the timeline dock, not on it. */
-  :global(#itineris-update) { bottom: 112px !important; }
+  :global(#itineris-update) { bottom: calc(var(--dock-h) + 18px) !important; }
   .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 12px 2px 14px; }
   .brand { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
   /* The mark is drawn on white, so it wears a small white chip on the dark bar. */
