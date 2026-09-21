@@ -284,6 +284,13 @@ try {
   await sleep(1400);
   const crowded = await overlaps();
   ok("crowded together, no two labels are left sitting on each other", crowded.n === 0, JSON.stringify(crowded));
+  // The declutter reports what it did, so "it decided nothing overlaps"
+  // cannot be confused with "it never measured anything" -- which is exactly
+  // how it shipped once, doing nothing on the real map and passing here.
+  ok("...and it says so itself, having actually measured them",
+    /^\d+\/\d+$/.test(await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.labels ?? "")) &&
+    +(await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.labels.split("/")[1])) >= 2,
+    await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.labels ?? "(unset)"));
   ok("...which it manages by showing fewer of them, not by shrinking them",
     crowded.showing < roomy.showing && crowded.showing >= 1, `${roomy.showing} with room -> ${crowded.showing} crowded`);
   ok("...but every pin is still there: the photo is never what gets hidden",

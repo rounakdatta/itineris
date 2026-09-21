@@ -155,11 +155,18 @@
   // .has-chip shifts the whole pin up by the chip's height and a chip that
   // stopped taking space would make its pin jump.
   const CLEAR = 3;   // px of air required between two labels
+  // Returns whether it could measure anything at all. Markers are mounted by
+  // Google's own code, so there is a window after a redraw where the elements
+  // exist and have no size yet -- measuring then quietly decides that no label
+  // overlaps any other, which is how the first version of this shipped doing
+  // nothing at all on the real map while passing against the stub.
   function declutter() {
-    if (!container) return;
-    const live = [...pins.values()].filter((p) => p.chip && p.mk.map);
+    if (!container) return false;
+    // Liveness from the DOM, not from marker.map: what matters is whether the
+    // thing is on screen, and that is not an API detail.
+    const live = [...pins.values()].filter((p) => p.chip && p.chip.isConnected);
     for (const p of live) p.chip.classList.remove("crowded");
-    if (live.length < 2) return;
+    if (live.length < 2) { container.dataset.labels = String(live.length); return live.length > 0; }
     const view = container.getBoundingClientRect();
     // Most photos first, then nearest the middle of the map: the biggest
     // stop keeps its name, and ties resolve the same way on every redraw
@@ -168,7 +175,7 @@
     const scored = live.map((p) => {
       const r = p.chip.getBoundingClientRect();
       return { p, r, n: p.group?.moments.length ?? 1, d: Math.hypot(r.left + r.width / 2 - mid.x, r.top + r.height / 2 - mid.y) };
-    }).filter((x) => x.r.width > 0)
+    }).filter((x) => x.r.width > 0 && x.r.height > 0)
       .sort((a, b) => b.n - a.n || a.d - b.d || (a.p.group?.key < b.p.group?.key ? -1 : 1));
     // The rings are obstacles, not candidates: a pin is never hidden, so a
     // label half behind somebody else's photo is just a label you cannot
@@ -190,13 +197,22 @@
       if (outside || behindAPin || clash) p.chip.classList.add("crowded");
       else kept.push(r);
     }
+    // A test hook, like data-idle and data-me: what the declutter itself
+    // thinks it did, readable from outside without reaching into the closure.
+    container.dataset.labels = `${kept.length}/${live.length}`;
+    return scored.length > 0;
   }
-  // After the pins settle, and after every camera move.
-  let declutterRaf = 0;
-  const declutterSoon = () => {
-    cancelAnimationFrame(declutterRaf);
-    declutterRaf = requestAnimationFrame(() => requestAnimationFrame(declutter));
-  };
+  // After the pins settle, and after every camera move -- retrying while the
+  // markers still have no size, because Google mounts them on its own
+  // schedule and a measurement taken too early is silently wrong rather than
+  // obviously wrong.
+  let declutterRaf = 0, declutterTimer = 0;
+  function declutterSoon(tries = 8) {
+    cancelAnimationFrame(declutterRaf); clearTimeout(declutterTimer);
+    declutterRaf = requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!declutter() && tries > 0) declutterTimer = setTimeout(() => declutterSoon(tries - 1), 150);
+    }));
+  }
 
   // Focus -> that place's pin grows and its chip turns dark; the camera goes there.
   $effect(() => {
