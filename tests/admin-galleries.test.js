@@ -24,7 +24,10 @@ describe("GalleryList", () => {
   });
   it("shows the share link, counts and home badge; toggles home and routes", async () => {
     render(GalleryList, { galleries, tracks: [{ id: "t1", name: "Bay loop" }, { id: "t2", name: "East Coast" }], onChange: () => {} });
-    expect(screen.getByText(/\/g\/sg2026demo$/)).toBeInTheDocument();
+    // The host is dimmed and the name is emphasised, so the link is two
+    // elements now; what matters is that the whole thing still reads right.
+    expect(screen.getByRole("code")).toHaveTextContent(/^localhost:3000\/g\/sg2026demo$/);
+    expect(screen.getByRole("link", { name: /Open/ })).toHaveAttribute("href", "http://localhost:3000/g/sg2026demo");
     expect(screen.getByText(/20 photos · 3 routes/)).toBeInTheDocument();
     expect(screen.getByText(/home · shown at \//)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: "Unset home" }));

@@ -22,16 +22,21 @@
     catch (e) { error = e.message; }
     finally { busy = false; }
   }
+  // Naming a gallery used to be window.prompt(): an unstyled OS dialog
+  // dropped into the middle of the app, with no validation and nowhere to
+  // put a hint. It is a field in the bar now, like everything else here.
   const addToGallery = () => run(async () => {
     let gid = pick;
     if (gid === "__new__") {
-      const title = window.prompt("Name the new gallery");
-      if (!title?.trim()) return;
-      gid = (await api.createGallery({ title: title.trim() })).id;
+      if (!newTitle.trim()) return;
+      gid = (await api.createGallery({ title: newTitle.trim(), momentIds: ids })).id;
+      newTitle = "";
+      return;                       // created WITH the photos already in it
     }
     if (!gid) return;
     await api.patchGallery(gid, { add: ids });
   });
+  let newTitle = $state("");
   const removeFromGallery = () => run(() => api.patchGallery(pick, { remove: ids }));
   const addTag = () => run(() => api.bulk(ids, { addTags: [tag] }));
   const setLocation = () => run(() => api.bulk(ids, { lat: +lat, lng: +lng, ...(place.trim() ? { place: place.trim() } : {}), ...(mapsUrl ? { mapsUrl } : {}), ...(placeId ? { placeId } : {}) }));
@@ -53,8 +58,14 @@
         {#each galleries as g (g.id)}<option value={g.id}>{g.title}</option>{/each}
         <option value="__new__">New gallery…</option>
       </select>
-      <button class="btn small primary" disabled={busy} onclick={addToGallery}>Add</button>
-      <button class="btn small" disabled={busy || pick === "__new__"} onclick={removeFromGallery}>Remove</button>
+      {#if pick === "__new__"}
+        <input bind:value={newTitle} maxlength="120" placeholder="Name it — e.g. Singapore, for the family" aria-label="New gallery name"
+          onkeydown={(e) => e.key === "Enter" && newTitle.trim() && addToGallery()} />
+        <button class="btn small primary" disabled={busy || !newTitle.trim()} onclick={addToGallery}>Create with {ids.length}</button>
+      {:else}
+        <button class="btn small primary" disabled={busy || !pick} onclick={addToGallery}>Add</button>
+        <button class="btn small" disabled={busy || !pick} onclick={removeFromGallery}>Remove</button>
+      {/if}
       <button class="btn small" onclick={() => (mode = null)}>Back</button>
     {:else if mode === "tag"}
       <input list="bulk-tags" bind:value={tag} placeholder="tag" aria-label="Tag to add" onkeydown={(e) => e.key === "Enter" && tag.trim() && addTag()} />

@@ -62,6 +62,18 @@ describe("MomentEditor", () => {
     await fireEvent.change(document.querySelector("select"), { target: { value: "+05:30" } });
     expect(document.querySelector("code")).toHaveTextContent("2026-03-14T08:40:12+05:30");
   });
+  it("says what is missing next to the field that fixes it, not as an alarm at the top", () => {
+    // Every photo off a phone arrives with no GPS and no zone. Two orange
+    // warning badges at the top of the editor meant opening ANY photo opened
+    // with two alarms about its perfectly ordinary state.
+    const { container } = render(MomentEditor, { moment: { ...moment, lat: null, lng: null, tz: "unknown" }, galleries });
+    expect(container.querySelector(".badge.warn")).toBeNull();
+    expect(screen.getByText(/no GPS in this photo/)).toBeInTheDocument();
+    expect(screen.getByText(/the photo did not say/)).toBeInTheDocument();
+    // ...and a photo that has both says neither.
+    const clean = render(MomentEditor, { moment, galleries });
+    expect(clean.container.querySelector(".says")).toBeNull();
+  });
   it("neighbour location buttons fill the coordinates", async () => {
     render(MomentEditor, { moment: { ...moment, lat: null, lng: null }, galleries, neighbours: { prev: { id: "p", lat: 1.3, lng: 103.9, place: "Merlion" }, next: null } });
     await fireEvent.click(screen.getByRole("button", { name: /use previous photo's/ }));
@@ -105,9 +117,17 @@ describe("MomentEditor: what Google says", () => {
     expect(screen.getByText("4.5")).toBeInTheDocument(); expect(screen.getByText(/Museum/)).toBeInTheDocument();
     expect(onSaved).toHaveBeenCalled();
   });
-  it("says when nothing was looked up yet", () => {
-    render(MomentEditor, { moment, galleries, onClose: () => {} });
-    expect(screen.getByText(/Google: not looked up yet/)).toBeInTheDocument();
+  it("keeps its own bookkeeping to itself when there is nothing to say", () => {
+    // "Google: not looked up yet" appeared on every photo with no place named
+    // yet -- which is every photo, to begin with. There is nothing to look up
+    // and nothing to do about it; it was just plumbing on show.
+    render(MomentEditor, { moment: { ...moment, place: "", google: null }, galleries, onClose: () => {} });
+    expect(screen.queryByText(/not looked up yet/)).toBeNull();
+    expect(screen.queryByTitle(/Ask Google about this place again/)).toBeNull();
+  });
+  it("...but offers the lookup as soon as there is a place to look up", () => {
+    render(MomentEditor, { moment: { ...moment, place: "Chinatown Complex", google: null }, galleries, onClose: () => {} });
+    expect(screen.getByTitle(/Ask Google about this place again/)).toBeInTheDocument();
   });
 });
 

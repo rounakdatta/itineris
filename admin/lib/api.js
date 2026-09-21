@@ -57,6 +57,15 @@ export const api = {
 
 export const dayKey = (iso) => iso.slice(0, 10);
 export const clockOf = (iso) => iso.slice(11, 16);
+// A heading somebody reads, not the key it sorts by. "Sat 21 Sep", and the
+// year only when it is not this one -- a library of this year's photos should
+// not repeat 2026 down the whole page.
+export function dayLabel(key, now = new Date()) {
+  const d = new Date(`${key}T00:00:00Z`);
+  if (Number.isNaN(+d)) return key;
+  const thisYear = d.getUTCFullYear() === now.getUTCFullYear();
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", ...(thisYear ? {} : { year: "numeric" }), timeZone: "UTC" });
+}
 export const mediaUrl = (rel) => `/${rel}`;
 // A still for any moment. A video's `src` is the .mp4 itself, which an <img>
 // cannot draw -- it has to be one of the poster tiers. Everything that shows a

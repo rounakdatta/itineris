@@ -53,7 +53,12 @@ writeFileSync(path.join(nd, "docroot/config.json"), JSON.stringify({ googleMapsA
 writeFileSync(path.join(nd, "conf/security-headers.conf"), readFileSync(path.join(ROOT, "nginx/security-headers.conf")));
 writeFileSync(path.join(nd, "conf/default.conf"), readFileSync(path.join(ROOT, "nginx/default.conf"), "utf8")
   .replaceAll("/etc/nginx/security-headers.conf", path.join(nd, "conf/security-headers.conf"))
-  .replace("root /usr/share/nginx/html;", `root ${path.join(nd, "docroot")};`).replace("listen 8080;", "listen 127.0.0.1:4341;"));
+  .replace("root /usr/share/nginx/html;", `root ${path.join(nd, "docroot")};`).replace("listen 8080;", "listen 127.0.0.1:4341;")
+  // Traefik path-routes /creator on the same host in production (see the
+  // homelab's ingress-admin.yaml), and the viewer posts a view there. Without
+  // this the harness is two origins where the real thing is one, and the page
+  // logs a 405 on every load.
+  .replace("location / {", `location /creator/ {\n        proxy_pass http://127.0.0.1:${SRV};\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $remote_addr;\n    }\n\n    location / {`));
 writeFileSync(path.join(nd, "conf/nginx.conf"), `pid ${nd}/nginx.pid;\nerror_log ${nd}/logs/error.log;\nevents {}\nhttp {\n  include ${NGINX}/conf/mime.types;\n  access_log ${nd}/logs/access.log;\n  client_body_temp_path ${nd}/tmp; proxy_temp_path ${nd}/tmp; fastcgi_temp_path ${nd}/tmp; uwsgi_temp_path ${nd}/tmp; scgi_temp_path ${nd}/tmp;\n  include ${nd}/conf/default.conf;\n}\n`);
 const nginx = spawn(path.join(NGINX, "bin/nginx"), ["-c", path.join(nd, "conf/nginx.conf"), "-p", nd, "-g", "daemon off;"], { stdio: "ignore" });
 for (let i = 0; i < 300; i++) { try { if ((await fetch(`${V}/healthz`)).ok) break; } catch { /* starting */ } await sleep(100); }

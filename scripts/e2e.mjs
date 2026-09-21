@@ -306,16 +306,22 @@ try {
   await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".cell");
   ok("signed-in identity shown", (await text(page, "header")).includes(WHO));
-  ok("20 photos, none private (all in the demo gallery)", (await count(page, ".cell")) === 20 && (await count(page, ".flag.private")) === 0);
+  // A tile marks what is exceptional, not the state every photo arrives in:
+  // these are all in the demo gallery, so each carries the "published" mark
+  // and nothing else.
+  ok("20 photos, each marked as being in a gallery", (await count(page, ".cell")) === 20 && (await count(page, ".flag.out")) === 20, `${await count(page, ".cell")} cells, ${await count(page, ".flag.out")} marked`);
   await settle(page); await shot(page, `${SHOTS}/10-admin-photos.png`);
   await clickText(page, ".toolbar button", "Select"); await sleep(200);
   const cells = await page.$$(".cell"); await tapEl(page, cells[0]); await tapEl(page, cells[1]); await sleep(200);
   ok("bulk bar counts the selection", (await text(page, ".bulk strong")) === "2 selected", await text(page, ".bulk strong"));
   await settle(page); await shot(page, `${SHOTS}/11-admin-select.png`);
   await clickText(page, ".bulk button", "Gallery"); await sleep(200);
-  await page.select(".bulk select", "__new__");
-  page.once("dialog", (d) => d.accept("Friends"));
-  await clickText(page, ".bulk button", "Add");
+  await page.select(".bulk select", "__new__"); await sleep(200);
+  // Named in the bar, not in an OS prompt. If a dialog ever appears again the
+  // run should fail rather than quietly answer it.
+  page.once("dialog", async (d) => { ok("no operating-system prompt for a gallery name", false, d.message()); await d.dismiss(); });
+  await page.type('.bulk input[aria-label="New gallery name"]', "Friends");
+  await clickText(page, ".bulk button", "Create with 2");
   ok("new gallery appears in the filter", await waitFor(page, () => [...document.querySelectorAll(".filter option")].some((o) => /Friends \(2\)/.test(o.textContent))));
 
   console.log("--- creator: galleries tab ---");
@@ -437,6 +443,11 @@ try {
   await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
 
   console.log("--- creator: a Google Maps link pasted for the next photos ---");
+  // The place box is one tap away rather than permanently open above the
+  // photos it is about.
+  ok("the place picker is folded away until asked for", (await page.$('.drop input[aria-label="Search a place"]')) === null);
+  await clickText(page, ".drop button", "Pin the next photos to a place");
+  await page.waitForSelector('.drop input[aria-label="Search a place"]', { timeout: 5000 });
   await page.$eval('.drop input[aria-label="Search a place"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);
   await page.focus('.drop input[aria-label="Search a place"]'); await page.keyboard.press("Enter");
   const bannerUp = () => /Lau Pa Sat/.test(document.querySelector(".shared")?.textContent ?? "") && /Add photos at “Lau Pa Sat”/.test(document.querySelector(".drop .btn.primary")?.textContent ?? "");
@@ -540,8 +551,9 @@ try {
   ok("a photo arrived without GPS (as phones do)", !!noGps, noGps?.id);
   await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
   await tapEl(page, await page.$(`.cell[data-id="${noGps.id}"]`));
-  await clickText(page, ".bulk button", "Gallery"); await page.select(".bulk select", "__new__");
-  page.once("dialog", (d) => d.accept("Nowhere in particular")); await clickText(page, ".bulk button", "Add");
+  await clickText(page, ".bulk button", "Gallery"); await page.select(".bulk select", "__new__"); await sleep(200);
+  await page.type('.bulk input[aria-label="New gallery name"]', "Nowhere in particular");
+  await clickText(page, ".bulk button", "Create with 1");
   ok("gallery of one unplaced photo created", await waitFor(page, () => [...document.querySelectorAll(".filter option")].some((o) => /Nowhere in particular \(1\)/.test(o.textContent))));
   const nowhere = (await (await fetch(`${A}/creator/api/galleries`, { headers: { "remote-email": WHO } })).json()).find((g) => g.title === "Nowhere in particular");
   await page.goto(`${V}/g/${nowhere.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".wall .cell", { timeout: 20000 });
