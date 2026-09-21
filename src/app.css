@@ -20,10 +20,18 @@
   color-scheme: dark;
 }
 /* Room to breathe on a laptop or a 4K screen: postage stamps are a phone
-   compromise, not a look. The gate is width, not pointer -- a big tablet wants
-   the bigger tiles too. */
-@media (min-width: 760px) {
+   compromise, not a look. The gate is the screen, not the pointer -- a big
+   tablet wants the bigger tiles too.
+   min-height is load-bearing: a phone held sideways is 844x390, which clears
+   760px wide, and the taller dock then ate a THIRD of the screen. Anything
+   under 600px tall is a phone in landscape, and it keeps the compact strip. */
+@media (min-width: 760px) and (min-height: 600px) {
   :root { --tick-w: 76px; --tick-h: 102px; }
+}
+/* A phone on its side has ~390px of height to spend and the top chrome already
+   wants 96 of them. Trim the strip so the map keeps the majority of the screen. */
+@media (max-height: 460px) {
+  :root { --tick-w: 44px; --tick-h: 58px; --dock-top: 8px; }
 }
 * { box-sizing: border-box; }
 html, body, #app {
