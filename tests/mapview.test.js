@@ -35,6 +35,22 @@ describe("MapView", () => {
   });
 });
 
+describe("closing a story", () => {
+  it("puts the whole trip back on screen", async () => {
+    // Same as the Google engine: opening a story flies to one pin and nothing
+    // used to fly back, leaving the rest of the gallery off screen.
+    trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.galleryId = "g1"; trip.status = "ready";
+    render(MapView); await flush(); await tick(); await flush();
+    const map = maplibregl.Map.instances[0];
+    const fitsBefore = map.camera.filter((c) => c[0] === "fitBounds").length;
+    trip.openStory("b"); await tick(); await flush();
+    expect(map.camera.some((c) => c[0] === "flyTo")).toBe(true);
+    expect(map.camera.filter((c) => c[0] === "fitBounds")).toHaveLength(fitsBefore);
+    trip.closeStory(); await tick(); await flush();
+    expect(map.camera.filter((c) => c[0] === "fitBounds").length).toBeGreaterThan(fitsBefore);
+  });
+});
+
 describe("tapping pins", () => {
   it("the visitor's position becomes a dot, and only the first fix moves the camera", async () => {
     trip.moments = structuredClone(moments); trip.galleryId = "g1"; trip.status = "ready";

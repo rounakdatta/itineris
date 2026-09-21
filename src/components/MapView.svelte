@@ -162,6 +162,17 @@
     }
   });
 
+  // The whole selection on screen at once. Unlike Google's, this map is
+  // full-bleed, so the padding has to clear the dock at the bottom itself.
+  function fitAll() {
+    const box = bboxOf(trip.visibleMoments, trip.visibleTracks);
+    if (!box) return;
+    map.fitBounds(
+      [[box[0], box[1]], [box[2], box[3]]],
+      { padding: { top: 90, bottom: 130, left: 40, right: 40 }, maxZoom: 15, duration: 900 }
+    );
+  }
+
   // Filter changed, or data arrived -> refit. Depends on the INPUTS (filters,
   // which gallery is loaded), not on the derived selection, so it does not
   // re-fire on every recomputation. `trip.loaded`/`galleryId` matter because a
@@ -171,13 +182,19 @@
     trip.loaded;
     trip.galleryId;
     if (!ready || !map) return;
+    untrack(fitAll);
+  });
+
+  // Opening a story flies the camera to one pin; closing it brings the whole
+  // trip back, so the map is never left stranded on the last place you looked
+  // at with the rest of the gallery off screen. (Same rule as GoogleMapView.)
+  let storyWasOpen = false;
+  $effect(() => {
+    const open = trip.storyOpen;
+    if (!ready || !map) { storyWasOpen = open; return; }
     untrack(() => {
-      const box = bboxOf(trip.visibleMoments, trip.visibleTracks);
-      if (!box) return;
-      map.fitBounds(
-        [[box[0], box[1]], [box[2], box[3]]],
-        { padding: { top: 90, bottom: 130, left: 40, right: 40 }, maxZoom: 15, duration: 900 }
-      );
+      if (storyWasOpen && !open) fitAll();
+      storyWasOpen = open;
     });
   });
 </script>

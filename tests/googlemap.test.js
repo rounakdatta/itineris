@@ -54,6 +54,19 @@ describe("GoogleMapView", () => {
     expect(FakePolyline.all).toHaveLength(2);
     expect(map.camera.some((c) => c[0] === "fitBounds")).toBe(true);
   });
+  it("closing a story puts the whole trip back on screen", async () => {
+    // Opening a story flies the camera to that one pin at zoom 15. Nothing used
+    // to bring it back, so the map stayed stranded there with the rest of the
+    // gallery's pins off screen, and every story left it somewhere else again.
+    render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
+    const map = FakeMap.instances[0];
+    const fitsBefore = map.camera.filter((c) => c[0] === "fitBounds").length;
+    click(byTitle("Maxwell").content.querySelector(".chip")); await tick();
+    expect(map.camera.some((c) => c[0] === "panTo" && c[1].lat === 1.2803)).toBe(true);
+    expect(map.camera.filter((c) => c[0] === "fitBounds")).toHaveLength(fitsBefore);   // still zoomed in
+    trip.closeStory(); await tick(); await flush();
+    expect(map.camera.filter((c) => c[0] === "fitBounds").length).toBeGreaterThan(fitsBefore);
+  });
   it("tap the ring or the chip: the story opens at once (no place card); bare map clears", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
     const map = FakeMap.instances[0], maxwell = byTitle("Maxwell");
