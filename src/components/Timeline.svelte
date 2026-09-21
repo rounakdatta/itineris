@@ -28,7 +28,7 @@
         style:--accent={TAG_COLOR[m.tags[0]] ?? "#e6e6e6"}
         onclick={() => onTick(m)}
         aria-label={`${clockOf(m.t)} ${m.place || m.caption || ""}`.trim()}
-        title={trip.focusId === m.id ? "Open" : `${m.place}${m.caption ? " — " + m.caption : ""}`}
+        title={trip.focusId === m.id ? "Open" : [m.place, m.caption].filter(Boolean).join(" — ")}
       >
         <img src={mediaUrl(m.media.thumb ?? m.media.src)} alt="" loading="lazy" />
         {#if m.media.type === "video"}<span class="vid" aria-hidden="true">▶</span>{/if}
@@ -45,13 +45,19 @@
 <style>
   .dock {
     position: absolute; left: 0; right: 0; bottom: 0; z-index: 20;
-    padding: 12px 0 max(10px, env(safe-area-inset-bottom));
+    /* Height comes from --dock-h in app.css, which the map's bottom reserve
+       reads too. Change the padding here and you must change it there. */
+    padding: var(--dock-top) 0 var(--dock-bottom);
     background: linear-gradient(to top, rgba(11, 13, 16, 0.94) 40%, transparent);
   }
-  .strip { display: flex; gap: 8px; padding: 0 12px; overflow-x: auto; scrollbar-width: none; scroll-padding: 0 12px; }
+  /* `safe` centring: a few photos sit in the middle of a wide screen instead of
+     hugging the far left, but a strip wider than the screen still starts at the
+     left edge with nothing scrolled out of reach. A browser without `safe`
+     drops the declaration and falls back to flex-start, which is the old look. */
+  .strip { display: flex; justify-content: safe center; gap: 8px; padding: 0 12px; overflow-x: auto; scrollbar-width: none; scroll-padding: 0 12px; }
   .strip::-webkit-scrollbar { display: none; }
   .tick {
-    flex: 0 0 auto; position: relative; width: 54px; height: 72px; padding: 0;
+    flex: 0 0 auto; position: relative; width: var(--tick-w); height: var(--tick-h); padding: 0;
     border: 2px solid transparent; border-radius: 9px; overflow: hidden; background: #14181e; cursor: pointer;
     opacity: 0.62; transition: opacity 160ms, transform 160ms, border-color 160ms;
   }

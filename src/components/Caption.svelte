@@ -14,9 +14,46 @@
   const vars = $derived(captionVars(style));
 
   let layer = $state(null);
+  let box = $state(null);
   let dragging = $state(false);
   let turning = $state(false);
   let grab = null;   // pointer-to-anchor offset at pointerdown, in fractions, so the caption does not jump under the finger
+
+  // X_RANGE/Y_RANGE clamp the caption's CENTRE, which says nothing about where
+  // its box ends up: a wide caption dragged to a corner, or one long enough to
+  // fill the frame, ran off the edge of the photo and lost its first words.
+  // So the box is nudged back inside by the smallest amount that fits. The
+  // stored x/y are never touched -- they are the author's intent, and the
+  // admin's preview and the story must agree -- only the painted position is
+  // bounded, and the nudge is recomputed from scratch every time so moving
+  // back towards the middle releases it.
+  let nx = $state(0), ny = $state(0);
+  let framed = $state(0);   // bumped when the frame itself resizes (rotation, a resized window)
+  $effect(() => {
+    if (!layer || typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(() => (framed += 1));
+    ro.observe(layer);
+    return () => ro.disconnect();
+  });
+  $effect(() => {
+    void text; void st.x; void st.y; void st.rot; void st.size; void st.font; void st.align; void st.bg; void framed;
+    if (!box || !layer) return;
+    const W = layer.clientWidth, H = layer.clientHeight;
+    // offsetWidth/Height are the UNtransformed box, so this is immune to the
+    // entrance animation and to the rotation itself.
+    const bw = box.offsetWidth, bh = box.offsetHeight;
+    if (!W || !H || !bw || !bh) return;
+    const rad = (st.rot * Math.PI) / 180, c = Math.abs(Math.cos(rad)), s = Math.abs(Math.sin(rad));
+    const w = bw * c + bh * s, h = bw * s + bh * c;   // the rotated box's axis-aligned extent
+    const fit = (centre, size, extent) => {
+      if (size >= extent) return extent / 2 - centre;   // bigger than the frame: centred is the least bad
+      const lo = centre - size / 2, hi = centre + size / 2;
+      return lo < 0 ? -lo : hi > extent ? extent - hi : 0;
+    };
+    const dx = Math.round(fit(st.x * W, w, W)), dy = Math.round(fit(st.y * H, h, H));
+    if (dx !== nx) nx = dx;
+    if (dy !== ny) ny = dy;
+  });
 
   const SNAP_DEG = 15, SNAP_WITHIN = 3.5;   // tidy angles are easy to hit; hold Alt for a free one
   function frac(e) { const r = layer.getBoundingClientRect(); return { x: (e.clientX - r.left) / (r.width || 1), y: (e.clientY - r.top) / (r.height || 1) }; }
@@ -72,9 +109,13 @@
 
 {#if text}
   <div class="cap-layer" class:editable bind:this={layer}>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- (the tabindex and role="button" are set by the same `editable` flag; the
+         compiler cannot see that they always arrive together) -->
     <div
       class="cap" class:editable class:selected class:dragging class:animate
-      style={`${vars};--cap-delay:${120 + delay}ms`}
+      bind:this={box}
+      style={`${vars};--cap-delay:${120 + delay}ms;--cap-nx:${nx}px;--cap-ny:${ny}px`}
       role={editable ? "button" : null} tabindex={editable ? 0 : null}
       aria-label={editable ? "Caption. Drag to place it; arrow keys nudge, [ and ] turn it." : null}
       onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onkeydown={key}
@@ -89,7 +130,11 @@
   .cap-layer { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
   .cap {
     position: absolute; left: var(--cap-x); top: var(--cap-y);
-    transform: translate(-50%, -50%) rotate(var(--cap-rot));
+    /* The two translates are pure and commute with each other, so the nudge
+       that keeps the box on the photo is a screen-space shift whatever the
+       angle; it must appear in the keyframes below as well, or the entrance
+       animation drops it (the same trap the rotation had). */
+    transform: translate(-50%, -50%) translate(var(--cap-nx, 0px), var(--cap-ny, 0px)) rotate(var(--cap-rot));
     max-width: 86%; width: max-content; box-sizing: border-box;
     font-family: var(--cap-font); font-weight: var(--cap-weight); font-style: var(--cap-style); text-align: var(--cap-align);
     text-transform: var(--cap-transform); letter-spacing: var(--cap-spacing);
@@ -100,8 +145,8 @@
   }
   .cap.animate { animation: cap-in 460ms cubic-bezier(.2,.8,.2,1) var(--cap-delay, 120ms) both; }
   @keyframes cap-in {
-    from { opacity: 0; transform: translate(-50%, -50%) translateY(10px) rotate(var(--cap-rot)); }
-    to { opacity: 1; transform: translate(-50%, -50%) translateY(0) rotate(var(--cap-rot)); }
+    from { opacity: 0; transform: translate(-50%, -50%) translate(var(--cap-nx, 0px), var(--cap-ny, 0px)) translateY(10px) rotate(var(--cap-rot)); }
+    to { opacity: 1; transform: translate(-50%, -50%) translate(var(--cap-nx, 0px), var(--cap-ny, 0px)) translateY(0) rotate(var(--cap-rot)); }
   }
   .cap.editable { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; outline: 1.5px dashed rgba(255, 255, 255, 0.35); outline-offset: 5px; }
   .cap.editable.selected { outline: 1.5px dashed rgba(255, 255, 255, 0.85); }

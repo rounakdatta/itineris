@@ -106,7 +106,8 @@
 </script>
 
 <div class="scrim" onclick={onClose} role="presentation"></div>
-<aside class="sheet" role="dialog" aria-modal="true" aria-label="Edit moment">
+<!-- A <div>, not an <aside>: role="dialog" on a landmark element is invalid ARIA. -->
+<div class="sheet" role="dialog" aria-modal="true" aria-label="Edit moment" tabindex="-1">
   <div class="grab" aria-hidden="true"></div>
   <div class="top">
     <!-- A still, never the video file. A queued item carries its own poster,
@@ -120,8 +121,8 @@
       <div class="shot empty" aria-hidden="true">{isVideo(moment.media) ? "🎬" : "📷"}</div>
     {/if}
     <div class="meta">
-      <div class="muted small">{moment.filename ?? moment.id}{#if moment.camera} · {moment.camera}{/if}</div>
-      {#if !pending}<div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy} · by {moment.uploadedBy}{/if}</div>{/if}
+      <div class="muted small">{moment.filename ?? moment.id}{#if moment.camera}{" · "}{moment.camera}{/if}</div>
+      {#if !pending}<div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy}{" · by "}{moment.uploadedBy}{/if}</div>{/if}
       {#if pending}<span class="badge">waiting to upload — edits are kept on this device</span>{/if}
       {#if moment.tz === "unknown"}<span class="badge warn">time zone unknown — check the time</span>{/if}
       {#if moment.lat === null}<span class="badge warn">no GPS — set a location</span>{/if}
@@ -179,7 +180,7 @@
     <MapPicker lat={numLat} lng={numLng} hint={neighbours.prev ?? neighbours.next} {known} {placesEnabled} onChange={(a, b) => { lat = a; lng = b; }} onPlace={(name) => (place = name)} onLink={(u) => (mapsUrl = u)} onPick={pickPlace} />
   {/if}
   {#if placeId}
-    <p class="muted small linked">Pinned to a Google place{#if google?.name} — <b>{google.name}</b>{/if}: photos here share one pin. <button type="button" class="btn tiny" onclick={() => { placeId = null; mapsUrl = null; }}>Unpin</button></p>
+    <p class="muted small linked">Pinned to a Google place{#if google?.name}{" — "}<b>{google.name}</b>{/if}: photos here share one pin. <button type="button" class="btn tiny" onclick={() => { placeId = null; mapsUrl = null; }}>Unpin</button></p>
   {:else if mapsUrl}
     <p class="muted small linked"><a href={mapsUrl} target="_blank" rel="noopener">Linked to the exact place on Google Maps ↗</a> <button type="button" class="btn tiny" onclick={() => (mapsUrl = null)}>Unlink</button></p>
   {/if}
@@ -209,7 +210,7 @@
       <button class="btn primary" disabled={saving || !dirty} onclick={save}>{saving ? "Saving…" : "Save"}</button>
     {/if}
   </div>
-</aside>
+</div>
 
 <style>
   .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 20; }

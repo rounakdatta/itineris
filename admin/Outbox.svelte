@@ -67,11 +67,17 @@
     await outbox.add(files, { galleries: gallery ? [gallery.id] : [], location });
     if (input) input.value = "";
   }
-  const signIn = () => location.reload();   // a full navigation goes through tinyauth; the queue is in IndexedDB and survives
+  // A full navigation goes through tinyauth; the queue is in IndexedDB and survives.
+  // `globalThis.location`, NOT `location`: this component takes a prop called
+  // `location` (the place new photos are pinned to), which shadows the global --
+  // the same trap as the `state` prop above, and it left this button throwing.
+  const signIn = () => globalThis.location.reload();
 </script>
 
+<!-- Drag-and-drop is the extra; the button inside is the accessible way in, so
+     this is a labelled region rather than anything that claims to be operable. -->
 <section
-  class="drop" class:over
+  class="drop" class:over aria-label="Add photos"
   ondragover={(e) => { e.preventDefault(); over = true; }}
   ondragleave={() => (over = false)}
   ondrop={(e) => { e.preventDefault(); over = false; pick(e.dataTransfer.files); }}
@@ -114,7 +120,8 @@
               {:else}
                 <span class="flag wait" title="waiting">⏳</span>
               {/if}
-              {#if !Number.isFinite(it.meta?.lat) || !Number.isFinite(it.meta?.lng)}<span class="flag loc" title="No location in this photo's metadata">⌖</span>{/if}
+              {#if !Number.isFinite(it.meta?.lat) || !Number.isFinite(it.meta?.lng)}<!-- Drawn, not U+2316: that crosshair is missing from many system fonts. -->
+              <span class="flag loc" title="No location in this photo's metadata"><svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2.6" /><path d="M12 1.6v3.6M12 18.8v3.6M1.6 12h3.6M18.8 12h3.6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></svg></span>{/if}
               {#if it.meta?.tags?.length}<span class="tags">{it.meta.tags.join(" · ")}</span>{/if}
             </button>
             <button class="remove" onclick={() => outbox.remove(it.id)} aria-label={`Remove ${it.name} from the queue`}>✕</button>
@@ -122,7 +129,7 @@
         {/each}
       </div>
       {#if noLoc}
-        <p class="muted small">⌖ {noLoc === total ? (total === 1 ? "This photo has" : "These photos have") : `${noLoc} of these ${noLoc === 1 ? "has" : "have"}`} no location in the file — phones remove GPS from photos picked in a browser. Tap a photo to place it, or if you're still there:</p>
+        <p class="muted small"><span class="cross" aria-hidden="true"><svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2.6" /><path d="M12 1.6v3.6M12 18.8v3.6M1.6 12h3.6M18.8 12h3.6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></svg></span> {noLoc === total ? (total === 1 ? "This photo has" : "These photos have") : `${noLoc} of these ${noLoc === 1 ? "has" : "have"}`} no location in the file — phones remove GPS from photos picked in a browser. Tap a photo to place it, or if you're still there:</p>
         <p class="small"><button class="btn small" onclick={useMyLocation} disabled={locBusy}>{locBusy ? "Locating…" : `📍 Use my location for ${noLoc === total ? (total === 1 ? "it" : "all") : `these ${noLoc}`}`}</button></p>
       {/if}
       {#if locNote}<p class="muted small" role="status">{locNote}</p>{/if}
@@ -157,6 +164,8 @@
   .flag { position: absolute; left: 5px; top: 5px; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 6px; background: rgba(0, 0, 0, 0.65); color: #fff; font-style: normal; }
   .flag.err { background: var(--danger); font-weight: 700; }
   .flag.loc { left: auto; right: 5px; font-size: 12px; color: #ffb347; }
+  .flag svg { display: block; }   /* an inline svg would sit on the text baseline */
+  .cross { display: inline-block; vertical-align: -1px; color: #ffb347; }
   .vid { position: absolute; right: 5px; bottom: 26px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 8px; display: grid; place-items: center; }
   .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255, 255, 255, 0.15); }
   .fill { display: block; height: 100%; background: var(--accent); transition: width 160ms linear; }

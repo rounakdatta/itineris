@@ -29,7 +29,7 @@ describe("admin App", () => {
     expect(screen.getByRole("button", { name: /Photos/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Galleries/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add photos" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByRole("listitem").length).toBe(1));
+    await waitFor(() => expect(screen.getAllByLabelText(/^\d\d:\d\d /).length).toBe(1));   // the one photo in the library, as a cell button
     expect(screen.queryByRole("status", { name: /Upload queue/ })).toBeNull();
   });
 });

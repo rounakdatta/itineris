@@ -8,7 +8,14 @@
   let editingId = $state(null);
   let busy = $state(false);
   let error = $state(null);
-  let copied = $state(null);
+  let copied = $state(null);     // the gallery whose link is on the clipboard
+  let copyFailed = $state(null); // ...or the one whose copy the browser refused
+
+  // `title`/`description` are shared by the new-gallery form and the edit form,
+  // so both have to be seeded when they open: editing a gallery and cancelling
+  // used to leave its title sitting in the New gallery form.
+  function startCreate() { title = ""; description = ""; creating = true; }
+  function startEdit(g) { title = g.title; description = g.description ?? ""; editingId = g.id; }
 
   async function run(fn) { busy = true; error = null; try { await fn(); onChange?.(); } catch (e) { error = e.message; } finally { busy = false; } }
   const create = () => run(async () => { await api.createGallery({ title, description, home: galleries.length === 0 }); title = ""; description = ""; creating = false; });
@@ -16,13 +23,17 @@
   const setHome = (g) => run(() => api.patchGallery(g.id, { home: !g.home }));
   const remove = (g) => { if (window.confirm(`Delete “${g.title}”? Its link stops working. Photos stay in the library.`)) run(() => api.removeGallery(g.id)); };
   const toggleTrack = (g, tid) => run(() => api.patchGallery(g.id, (g.trackIds ?? []).includes(tid) ? { removeTracks: [tid] } : { addTracks: [tid] }));
-  async function copy(g) { copied = (await copyText(galleryUrl(g.id))) ? g.id : "fail"; setTimeout(() => (copied = null), 1600); }
+  async function copy(g) {
+    const ok = await copyText(galleryUrl(g.id));
+    copied = ok ? g.id : null; copyFailed = ok ? null : g.id;
+    setTimeout(() => { copied = null; copyFailed = null; }, 1600);
+  }
 </script>
 
 <section class="intro">
   <p class="muted">A gallery is a link. Put any subset of photos in it, share the link with one group, make another for another group. Photos can be in as many as you like, and uploads are private until they're in one.</p>
   {#if !creating}
-    <button class="btn primary" onclick={() => (creating = true)}>New gallery</button>
+    <button class="btn primary" onclick={startCreate}>New gallery</button>
   {:else}
     <form class="new" onsubmit={(e) => { e.preventDefault(); if (title.trim()) create(); }}>
       <input bind:value={title} placeholder="Title — e.g. Singapore, for the family" maxlength="120" aria-label="Title" />
@@ -51,7 +62,7 @@
       </div>
       <div class="link">
         <code>{galleryUrl(g.id)}</code>
-        <button class="btn small" onclick={() => copy(g)}>{copied === g.id ? "Copied" : copied === "fail" ? "Copy failed" : "Copy link"}</button>
+        <button class="btn small" onclick={() => copy(g)}>{copied === g.id ? "Copied" : copyFailed === g.id ? "Copy failed" : "Copy link"}</button>
         <a class="btn small" href={galleryUrl(g.id)} target="_blank" rel="noopener">Open ↗</a>
       </div>
       {#if tracks.length}
@@ -64,7 +75,7 @@
       {/if}
       <div class="actions">
         <button class="btn small" onclick={() => onShow?.(g.id)}>Show photos</button>
-        <button class="btn small" onclick={() => { editingId = g.id; title = g.title; description = g.description ?? ""; }}>Edit</button>
+        <button class="btn small" onclick={() => startEdit(g)}>Edit</button>
         <button class="btn small" onclick={() => setHome(g)} disabled={busy}>{g.home ? "Unset home" : "Make home"}</button>
         <span class="spacer"></span>
         <button class="btn small danger" onclick={() => remove(g)} disabled={busy}>Delete</button>

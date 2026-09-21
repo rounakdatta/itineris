@@ -230,6 +230,18 @@ try {
   ok("a count badge where several photos share the place", (await count(gp, ".gpin .ring .n")) === [...perPlace.values()].filter((n) => n > 1).length);
   ok("every ring is bright: nothing seen yet", (await count(gp, ".gpin .ring.seen")) === 0 && (await count(gp, ".gpin .ring")) === perPlace.size);
   ok("the pins are the photos", await gp.$eval(".gpin .ring img", (i) => /\/media\//.test(i.getAttribute("src"))));
+  // The map's bottom reserve and the dock's height were two independent magic
+  // numbers (100px vs 12 + 72 + max(10, safe-area)); they now both come from
+  // --dock-h. Flush means Google's logo and terms are never under the strip,
+  // and the strip is never sliced by the bottom of the window.
+  {
+    const g = await gp.evaluate(() => {
+      const box = (s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r && { t: Math.round(r.top), b: Math.round(r.bottom), h: Math.round(r.height) }; };
+      return { map: box(".map"), dock: box(".dock"), tick: box(".tick"), vh: innerHeight };
+    });
+    ok("the map ends exactly where the photo strip begins", g.map.b === g.dock.t, `map ${g.map.b}, dock ${g.dock.t}`);
+    ok("...and the strip is inside the window, not sliced by it", g.tick.b <= g.vh, `tick ${g.tick.b}, viewport ${g.vh}`);
+  }
   // Instagram: tap the ring and the story opens, at once.
   await (await gp.$(`${pinOf("Maxwell Food Centre")} .ring`)).tap(); await gp.waitForSelector(".story", { timeout: 10000 });
   ok("tap the ring: the story opens straight away", /Maxwell/.test(await text(gp, ".story header")), await text(gp, ".story header"));

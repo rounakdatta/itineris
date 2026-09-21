@@ -4,7 +4,34 @@
   --line: rgba(255, 255, 255, 0.1);
   --text: #e8eaed;
   --muted: #93a1b0;
+
+  /* The dock's height is derived, never guessed. It used to be spelled out as
+     a bare "100px" in three other files -- the map's bottom reserve, the
+     MapLibre attribution offset and the update pill -- while the dock itself
+     was 12 + 72 + max(10, safe-area) = 94px and GREW with the safe-area inset,
+     so on a phone with a home indicator the strip sat 24px into the map and
+     over Google's logo. One source of truth, and they cannot drift again. */
+  --tick-w: 54px;
+  --tick-h: 72px;
+  --dock-top: 12px;
+  --dock-bottom: max(10px, env(safe-area-inset-bottom));
+  --dock-h: calc(var(--dock-top) + var(--tick-h) + var(--dock-bottom));
+
   color-scheme: dark;
+}
+/* Room to breathe on a laptop or a 4K screen: postage stamps are a phone
+   compromise, not a look. The gate is the screen, not the pointer -- a big
+   tablet wants the bigger tiles too.
+   min-height is load-bearing: a phone held sideways is 844x390, which clears
+   760px wide, and the taller dock then ate a THIRD of the screen. Anything
+   under 600px tall is a phone in landscape, and it keeps the compact strip. */
+@media (min-width: 760px) and (min-height: 600px) {
+  :root { --tick-w: 76px; --tick-h: 102px; }
+}
+/* A phone on its side has ~390px of height to spend and the top chrome already
+   wants 96 of them. Trim the strip so the map keeps the majority of the screen. */
+@media (max-height: 460px) {
+  :root { --tick-w: 44px; --tick-h: 58px; --dock-top: 8px; }
 }
 * { box-sizing: border-box; }
 html, body, #app {

@@ -40,7 +40,9 @@
           zoom: 2,
           mapId: config.googleMapsMapId || "DEMO_MAP_ID",   // AdvancedMarkerElement needs a vector map id
           disableDefaultUI: true,
-          zoomControl: !!globalThis.matchMedia?.("(pointer: fine)")?.matches,
+          // Not `pointer: fine`: `pointer: none` (keyboard only, a TV remote) is
+          // exactly the visitor who cannot zoom without the buttons. See MapView.
+          zoomControl: !globalThis.matchMedia?.("(pointer: coarse)")?.matches,
           gestureHandling: "greedy",
           clickableIcons: true,      // Google's own place labels stay tappable: that IS the point of Google Maps
           keyboardShortcuts: false,
@@ -197,8 +199,9 @@
 <div class="map" data-engine="google" bind:this={container}></div>
 
 <style>
-  /* Ends above the timeline dock so Google's logo and terms stay visible (they must). */
-  .map { position: absolute; inset: 0 0 100px 0; background: #e5e3df; }
+  /* Ends above the timeline dock so Google's logo and terms stay visible (they
+     must). --dock-h is the dock's real height, so this cannot fall short of it. */
+  .map { position: absolute; inset: 0 0 var(--dock-h) 0; background: #e5e3df; }
   /* Pins are DOM nodes Google positions; they live outside Svelte's scoping.
      The marker anchors at the content's bottom centre: shift so the RING's
      centre sits on the spot (ring 44 + gap 4 + chip 20 = 68 tall). */

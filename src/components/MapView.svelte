@@ -27,9 +27,11 @@
         attributionControl: { compact: true },
       });
 
-      // Zoom buttons only where there is a mouse; on a phone they cost space and
-      // pinch does the job.
-      if (globalThis.matchMedia?.("(pointer: fine)")?.matches) {
+      // Zoom buttons everywhere except a touchscreen, where they cost space and
+      // pinch does the job. The test is for coarse, NOT for fine: `pointer: none`
+      // is a device with no pointing device at all -- a keyboard, a TV remote --
+      // and that is precisely the visitor who cannot zoom without the buttons.
+      if (!globalThis.matchMedia?.("(pointer: coarse)")?.matches) {
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
       }
 
@@ -192,9 +194,9 @@
     font-size: 10px;
     background: rgba(11, 13, 16, 0.7);
   }
-  /* Keep Traefik-free chrome clear of the dock: the attribution sits above the timeline. */
-  .map :global(.maplibregl-ctrl-bottom-right) { bottom: 100px; }
-  .map :global(.maplibregl-ctrl-bottom-left) { bottom: 100px; }
+  /* Attribution and zoom controls sit above the timeline, whatever height it is. */
+  .map :global(.maplibregl-ctrl-bottom-right) { bottom: var(--dock-h); }
+  .map :global(.maplibregl-ctrl-bottom-left) { bottom: var(--dock-h); }
   .map :global(.maplibregl-ctrl-attrib a) { color: #8b9dc3; }
   .map :global(.maplibregl-ctrl-group) {
     background: rgba(20, 24, 30, 0.9);
