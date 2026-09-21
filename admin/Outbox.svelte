@@ -167,6 +167,17 @@
   .drop { border: 1.5px dashed var(--line); border-radius: 14px; padding: 18px 16px; text-align: center; background: var(--panel); transition: border-color 140ms, background 140ms; }
   /* The first-run panel is the only thing on the screen, so it gets room. */
   .drop:has(.welcome) { padding: 44px 20px 40px; }
+  /* Once it is just a way to add more, it is a bar rather than a billboard:
+     on a wide screen the button sat alone in the middle of 1400 empty pixels. */
+  @media (min-width: 720px) {
+    .drop:not(:has(.welcome)):not(:has(.queue)) {
+      display: flex; align-items: center; justify-content: flex-start; gap: 14px;
+      flex-wrap: wrap; text-align: left; padding: 12px 14px;
+    }
+    .drop:not(:has(.welcome)):not(:has(.queue)) .hint { margin: 0; flex: 1 1 auto; min-width: 0; }
+    .drop:not(:has(.welcome)):not(:has(.queue)) .pinlink { margin: 0; }
+    .drop:not(:has(.welcome)):not(:has(.queue)) .pinrow { flex: 1 0 100%; }
+  }
   .welcome { color: var(--accent); opacity: 0.9; margin-bottom: 10px; }
   .pinlink {
     display: inline-flex; align-items: center; gap: 6px; margin-top: 4px;

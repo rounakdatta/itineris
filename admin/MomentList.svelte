@@ -68,7 +68,12 @@
   .flags { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
   .flag { display: inline-flex; align-items: center; gap: 3px; font-style: normal; font-size: 10px; line-height: 1; padding: 3px 5px; border-radius: 6px; background: rgba(12, 15, 20, 0.66); color: #fff; font-weight: 700; backdrop-filter: blur(4px); }
   .flag svg { display: block; }   /* an inline svg would sit on the text baseline and unbalance the pill */
-  .flag.out { background: color-mix(in srgb, var(--ok) 82%, #0b0d10); color: #08130f; }
+  /* Quiet on purpose. Once a library is fully published this mark is on every
+     tile, and a solid green chip seven times over is decoration, not
+     information -- it has to be readable when you are looking for it and
+     invisible when you are not. */
+  .flag.out { background: rgba(12, 15, 20, 0.6); color: var(--ok); padding: 3px 4px; }
+  .flag.out b { font-weight: 700; color: #fff; padding-right: 1px; }
   /* The time was legible only because of a hard black text-shadow. A short
      gradient does the same job without smearing the bottom of the photo. */
   .scrim { position: absolute; inset: auto 0 0 0; height: 42%; background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent); pointer-events: none; }
