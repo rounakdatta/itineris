@@ -1,5 +1,5 @@
 <script>
-  import { dayKey, clockOf, stillUrl } from "./lib/api.js";
+  import { dayKey, dayLabel, clockOf, stillUrl } from "./lib/api.js";
 
   let { moments, selectedId = null, selectMode = false, selection, onSelect } = $props();
 
@@ -11,7 +11,7 @@
 </script>
 
 {#each groups as [day, items] (day)}
-  <h2>{day} <span class="muted">{items.length}</span></h2>
+  <h2>{dayLabel(day)} <span class="muted">{items.length}</span></h2>
   <!-- A grid of labelled buttons, not a list: a <button> cannot carry
        role="listitem", and role="listitem" does not support aria-pressed, so
        the list semantics were costing the selection state its announcement. -->
@@ -27,16 +27,25 @@
         title={m.caption || m.filename || m.id}
       >
         <img src={stillUrl(m.media, "thumb")} alt="" loading="lazy" />
+        <span class="scrim" aria-hidden="true"></span>
         <span class="t">{clockOf(m.t)}</span>
+        <!-- A tile flags what is EXCEPTIONAL about a photo, never what is
+             ordinary. Untagged, unplaced and not-in-a-gallery are the state
+             every photo arrives in, so badging them painted three orange
+             chips on every tile of a fresh library and said nothing. Those
+             counts live in the toolbar now, where they are also filters.
+             What is left is what differs: a clip, and a photo that has
+             actually been published somewhere. -->
         <span class="flags">
-          {#if m.galleries?.length === 0}<i class="flag private" title="not in any gallery — private">🔒</i>{/if}
-          {#if m.tags.length === 0}<i class="flag" title="untagged">#</i>{/if}
-          <!-- Drawn, not U+2316: the crosshair has no glyph in a lot of system
-               fonts and showed up as a tofu box. (Same lesson as the story's
-               speaker icon.) -->
-          {#if m.lat === null || m.lng === null}<i class="flag" title="no location"><svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2.6" /><path d="M12 1.6v3.6M12 18.8v3.6M1.6 12h3.6M18.8 12h3.6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></svg></i>{/if}
-          {#if m.media?.type === "video"}<i class="flag vid" title="video">▶</i>{/if}
-          {#if m.tz === "unknown"}<i class="flag" title="time zone unknown">⏱</i>{/if}
+          {#if m.media?.type === "video"}
+            <i class="flag vid" title="video"><svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true"><path fill="currentColor" d="M7 4.5v15l13-7.5z" /></svg></i>
+          {/if}
+          {#if m.galleries?.length}
+            <i class="flag out" title={m.galleries.length === 1 ? "in 1 gallery" : `in ${m.galleries.length} galleries`}>
+              <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M4 12.8 9.2 18 20 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              {#if m.galleries.length > 1}<b>{m.galleries.length}</b>{/if}
+            </i>
+          {/if}
         </span>
         {#if selectMode}<span class="check" aria-hidden="true">{selection?.has(m.id) ? "✓" : ""}</span>{/if}
         {#if m.tags.length}<span class="tags">{m.tags.join(" · ")}</span>{/if}
@@ -44,9 +53,7 @@
     {/each}
   </div>
 {/each}
-{#if moments.length === 0}
-  <p class="muted">Nothing here yet.</p>
-{/if}
+
 
 <style>
   h2 { display: flex; gap: 8px; align-items: baseline; font-size: 14px; font-weight: 600; margin: 18px 2px 8px; }
@@ -57,11 +64,19 @@
   .cell.picked { border-color: var(--ok); }
   .cell.picked img { opacity: 0.6; }
   .cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .t { position: absolute; left: 7px; bottom: 6px; font-size: 11px; color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); font-variant-numeric: tabular-nums; }
+  .t { position: absolute; left: 7px; bottom: 6px; font-size: 11px; color: rgba(255, 255, 255, 0.92); font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
   .flags { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
-  .flag { font-style: normal; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 6px; background: rgba(255, 179, 71, 0.9); color: #1a1000; font-weight: 700; }
+  .flag { display: inline-flex; align-items: center; gap: 3px; font-style: normal; font-size: 10px; line-height: 1; padding: 3px 5px; border-radius: 6px; background: rgba(12, 15, 20, 0.66); color: #fff; font-weight: 700; backdrop-filter: blur(4px); }
   .flag svg { display: block; }   /* an inline svg would sit on the text baseline and unbalance the pill */
-  .flag.private { background: rgba(20, 24, 30, 0.85); color: #fff; }
+  /* Quiet on purpose. Once a library is fully published this mark is on every
+     tile, and a solid green chip seven times over is decoration, not
+     information -- it has to be readable when you are looking for it and
+     invisible when you are not. */
+  .flag.out { background: rgba(12, 15, 20, 0.6); color: var(--ok); padding: 3px 4px; }
+  .flag.out b { font-weight: 700; color: #fff; padding-right: 1px; }
+  /* The time was legible only because of a hard black text-shadow. A short
+     gradient does the same job without smearing the bottom of the photo. */
+  .scrim { position: absolute; inset: auto 0 0 0; height: 42%; background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent); pointer-events: none; }
   .check { position: absolute; left: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; background: rgba(0, 0, 0, 0.45); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
   .picked .check { background: var(--ok); border-color: var(--ok); color: #05261c; }
   .tags { position: absolute; left: 0; right: 0; top: 0; padding: 26px 7px 0; font-size: 10px; color: #fff; background: linear-gradient(to bottom, rgba(0,0,0,.6), transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }

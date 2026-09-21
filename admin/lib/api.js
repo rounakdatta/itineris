@@ -57,6 +57,15 @@ export const api = {
 
 export const dayKey = (iso) => iso.slice(0, 10);
 export const clockOf = (iso) => iso.slice(11, 16);
+// A heading somebody reads, not the key it sorts by. "Sat 21 Sep", and the
+// year only when it is not this one -- a library of this year's photos should
+// not repeat 2026 down the whole page.
+export function dayLabel(key, now = new Date()) {
+  const d = new Date(`${key}T00:00:00Z`);
+  if (Number.isNaN(+d)) return key;
+  const thisYear = d.getUTCFullYear() === now.getUTCFullYear();
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", ...(thisYear ? {} : { year: "numeric" }), timeZone: "UTC" });
+}
 export const mediaUrl = (rel) => `/${rel}`;
 // A still for any moment. A video's `src` is the .mp4 itself, which an <img>
 // cannot draw -- it has to be one of the poster tiers. Everything that shows a
@@ -68,8 +77,11 @@ export const stillUrl = (media, tier = "medium") => {
     : (m.medium ?? m.poster ?? m.thumb ?? m.src);
   return rel ? mediaUrl(rel) : "";
 };
-export const galleryUrl = (id) => `${location.origin}/g/${id}`;
-export const storyUrl = (galleryId, momentId) => `${location.origin}${galleryId ? `/g/${galleryId}` : "/"}#m/${momentId}`;
+// The prettiest URL this gallery has: its own name if it has one, else the
+// token. Both keep working -- a link already shared must never stop resolving.
+export const galleryPath = (g) => (typeof g === "string" ? `/g/${g}` : g?.slug ? `/${g.slug}` : `/g/${g?.id}`);
+export const galleryUrl = (g) => `${location.origin}${galleryPath(g)}`;
+export const storyUrl = (gallery, momentId) => `${location.origin}${gallery ? galleryPath(gallery) : "/"}#m/${momentId}`;
 
 // "2026-03-14T08:40:12+08:00" -> { local: "2026-03-14T08:40", seconds: ":12", offset: "+08:00" }
 export function splitIso(t) {

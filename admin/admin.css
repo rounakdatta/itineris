@@ -25,4 +25,14 @@ input:focus, textarea:focus { border-color: var(--accent); }
   display: inline-block; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
   padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.1);
 }
+/* Reserved for something actually wrong. A photo with no caption is not a
+   fault, and using the warning colour for the ordinary state of a fresh
+   library meant nothing on this screen could raise its voice when it needed to. */
 .badge.warn { background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }
+/* A count you can act on: tap it to see only those, tap again for all. */
+button.badge {
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+  cursor: pointer; font-family: inherit; line-height: 18px; transition: color 120ms, border-color 120ms, background 120ms;
+}
+button.badge:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 35%, transparent); }
+button.badge.on { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--text); }

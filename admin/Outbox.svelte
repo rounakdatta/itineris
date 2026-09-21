@@ -7,9 +7,14 @@
 
   // `location`: the place every photo added now is pinned to (picked below, or
   // shared in from Google Maps). `onPick` hands a picked place up to App.
-  let { outbox, queue, gallery = null, location = null, known = [], placesEnabled = false, onEdit, onPick } = $props();
+  // `first`: this person has no photos at all yet. The panel is the whole
+  // screen then, and everything it says has to earn its place -- somebody who
+  // has not uploaded anything cannot use a caveat about offline queueing or a
+  // box for pinning "the next photos" to a place.
+  let { outbox, queue, gallery = null, location = null, known = [], placesEnabled = false, first = false, onEdit, onPick } = $props();
   let input;
   let over = $state(false);
+  let pinOpen = $state(false);
   let urls = $state(new Map());
 
   const items = $derived(queue?.items ?? []);
@@ -85,13 +90,33 @@
   <!-- `multiple` + accept="image/*" gives camera-or-gallery on a phone and a
        normal picker on desktop, in one control. -->
   <input bind:this={input} type="file" accept="image/*,video/*" multiple hidden onchange={(e) => pick(e.target.files)} data-testid="file-input" />
-  <button class="btn primary" onclick={() => input.click()}>{location ? `Add photos at “${location.name || "this place"}”` : gallery ? `Add photos to “${gallery.title}”` : "Add photos"}</button>
-  <p class="muted hint">photos and videos · or drop them here · works offline — they queue on this device and upload when they can{gallery ? "" : " · new photos stay private until they're in a gallery"}</p>
-  {#if !location}
-    <p class="muted hint small">Phones usually strip GPS from photos picked in a browser. Pin the next photos to a place first — they all land on that one pin.</p>
-    <div class="pinrow">
-      <PlaceSearch compact {known} {placesEnabled} onPick={(p) => onPick?.(p)} />
-    </div>
+  {#if first}
+    <svg class="welcome" viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
+      <path d="M4 7.6h3.4l1.5-2.2h6.2l1.5 2.2H20v11H4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+      <circle cx="12" cy="12.8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.5" />
+    </svg>
+    <h2>Start with a few photos</h2>
+    <p class="muted hint">They stay private until you put them in a gallery.</p>
+  {/if}
+  <button class="btn primary" onclick={() => input.click()}>{location ? `Add photos at “${location.name || "this place"}”` : gallery ? `Add photos to “${gallery.title}”` : first ? "Choose photos" : "Add photos"}</button>
+  {#if !first}
+    <p class="muted hint">photos and videos · or drop them here{gallery ? "" : " · they stay private until they're in a gallery"}</p>
+  {/if}
+  <!-- Placing photos is the main chore -- phones strip GPS -- so the way in
+       stays one tap away. It just does not need to sit open forever: the
+       explanation and the search box together were taking a third of a phone
+       screen above the photos they are about. -->
+  {#if !location && !first}
+    <button class="pinlink" aria-expanded={pinOpen} onclick={() => (pinOpen = !pinOpen)}>
+      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+      Pin the next photos to a place
+    </button>
+    {#if pinOpen}
+      <p class="muted hint small">Phones usually strip GPS from photos picked in a browser. Pick a place and every photo you add now lands on that one pin.</p>
+      <div class="pinrow">
+        <PlaceSearch compact {known} {placesEnabled} onPick={(p) => onPick?.(p)} />
+      </div>
+    {/if}
   {/if}
 
   {#if status}
@@ -139,7 +164,30 @@
 </section>
 
 <style>
-  .drop { border: 1.5px dashed var(--line); border-radius: 14px; padding: 22px 16px; text-align: center; background: var(--panel); transition: border-color 140ms, background 140ms; }
+  .drop { border: 1.5px dashed var(--line); border-radius: 14px; padding: 18px 16px; text-align: center; background: var(--panel); transition: border-color 140ms, background 140ms; }
+  /* The first-run panel is the only thing on the screen, so it gets room. */
+  .drop:has(.welcome) { padding: 44px 20px 40px; }
+  /* Once it is just a way to add more, it is a bar rather than a billboard:
+     on a wide screen the button sat alone in the middle of 1400 empty pixels. */
+  @media (min-width: 720px) {
+    .drop:not(:has(.welcome)):not(:has(.queue)) {
+      display: flex; align-items: center; justify-content: flex-start; gap: 14px;
+      flex-wrap: wrap; text-align: left; padding: 12px 14px;
+    }
+    .drop:not(:has(.welcome)):not(:has(.queue)) .hint { margin: 0; flex: 1 1 auto; min-width: 0; }
+    .drop:not(:has(.welcome)):not(:has(.queue)) .pinlink { margin: 0; }
+    .drop:not(:has(.welcome)):not(:has(.queue)) .pinrow { flex: 1 0 100%; }
+  }
+  .welcome { color: var(--accent); opacity: 0.9; margin-bottom: 10px; }
+  .pinlink {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 4px;
+    background: none; border: 0; padding: 4px 6px; border-radius: 8px;
+    color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .pinlink:hover, .pinlink[aria-expanded="true"] { color: var(--text); }
+  .pinlink svg { opacity: 0.75; }
+  .drop h2 { margin: 0 0 6px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  .drop h2 + .hint { margin-bottom: 18px; }
   .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
   .hint { margin: 10px 0 0; font-size: 13px; }
   .hint.small { margin-top: 6px; font-size: 12px; }

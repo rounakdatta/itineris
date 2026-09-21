@@ -10,12 +10,37 @@ vi.mock("../src/lib/gmaps.js", () => ({ loadGoogleMaps: async () => { if (!gmaps
 import App from "../src/App.svelte";
 import { trip } from "../src/lib/trip.svelte.js";
 
-const routes = (cfg) => vi.fn(async (url) => {
+// A published home gallery, so "/" has something to draw. Without one the app
+// goes to /creator instead (see "a bare domain" below), and there is no map.
+// With a located photo in it: a gallery with nothing placed sends the app to
+// the wall, and `trip` is a module singleton whose view would then leak into
+// every test after this one.
+const GALLERY = { id: "home1", title: "Home", moments: [{ id: "h1", t: "2026-03-14T09:00:00+08:00", lat: 1.28, lng: 103.85, place: "A", tags: [], media: { src: "media/h.jpg", w: 100, h: 100 } }], tracks: [] };
+const routes = (cfg, { home = true } = {}) => vi.fn(async (url) => {
   if (url === "/config.json") return cfg ? { ok: true, status: 200, json: async () => cfg } : { ok: false, status: 404 };
+  if (url === "/data/home.json") return home ? { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ gallery: "home1" }) } : { ok: false, status: 404 };
+  if (url === "/data/galleries/home1.json") return { ok: true, status: 200, headers: { get: () => null }, json: async () => GALLERY };
   return { ok: false, status: 404 };
 });
 const until = async (fn, ms = 1500) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 10)); } return fn(); };
-beforeEach(() => { trip.status = "loading"; trip.moments = []; trip.mapEngine = "maplibre"; gmapsOk = true; });
+beforeEach(() => { trip.status = "loading"; trip.moments = []; trip.tracks = []; trip.view = "map"; trip.storyIndex = -1; trip.focusId = null; trip.mapEngine = "maplibre"; gmapsOk = true; });
+
+describe("a bare domain with nothing published on it", () => {
+  it("goes to the creator app instead of an empty world map", async () => {
+    const replace = vi.fn();
+    vi.stubGlobal("fetch", routes(null, { home: false }));
+    const orig = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", { configurable: true, value: { ...window.location, pathname: "/", hash: "", search: "", replace } });
+    try {
+      const { container } = render(App);
+      expect(await until(() => replace.mock.calls.length > 0)).toBeTruthy();
+      expect(replace).toHaveBeenCalledWith("/creator/");
+      // ...and no map is mounted on the way out: one frame of empty globe is
+      // worse than none.
+      expect(container.querySelector(".map")).toBeNull();
+    } finally { Object.defineProperty(window, "location", orig); }
+  });
+});
 
 describe("which map the app draws", () => {
   it("a configured key means Google Maps", async () => {

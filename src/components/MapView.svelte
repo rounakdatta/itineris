@@ -1,7 +1,7 @@
 <script>
   import { onMount, untrack } from "svelte";
   import { trip } from "../lib/trip.svelte.js";
-  import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression } from "../lib/data.js";
+  import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression, fitPadding } from "../lib/data.js";
   import { here } from "../lib/here.svelte.js";
 
   let container;
@@ -169,7 +169,7 @@
     if (!box) return;
     map.fitBounds(
       [[box[0], box[1]], [box[2], box[3]]],
-      { padding: { top: 90, bottom: 130, left: 40, right: 40 }, maxZoom: 15, duration: 900 }
+      { padding: fitPadding(map.getContainer?.()?.clientWidth ?? 0), maxZoom: 15, duration: 900 }
     );
   }
 

@@ -7,7 +7,7 @@
   // to MapView when there is no connection or the script fails.
   import { onMount, untrack } from "svelte";
   import { trip } from "../lib/trip.svelte.js";
-  import { bboxOf, hasCoords, mediaUrl, MODE_COLOR, groupByPlace, placeKey } from "../lib/data.js";
+  import { bboxOf, hasCoords, mediaUrl, MODE_COLOR, groupByPlace, placeKey, fitPadding } from "../lib/data.js";
   import { allSeen } from "../lib/seen.svelte.js";
   import { here } from "../lib/here.svelte.js";
   import { loadGoogleMaps, onAuthFailure, watchMapErrors } from "../lib/gmaps.js";
@@ -185,7 +185,9 @@
   function fitAll() {
     const box = bboxOf(trip.visibleMoments, trip.visibleTracks);
     if (!box) return;
-    map.fitBounds(new g.LatLngBounds({ lat: box[1], lng: box[0] }, { lat: box[3], lng: box[2] }), { top: 90, bottom: 40, left: 40, right: 40 });
+    // Google's map is inset above the dock, so it only needs to clear the top bar.
+    map.fitBounds(new g.LatLngBounds({ lat: box[1], lng: box[0] }, { lat: box[3], lng: box[2] }),
+      fitPadding(container?.clientWidth ?? 0, { top: 90, bottom: 40 }));
     // A single spot would zoom to the rooftops; keep it street-level.
     g.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 16) map.setZoom(16); });
   }

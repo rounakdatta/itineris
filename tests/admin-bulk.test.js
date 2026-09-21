@@ -34,13 +34,25 @@ describe("BulkBar", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(api.patchGallery).toHaveBeenCalledWith("g2", { add: ["a", "b"] });
-    vi.stubGlobal("prompt", () => "Trip mates");
-    await fireEvent.click(screen.getByRole("button", { name: "Gallery" }));   // a successful action returns to the first row
+  });
+  it("names a brand new gallery in the bar, not in an operating-system prompt", async () => {
+    const selection = new SvelteSet(["a", "b"]);
+    // window.prompt would answer even if the field were never rendered, so the
+    // test would pass against exactly the thing this replaced.
+    vi.stubGlobal("prompt", () => { throw new Error("window.prompt is not a design"); });
+    render(BulkBar, { selection, galleries, onDone: () => {}, onExit: () => {} });
+    await fireEvent.click(screen.getByRole("button", { name: "Gallery" }));
     await fireEvent.change(screen.getByLabelText("Gallery"), { target: { value: "__new__" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    const create = screen.getByRole("button", { name: "Create with 2" });
+    expect(create).toBeDisabled();                       // nothing to name it yet
+    await fireEvent.input(screen.getByLabelText("New gallery name"), { target: { value: " Trip mates " } });
+    await fireEvent.click(screen.getByRole("button", { name: "Create with 2" }));
     await new Promise((r) => setTimeout(r, 0));
-    expect(api.createGallery).toHaveBeenCalledWith({ title: "Trip mates" });
-    expect(api.patchGallery).toHaveBeenLastCalledWith("newgallery12", { add: ["a", "b"] });
+    // Created WITH the photos in it: a new gallery that comes out empty, and
+    // has to be filled by a second trip through the same selection, is a
+    // chore nobody should be handed.
+    expect(api.createGallery).toHaveBeenCalledWith({ title: "Trip mates", momentIds: ["a", "b"] });
+    expect(api.patchGallery).not.toHaveBeenCalled();
   });
   it("sets one location on the whole selection", async () => {
     const selection = new SvelteSet(["a", "b"]);
@@ -69,12 +81,22 @@ describe("MomentList", () => {
     { id: "a", t: "2026-03-14T08:40:00+08:00", lat: 1, lng: 2, tags: ["food"], galleries: ["g1"], media: { src: "media/a.webp" } },
     { id: "b", t: "2026-03-14T09:40:00+08:00", lat: null, lng: null, tags: [], galleries: [], media: { src: "media/b.webp" }, tz: "unknown" },
   ];
-  it("flags private, untagged, unplaced and unknown-zone photos", () => {
+  it("marks what is exceptional about a photo, and nothing that is ordinary", () => {
+    render(MomentList, { moments: [...ms, { id: "c", t: "2026-03-14T10:40:00+08:00", lat: null, lng: null, tags: [], galleries: ["g1", "g2"], media: { src: "media/c.webp", type: "video" } }], onSelect: () => {} });
+    // Published somewhere: worth saying, and it says how many.
+    expect(screen.getByTitle("in 1 gallery")).toBeInTheDocument();
+    expect(screen.getByTitle("in 2 galleries")).toBeInTheDocument();
+    expect(screen.getByTitle("video")).toBeInTheDocument();
+    // Untagged, unplaced, private and unknown-zone are the state EVERY photo
+    // arrives in. Badging them painted three chips on every tile of a fresh
+    // library and told nobody anything; the counts live in the toolbar now,
+    // where they are also filters.
+    for (const gone of [/private/, /untagged/, /no location/, /time zone/]) expect(screen.queryByTitle(gone)).toBeNull();
+  });
+  it("heads each day with a date somebody would say out loud", () => {
     render(MomentList, { moments: ms, onSelect: () => {} });
-    expect(screen.getByTitle(/private/)).toBeInTheDocument();
-    expect(screen.getByTitle("untagged")).toBeInTheDocument();
-    expect(screen.getByTitle("no location")).toBeInTheDocument();
-    expect(screen.getByTitle("time zone unknown")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Sat 14 Mar/ })).toBeInTheDocument();
+    expect(screen.queryByText("2026-03-14")).toBeNull();
   });
   it("select mode reports toggles through onSelect and shows checks", async () => {
     const selection = new SvelteSet(["a"]); const onSelect = vi.fn();

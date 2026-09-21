@@ -63,7 +63,13 @@
   );
   const offered = $derived(suggestions.filter((s) => !tags.includes(s) && (!tagDraft || s.includes(tagDraft.toLowerCase()))).slice(0, 12));
   const homeGallery = $derived(galleries.find((g) => g.home));
-  const viewerLink = $derived(inGalleries.length ? storyUrl(homeGallery && inGalleries.includes(homeGallery.id) ? null : inGalleries[0], moment.id) : null);
+  // The prettiest link to this photo: the home gallery needs no path at all,
+  // otherwise the gallery's own name if it has one (galleryPath takes either).
+  const viewerLink = $derived.by(() => {
+    if (!inGalleries.length) return null;
+    if (homeGallery && inGalleries.includes(homeGallery.id)) return storyUrl(null, moment.id);
+    return storyUrl(galleries.find((g) => g.id === inGalleries[0]) ?? inGalleries[0], moment.id);
+  });
 
   function addTag(raw) {
     const v = raw.trim().toLowerCase().replace(/[,#]/g, "");
@@ -124,18 +130,21 @@
       <div class="muted small">{moment.filename ?? moment.id}{#if moment.camera}{" · "}{moment.camera}{/if}</div>
       {#if !pending}<div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy}{" · by "}{moment.uploadedBy}{/if}</div>{/if}
       {#if pending}<span class="badge">waiting to upload — edits are kept on this device</span>{/if}
-      {#if moment.tz === "unknown"}<span class="badge warn">time zone unknown — check the time</span>{/if}
-      {#if moment.lat === null}<span class="badge warn">no GPS — set a location</span>{/if}
       {#if viewerLink && !pending}<a class="small" href={viewerLink} target="_blank" rel="noopener">open in viewer ↗</a>{/if}
       {#if !pending}
         <div class="google small">
           {#if google?.placeId}
             <span class="muted">Google:</span> <b>{Number.isFinite(google.rating) ? google.rating.toFixed(1) : "–"}</b><span class="star" aria-hidden="true">★</span>{#if google.ratingCount}<span class="muted"> ({google.ratingCount.toLocaleString("en")})</span>{/if}{#if google.type}<span class="muted"> · {google.type}</span>{/if}
             {#if google.mapsUri}<a href={google.mapsUri} target="_blank" rel="noopener">↗</a>{/if}
-          {:else}
-            <span class="muted">Google: {googleNote ?? "not looked up yet"}</span>
+          {:else if googleNote}
+            <span class="muted">Google: {googleNote}</span>
           {/if}
-          <button type="button" class="btn tiny" disabled={googleBusy} onclick={refreshGoogle} title="Ask Google about this place again">{googleBusy ? "…" : "↻"}</button>
+          <!-- "Google: not looked up yet" was on every photo that had no place
+               named yet, which is all of them to begin with. There is nothing
+               to look up and nothing to do about it. -->
+          {#if google?.placeId || googleNote || place.trim()}
+            <button type="button" class="btn tiny" disabled={googleBusy} onclick={refreshGoogle} title="Ask Google about this place again">{googleBusy ? "…" : "↻"}</button>
+          {/if}
         </div>
         {#if googleNote && google?.placeId}<div class="muted small">{googleNote}</div>{/if}
       {/if}
@@ -163,14 +172,20 @@
 
   <fieldset class="galleries">
     <legend>Galleries <span class="muted small">{inGalleries.length ? "" : "— not shared anywhere yet"}</span></legend>
-    {#if galleries.length === 0}<p class="muted small">No galleries yet. Create one in the Galleries tab.</p>{/if}
+    {#if galleries.length === 0}<p class="muted small">No galleries yet — a gallery is the link you share, and this photo is private until it is in one.</p>{/if}
     {#each galleries as g (g.id)}
       <label class="gal"><input type="checkbox" checked={inGalleries.includes(g.id)} onchange={() => toggleGallery(g.id)} /> {g.title}{#if g.home}<span class="muted small"> · home</span>{/if}</label>
     {/each}
   </fieldset>
 
+  <!-- These two used to be orange warning badges at the top of the editor, so
+       opening ANY photo off a phone opened with two alarms about its perfectly
+       normal state -- phones strip GPS, and a photo with no EXIF offset has no
+       zone. They say the same thing next to the field you would fix it in,
+       quietly, where it is useful rather than alarming. -->
   <div class="loc-head">
     <span class="lbl">Location</span>
+    {#if moment.lat === null}<span class="says">no GPS in this photo — it stays off the map until you place it</span>{/if}
     <span class="spacer"></span>
     {#if neighbours.prev}<button type="button" class="btn tiny" onclick={() => useLocation(neighbours.prev)} title={neighbours.prev.place || neighbours.prev.id}>← use previous photo's</button>{/if}
     {#if neighbours.next}<button type="button" class="btn tiny" onclick={() => useLocation(neighbours.next)} title={neighbours.next.place || neighbours.next.id}>use next photo's →</button>{/if}
@@ -191,7 +206,7 @@
 
   <div class="row">
     <label>Time <span class="muted small">(the photo's local time)</span><input type="datetime-local" bind:value={local} /></label>
-    <label>Zone offset
+    <label>Zone offset{#if moment.tz === "unknown"}<span class="says"> guessed — the photo did not say</span>{/if}
       <select bind:value={offset}>{#each offsets as o (o)}<option value={o}>{o}</option>{/each}</select>
     </label>
   </div>
@@ -242,6 +257,9 @@
   .gal { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; color: var(--text); }
   .gal input { width: auto; margin: 0; }
   .loc-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  /* Plain sentences in the app's own voice, next to the field they are about.
+     The point is to be noticed while reading, not to interrupt. */
+  .says { color: var(--muted); font-size: 12px; font-weight: 400; }
   .btn.tiny { padding: 4px 9px; font-size: 12px; }
   .tiny-note { font-size: 12px; margin: 6px 0 0; }
   code { font-size: 12px; }

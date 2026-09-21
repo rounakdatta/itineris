@@ -60,6 +60,11 @@ describe("Outbox UI", () => {
     expect(screen.queryByLabelText("Search a place")).toBeNull();
     unmount();
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true }, known, onPick });
+    // The search box is one tap away rather than permanently open: expanded,
+    // the explanation and the field took a third of a phone screen above the
+    // photos they are about.
+    expect(screen.queryByLabelText("Search a place")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: /Pin the next photos to a place/ }));
     expect(screen.getByLabelText("Search a place")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: /Yamo/ }));
     expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ placeId: "ChIJyamo", name: "Yamo", lat: 37.7619 }));

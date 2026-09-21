@@ -1,4 +1,5 @@
 <script>
+  import { pictureBox, clampPan, zoomAbout, isZoomed } from "../lib/zoom.js";
   import { trip } from "../lib/trip.svelte.js";
   import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink, isVideo, fmtDuration, isLoose } from "../lib/data.js";
   import { markSeen } from "../lib/seen.svelte.js";
@@ -40,6 +41,57 @@
 
   let down = null;
   let holdTimer = null;
+
+  // --- pinch to zoom ---------------------------------------------------------
+  // The hard part is not the scaling, it is that this frame already owns every
+  // gesture: a tap advances, a sideways drag changes photo, a downward drag
+  // dismisses, and a long press pauses. So zoom is a MODE. A second finger
+  // abandons whatever the first was starting, and while the photo is zoomed a
+  // one-finger drag pans instead of navigating -- you zoom back out to leave.
+  // Predictable beats clever: an edge-swipe-to-advance-while-zoomed is how
+  // these things become impossible to use.
+  //
+  // There is deliberately no double-tap to zoom. It would mean holding every
+  // single tap for 300 ms to see whether a second one is coming, and tapping
+  // to advance is the thing people do most.
+  let zoom = $state(1), zx = $state(0), zy = $state(0);
+  let pinching = $state(false);
+  const zoomed = $derived(isZoomed(zoom));
+  const pointers = new Map();   // live fingers, by pointerId
+  let pinch = null;             // { dist, zoom } at the moment the second finger landed
+  let panFrom = null;           // { x, y, zx, zy } for a one-finger drag while zoomed
+
+  // The frame in page coordinates, plus the picture box the maths needs.
+  function frame() {
+    if (!dialog || !current) return null;
+    const r = dialog.getBoundingClientRect();
+    const box = pictureBox(r, current.media, landscape);
+    return box && { box, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  }
+  function zoomTo(scale, anchor) {
+    const f = frame();
+    if (!f) return;
+    const n = zoomAbout(f.box, { z: zoom, x: zx, y: zy },
+      scale, anchor && { x: anchor.x - f.cx, y: anchor.y - f.cy });
+    zoom = n.z; zx = n.x; zy = n.y;
+  }
+  function panTo(x, y) {
+    const f = frame();
+    const p = clampPan(f?.box ?? null, zoom, x, y);
+    zx = p.x; zy = p.y;
+  }
+  function resetZoom() { zoom = 1; zx = 0; zy = 0; pinching = false; pinch = null; panFrom = null; }
+  // A new photo always starts unzoomed, and so does a closed viewer.
+  $effect(() => { trip.storyIndex; resetZoom(); });
+  $effect(() => { if (!trip.storyOpen) { pointers.clear(); resetZoom(); } });
+
+  // A trackpad pinch arrives as ctrl+wheel; a plain scroll is not a zoom.
+  function onWheel(e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    zoomTo(zoom * Math.exp(-e.deltaY / 180), { x: e.clientX, y: e.clientY });
+    if (!zoomed) resetZoom();
+  }
 
   const items = $derived(trip.storyGroup);   // this place's photos: its bars, its count
   const current = $derived(trip.storyMoment);
@@ -107,7 +159,7 @@
       last = now;
       // On a slow link the timer must not run ahead of the photo. A video
       // drives the bar itself (see ontimeupdate) and advances when it ends.
-      if (!paused && !axis && !handoff && (loaded || failed) && !(video_ && !failed)) {
+      if (!paused && !axis && !handoff && !zoomed && !pinching && (loaded || failed) && !(video_ && !failed)) {
         progress += dt / SEGMENT_MS;
         if (progress >= 1) {
           if (!go(1)) trip.closeStory();
@@ -136,7 +188,7 @@
     if (!trip.storyOpen) return;
     dialog?.focus?.();
     const onKey = (e) => {
-      if (e.key === "Escape") trip.closeStory();
+      if (e.key === "Escape") { if (zoomed) resetZoom(); else trip.closeStory(); }
       else if (handoff && ["ArrowRight", "ArrowLeft", " ", "Enter"].includes(e.key)) { e.preventDefault(); endHandoff(); }
       else if (e.key === "ArrowRight") { if (!go(1)) trip.closeStory(); }
       else if (e.key === "ArrowLeft") go(-1);
@@ -153,12 +205,36 @@
     if (handoff) { endHandoff(); return; }   // a tap during the handoff skips straight into the story
     if (expanding) return;                   // ...and one while the card is still expanding is ignored
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* synthetic or already-released pointer */ }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointers.size === 2) {
+      // A second finger means a pinch. Whatever the first one was starting --
+      // a swipe, a dismiss, a long press -- is abandoned, or letting go would
+      // fire it.
+      clearTimeout(holdTimer);
+      down = null; axis = null; dragX = 0; dragY = 0; paused = false; panFrom = null;
+      const [a, b] = [...pointers.values()];
+      pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom };
+      pinching = true;
+      return;
+    }
+    if (pointers.size > 2) return;           // a third finger changes nothing
+
+    if (zoomed) { panFrom = { x: e.clientX, y: e.clientY, zx, zy, t: performance.now() }; return; }
     down = { x: e.clientX, y: e.clientY, t: performance.now() };
     dragX = 0; dragY = 0; axis = null;
     holdTimer = setTimeout(() => { paused = true; }, TAP_MS);
   }
 
   function onPointerMove(e) {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      zoomTo(pinch.zoom * (dist / pinch.dist), { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      return;
+    }
+    if (panFrom) { panTo(panFrom.zx + (e.clientX - panFrom.x), panFrom.zy + (e.clientY - panFrom.y)); return; }
     if (!down) return;
     const dx = e.clientX - down.x, dy = e.clientY - down.y;
     if (!axis && Math.hypot(dx, dy) > TAP_SLOP) {
@@ -171,6 +247,30 @@
   }
 
   function onPointerUp(e) {
+    pointers.delete(e.pointerId);
+    if (pinch) {
+      if (pointers.size < 2) {
+        pinch = null; pinching = false;
+        if (!zoomed) resetZoom();            // let go below 1:1 and it settles back
+        down = null; axis = null;
+        // A finger still down after the pinch keeps panning; it must not
+        // become a swipe on release.
+        const left = [...pointers.values()][0];
+        panFrom = left && zoomed ? { x: left.x, y: left.y, zx, zy } : null;
+      }
+      clearTimeout(holdTimer);
+      return;
+    }
+    if (panFrom) {
+      // A tap on a zoomed photo means "back to normal". Navigation is suspended
+      // while zoomed, so tap has no other job, and it is the gesture people try
+      // first when they want out.
+      const still = Math.hypot(e.clientX - panFrom.x, e.clientY - panFrom.y) < TAP_SLOP;
+      const quick = performance.now() - panFrom.t < TAP_MS;
+      panFrom = null;
+      if (still && quick) resetZoom();
+      return;
+    }
     clearTimeout(holdTimer);
     if (!down) return;
     const elapsed = performance.now() - down.t;
@@ -198,13 +298,19 @@
   <div
     class="story"
     class:handoff
+    class:zoomed
+    class:pinching
     bind:this={dialog}
+    style:--z={zoom}
+    style:--zx="{zx}px"
+    style:--zy="{zy}px"
     style:transform={handoff ? "translateY(var(--ho-y)) scale(var(--ho-s))" : `translate(${dragX * 0.35}px, ${dragY}px) scale(${1 - Math.min(dragY / 2600, 0.06)})`}
     style:transition={axis ? "none" : "transform 380ms cubic-bezier(.2,.8,.2,1), border-radius 380ms, box-shadow 380ms"}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
+    onwheel={onWheel}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
@@ -247,7 +353,7 @@
         <video class="media" class:contain={landscape} class:loaded bind:this={video} src={videoUrl} poster={fullUrl} playsinline autoplay muted preload="auto"
           onloadeddata={() => (loadedId = id)} onerror={() => (failedId = id)}
           ontimeupdate={(e) => { const v = e.currentTarget; if (v.duration > 0) progress = Math.min(1, v.currentTime / v.duration); }}
-          onended={() => next()}></video>
+          onended={() => { if (!zoomed && !pinching) next(); }}></video>
         <!-- Drawn, not an emoji: every phone (and headless Chromium) has a different speaker glyph, or none. -->
         <button class="sound" onclick={(e) => { e.stopPropagation(); muted = !muted; }} onpointerdown={(e) => e.stopPropagation()} aria-label={muted ? "Turn sound on" : "Turn sound off"} aria-pressed={!muted}>
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -315,6 +421,7 @@
     overflow: hidden; outline: none;
     /* The Next stop postcard: shrunk from the top edge so the pin at the map's centre shows beneath it. */
     transform-origin: 50% 0; --ho-s: 0.36; --ho-y: 2vh;
+    --z: 1; --zx: 0px; --zy: 0px;
   }
   .story.handoff { border-radius: 26px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65); }
   .handoff-veil {
@@ -349,6 +456,22 @@
      photo, and a landscape photo showed as nothing but its own dark blur. */
   .backdrop { z-index: 0; }
   .placeholder { z-index: 1; object-fit: cover; }
+  /* Pinch to zoom. Every layer takes the same transform so the photo, the
+     low-res placeholder still showing under it, the blurred backdrop and the
+     captions stuck to the photo all move as one object -- zoom into a caption
+     and it grows with the thing it is labelling.
+     While fingers are down there is no transition: the photo has to sit under
+     them exactly. The easing is only for letting go and settling back. */
+  .media, .placeholder, .cap-host { transform: translate(var(--zx), var(--zy)) scale(var(--z)); transform-origin: 50% 50%; }
+  .backdrop { transform: translate(var(--zx), var(--zy)) scale(calc(var(--z) * 1.15)); transform-origin: 50% 50%; }
+  .story:not(.pinching) .media,
+  .story:not(.pinching) .placeholder,
+  .story:not(.pinching) .backdrop,
+  .story:not(.pinching) .cap-host { transition: transform 260ms cubic-bezier(.2, .8, .2, 1); }
+  .story:not(.pinching) .media { transition: transform 260ms cubic-bezier(.2, .8, .2, 1), opacity 260ms ease; }
+  /* Nothing should sit over a photo somebody is inspecting. */
+  .story.zoomed .bars, .story.zoomed .meta, .story.zoomed footer, .story.zoomed .sound { opacity: 0; transition: opacity 180ms ease; pointer-events: none; }
+  .story.zoomed header { background: none; transition: background 180ms ease; }
   .placeholder.contain { object-fit: contain; }
   .media { z-index: 2; object-fit: cover; opacity: 0; transition: opacity 260ms ease; }
   .media.loaded { opacity: 1; }
@@ -368,7 +491,7 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .failed { grid-row: 1 / -1; grid-column: 1; place-self: center; z-index: 3; margin: 0; padding: 8px 14px; border-radius: 10px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 14px; }
-  .backdrop { object-fit: cover; filter: blur(28px) brightness(0.45); transform: scale(1.15); }
+  .backdrop { object-fit: cover; filter: blur(28px) brightness(0.45); }
   @keyframes fade { from { opacity: 0.25; } to { opacity: 1; } }
 
   .bars { grid-row: 1; grid-column: 1; z-index: 4; display: flex; gap: 3px; padding: max(10px, env(safe-area-inset-top)) 10px 0; }

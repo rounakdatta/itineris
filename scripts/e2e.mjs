@@ -48,7 +48,14 @@ symlinkSync(path.join(dataDir, "media"), path.join(nd, "docroot", "media"));
 writeFileSync(path.join(nd, "conf", "security-headers.conf"), readFileSync(path.join(ROOT, "nginx/security-headers.conf")));
 writeFileSync(path.join(nd, "conf", "default.conf"), readFileSync(path.join(ROOT, "nginx/default.conf"), "utf8")
   .replace("/etc/nginx/security-headers.conf", path.join(nd, "conf", "security-headers.conf")).replaceAll("/etc/nginx/security-headers.conf", path.join(nd, "conf", "security-headers.conf"))
-  .replace("root /usr/share/nginx/html;", `root ${path.join(nd, "docroot")};`).replace("listen 8080;", "listen 127.0.0.1:4331;"));
+  .replace("root /usr/share/nginx/html;", `root ${path.join(nd, "docroot")};`).replace("listen 8080;", "listen 127.0.0.1:4331;")
+  // In production Traefik path-routes /creator on the SAME host to the creator
+  // pod (see ingress-admin.yaml); nginx never sees it. The viewer relies on
+  // that being one origin -- it posts a view to /creator/api/views/<id> -- so
+  // the harness has to reproduce the routing or it is testing a layout that
+  // does not exist anywhere. Deliberately anonymous: a visitor is not signed
+  // in, and the creator app itself is reached through the auth proxy at A.
+  .replace("location / {", `location /creator/ {\n        proxy_pass http://127.0.0.1:${ADMIN_PORT};\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $remote_addr;\n    }\n\n    location / {`));
 writeFileSync(path.join(nd, "conf", "nginx.conf"), `pid ${nd}/nginx.pid;\nerror_log ${nd}/logs/error.log;\nevents {}\nhttp {\n  include ${NGINX_STORE}/conf/mime.types;\n  access_log ${nd}/logs/access.log;\n  client_body_temp_path ${nd}/tmp; proxy_temp_path ${nd}/tmp; fastcgi_temp_path ${nd}/tmp; uwsgi_temp_path ${nd}/tmp; scgi_temp_path ${nd}/tmp;\n  include ${nd}/conf/default.conf;\n}\n`);
 async function startNginx() {
   const p = spawn(path.join(NGINX_STORE, "bin", "nginx"), ["-c", path.join(nd, "conf", "nginx.conf"), "-p", nd, "-g", "daemon off;"], { stdio: "ignore" });
@@ -299,16 +306,22 @@ try {
   await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".cell");
   ok("signed-in identity shown", (await text(page, "header")).includes(WHO));
-  ok("20 photos, none private (all in the demo gallery)", (await count(page, ".cell")) === 20 && (await count(page, ".flag.private")) === 0);
+  // A tile marks what is exceptional, not the state every photo arrives in:
+  // these are all in the demo gallery, so each carries the "published" mark
+  // and nothing else.
+  ok("20 photos, each marked as being in a gallery", (await count(page, ".cell")) === 20 && (await count(page, ".flag.out")) === 20, `${await count(page, ".cell")} cells, ${await count(page, ".flag.out")} marked`);
   await settle(page); await shot(page, `${SHOTS}/10-admin-photos.png`);
   await clickText(page, ".toolbar button", "Select"); await sleep(200);
   const cells = await page.$$(".cell"); await tapEl(page, cells[0]); await tapEl(page, cells[1]); await sleep(200);
   ok("bulk bar counts the selection", (await text(page, ".bulk strong")) === "2 selected", await text(page, ".bulk strong"));
   await settle(page); await shot(page, `${SHOTS}/11-admin-select.png`);
   await clickText(page, ".bulk button", "Gallery"); await sleep(200);
-  await page.select(".bulk select", "__new__");
-  page.once("dialog", (d) => d.accept("Friends"));
-  await clickText(page, ".bulk button", "Add");
+  await page.select(".bulk select", "__new__"); await sleep(200);
+  // Named in the bar, not in an OS prompt. If a dialog ever appears again the
+  // run should fail rather than quietly answer it.
+  page.once("dialog", async (d) => { ok("no operating-system prompt for a gallery name", false, d.message()); await d.dismiss(); });
+  await page.type('.bulk input[aria-label="New gallery name"]', "Friends");
+  await clickText(page, ".bulk button", "Create with 2");
   ok("new gallery appears in the filter", await waitFor(page, () => [...document.querySelectorAll(".filter option")].some((o) => /Friends \(2\)/.test(o.textContent))));
 
   console.log("--- creator: galleries tab ---");
@@ -334,6 +347,26 @@ try {
     const r = await page.evaluate(async () => { const x = await fetch("/creator/auth/google", { redirect: "manual" }); return { status: x.status, type: x.type, body: (await x.text()).slice(0, 60) }; });
     ok("the worker lets sign-in through to the server", controlled && !/<!doctype|<html/i.test(r.body), `controlled=${controlled} ${r.status} ${JSON.stringify(r.body)}`);
   }
+
+  // A gallery's own name at the ROOT of the site. nginx serves the SPA for any
+  // path it has no file for, and the projection is published under the name as
+  // well as the token, so this resolves in one fetch with no routing at all.
+  console.log("--- a gallery's own name in the URL ---");
+  await fetch(`${A}/creator/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ slug: "friendstrip" }) });
+  await page.goto(`${V}/friendstrip`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".tick", { timeout: 20000 });
+  ok("the pretty URL opens the gallery", (await text(page, ".brand .title")) === "Friends", await text(page, ".brand .title"));
+  ok("...and a story deep-link under it works too", await (async () => {
+    const id = await page.$eval(".tick", (e) => e.dataset.id);
+    await page.goto(`${V}/friendstrip#m/${id}`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".story", { timeout: 15000 });
+    return (await hash(page)) === `#m/${id}`;
+  })());
+  await page.keyboard.press("Escape"); await sleep(300);
+  await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick", { timeout: 20000 });
+  ok("...and the token URL still opens the same one, as it always must", (await text(page, ".brand .title")) === "Friends");
+  ok("a name nobody has taken is not a gallery", (await (await fetch(`${V}/data/galleries/nobodyhasthis.json`)).status) === 404);
+  await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");   // back to the creator app for what follows
 
   console.log("--- creator: editor ---");
   const editId = await page.$eval(".cell", (c) => c.dataset.id);
@@ -410,6 +443,11 @@ try {
   await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
 
   console.log("--- creator: a Google Maps link pasted for the next photos ---");
+  // The place box is one tap away rather than permanently open above the
+  // photos it is about.
+  ok("the place picker is folded away until asked for", (await page.$('.drop input[aria-label="Search a place"]')) === null);
+  await clickText(page, ".drop button", "Pin the next photos to a place");
+  await page.waitForSelector('.drop input[aria-label="Search a place"]', { timeout: 5000 });
   await page.$eval('.drop input[aria-label="Search a place"]', (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, GMAPS);
   await page.focus('.drop input[aria-label="Search a place"]'); await page.keyboard.press("Enter");
   const bannerUp = () => /Lau Pa Sat/.test(document.querySelector(".shared")?.textContent ?? "") && /Add photos at “Lau Pa Sat”/.test(document.querySelector(".drop .btn.primary")?.textContent ?? "");
@@ -513,8 +551,9 @@ try {
   ok("a photo arrived without GPS (as phones do)", !!noGps, noGps?.id);
   await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
   await tapEl(page, await page.$(`.cell[data-id="${noGps.id}"]`));
-  await clickText(page, ".bulk button", "Gallery"); await page.select(".bulk select", "__new__");
-  page.once("dialog", (d) => d.accept("Nowhere in particular")); await clickText(page, ".bulk button", "Add");
+  await clickText(page, ".bulk button", "Gallery"); await page.select(".bulk select", "__new__"); await sleep(200);
+  await page.type('.bulk input[aria-label="New gallery name"]', "Nowhere in particular");
+  await clickText(page, ".bulk button", "Create with 1");
   ok("gallery of one unplaced photo created", await waitFor(page, () => [...document.querySelectorAll(".filter option")].some((o) => /Nowhere in particular \(1\)/.test(o.textContent))));
   const nowhere = (await (await fetch(`${A}/creator/api/galleries`, { headers: { "remote-email": WHO } })).json()).find((g) => g.title === "Nowhere in particular");
   await page.goto(`${V}/g/${nowhere.id}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".wall .cell", { timeout: 20000 });
@@ -524,6 +563,34 @@ try {
   // pin" would be pointing at all of them. It belongs to the map, not the wall.
   ok("...and no story ring on the wall, where the grid already shows everything", (await page.$(".mine-story")) === null);
   await settle(page); await shot(page, `${SHOTS}/23-viewer-no-locations.png`);
+
+  // A gallery with BOTH kinds: now the ring has a job, and has to be doing it.
+  // Nobody looks at a logo, so the turning is the whole reason the photos with
+  // no place get discovered -- "is an animation declared" is not enough, the
+  // pixels have to move.
+  await fetch(`${A}/creator/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ add: [noGps.id] }) });
+  await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".mine-story", { timeout: 20000 });
+  // (MapLibre by here -- the Google section removed its config.json -- so the
+  // placed photos are canvas pins, not .gpin nodes.)
+  ok("a mixed gallery puts a story ring on the mark", (await page.$(".mine-story")) !== null && (await page.$(".map")) !== null);
+  {
+    const a = await page.evaluate(() => { const cs = getComputedStyle(document.querySelector(".mine-story"), "::before"); return { name: cs.animationName, iter: cs.animationIterationCount, conic: cs.backgroundImage.includes("conic") }; });
+    ok("...and while unseen it turns, in Instagram's colours", a.name !== "none" && a.iter === "infinite" && a.conic, JSON.stringify(a));
+    const clip = await page.$eval(".mine-story", (e) => { const r = e.getBoundingClientRect(); return { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.ceil(r.width), height: Math.ceil(r.height) }; });
+    const frames = [];
+    for (let i = 0; i < 4; i++) { frames.push(await page.screenshot({ clip, encoding: "base64" })); await sleep(340); }
+    ok("...and the pixels really move", new Set(frames).size >= 3, `${new Set(frames).size} distinct of ${frames.length}`);
+    ok("...while the mark inside stays upright", await page.evaluate(() => getComputedStyle(document.querySelector(".mine-story .mark")).animationName === "none"));
+    await (await page.$(".mine-story")).tap();
+    await page.waitForSelector(".story", { timeout: 10000 });
+    await page.keyboard.press("Escape"); await waitFor(page, () => !document.querySelector(".story"));
+    await sleep(600);
+    const after = await page.evaluate(() => { const el = document.querySelector(".mine-story"); return { seen: el.classList.contains("seen"), anim: getComputedStyle(el, "::before").animationName }; });
+    ok("...and it goes grey and still once watched", after.seen && after.anim === "none", JSON.stringify(after));
+  }
+  await fetch(`${A}/creator/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ remove: [noGps.id] }) });
+
   await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");
   await page.select(".filter select", "all"); await clickText(page, ".toolbar button", "Select");
   await tapEl(page, await page.$(`.cell[data-id="${noGps.id}"]`));
@@ -549,6 +616,35 @@ try {
   await settle(page, { map: true }); await shot(page, `${SHOTS}/20-viewer-friends.png`);
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("home gallery lost the photo moved out of it", (await count(page, ".tick")) === 19, String(await count(page, ".tick")));
+  console.log("--- viewer: how many people have seen this ---");
+  // The eye in the top right. The number is recorded server-side and comes
+  // back on the same request, so what matters here is that the round trip
+  // works across the two pods, that reloading does not inflate it, and that
+  // the pretty name and the token are one gallery with one count.
+  await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" });
+  ok("an eye appears once the count comes back", await waitFor(page, () => !!document.querySelector(".views"), 10000));
+  const eye1 = await text(page, ".views .count");
+  ok("...showing a real number", /^\d/.test(eye1), eye1);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitFor(page, () => !!document.querySelector(".views"), 10000);
+  ok("...that reloading does not inflate", (await text(page, ".views .count")) === eye1, `${eye1} -> ${await text(page, ".views .count")}`);
+  ok("...and reads as views to a screen reader", /views?$/.test((await page.$eval(".views", (e) => e.textContent)).trim()), await page.$eval(".views", (e) => e.textContent));
+  ok("...and says the exact number on hover", /^\d[\d,]* views?$/.test(await page.$eval(".views", (e) => e.title)), await page.$eval(".views", (e) => e.title));
+  ok("the eye is at the right-hand end of the bar, after the gallery's name",
+    await page.evaluate(() => {
+      const bar = document.querySelector(".top").getBoundingClientRect();
+      const v = document.querySelector(".views").getBoundingClientRect();
+      const brand = document.querySelector(".brand").getBoundingClientRect();
+      return { ok: v.left > brand.right - 1 && bar.right - v.right < 90 && v.top >= bar.top - 1 && v.bottom <= bar.bottom + 1, gapRight: Math.round(bar.right - v.right), afterBrand: Math.round(v.left - brand.right) };
+    }).then((r) => { if (!r.ok) console.log("        " + JSON.stringify(r)); return r.ok; }));
+  ok("...and it is out of the way once a story is open",
+    await page.evaluate(() => getComputedStyle(document.querySelector(".chrome")).opacity) === "1");
+  await shot(page, `${SHOTS}/20b-viewer-views.png`);
+  // The same gallery by its pretty name must not start a second count.
+  const listNow = await (await fetch(`${A}/creator/api/galleries`)).json();
+  const friends = listNow.find((x) => x.id === friendsId);
+  ok("the creator sees the same count on the gallery", String(friends?.views) === eye1, `${friends?.views} vs ${eye1}`);
+
   console.log("--- viewer: where am I ---");
   // The browser asks nobody until the button is tapped; then a blue dot, and the
   // camera goes there once. (There is no download button: the worker keeps

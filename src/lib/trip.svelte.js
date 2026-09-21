@@ -1,6 +1,5 @@
 import { momentMatches, trackMatches, placeGroups, placeKey, isLoose } from "./data.js";
-
-const GALLERY_PATH = /^\/g\/([a-z0-9-]{4,40})\/?$/;
+import { galleryFromPath } from "../../server/slug.js";
 
 // Single source of truth. Map, timeline, wall and story are all just
 // different renderers over `visibleMoments` / `visibleTracks`.
@@ -60,7 +59,10 @@ class Trip {
     this.fromCache = false;
     const cached = (r) => r.headers?.get?.("x-itineris-cache") === "fallback";
     try {
-      let id = loc?.pathname?.match(GALLERY_PATH)?.[1] ?? null;
+      // /g/<token> or the gallery's own name at the root, /singaporeeats. Both
+      // are published as files of that name, so either resolves in one fetch
+      // and nginx needs no routing for it.
+      let id = galleryFromPath(loc?.pathname)?.id ?? null;
       if (!id) {
         const r = await fetch("/data/home.json");
         if (r.status === 404) { this.status = "landing"; return; }

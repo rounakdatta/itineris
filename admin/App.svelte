@@ -19,7 +19,12 @@
   let galleries = $state([]);
   let error = $state(null);
   let tab = $state("photos");          // photos | galleries
-  let filter = $state("all");          // all | private | <galleryId>
+  let filter = $state("all");          // all | private | untagged | unplaced | <galleryId>
+  let makeFirst = $state(false);       // arrived at Galleries from the nudge
+  // Until the library has actually answered, an empty `moments` means "not
+  // yet", not "none". Reading it as "none" flashed the big first-run panel --
+  // and then the first-gallery nudge -- on every single load.
+  let loaded = $state(false);
   let editingId = $state(null);
   let selectMode = $state(false);
   const selection = new SvelteSet();
@@ -56,8 +61,14 @@
   const shown = $derived(
     filter === "all" ? moments
     : filter === "private" ? moments.filter((m) => m.galleries.length === 0)
+    : filter === "untagged" ? moments.filter((m) => m.tags.length === 0)
+    : filter === "unplaced" ? moments.filter((m) => m.lat === null || m.lng === null)
     : moments.filter((m) => m.galleries.includes(filter))
   );
+  // A count you can act on. These used to be orange warning badges that just
+  // sat there -- on a fresh library every photo is untagged and unplaced, so
+  // they were a permanent scold with nothing to do about it.
+  const narrowTo = (f) => { exitSelect(); filter = filter === f ? "all" : f; };
   // For "use the previous/next photo's location" in the editor.
   const neighbours = $derived.by(() => {
     if (!editing) return { prev: null, next: null };
@@ -120,6 +131,7 @@
       fromCache = cached;
       error = null;
     } catch (e) { error = e.message; }
+    finally { loaded = true; }
   }
   async function signOut() {
     try { await api.signOut(); } catch { /* the cookie is gone either way */ }
@@ -207,31 +219,57 @@
         <button class="btn small dismiss" onclick={() => (shared = null)} aria-label="Dismiss place">✕</button>
       </section>
     {/if}
-    <Outbox {outbox} {queue} gallery={currentGallery} location={shared?.status === "ready" ? shared : null} {known} {placesEnabled} onEdit={(id) => (pendingEditId = id)} onPick={pinPlace} />
+    <Outbox {outbox} {queue} first={loaded && moments.length === 0 && !queue?.items?.length} gallery={currentGallery} location={shared?.status === "ready" ? shared : null} {known} {placesEnabled} onEdit={(id) => (pendingEditId = id)} onPick={pinPlace} />
 
+    {#if loaded && moments.length}
     <section class="toolbar">
       <label class="filter">
         <span class="muted small">Show</span>
         <select bind:value={filter} onchange={exitSelect} aria-label="Filter photos">
           <option value="all">All photos ({moments.length})</option>
           <option value="private">Not in any gallery ({privateCount})</option>
+          {#if untagged}<option value="untagged">Untagged ({untagged})</option>{/if}
+          {#if unplaced}<option value="unplaced">No location yet ({unplaced})</option>{/if}
           {#each galleries as g (g.id)}<option value={g.id}>{g.title} ({g.count})</option>{/each}
         </select>
       </label>
       <span class="spacer"></span>
-      {#if untagged}<span class="badge warn">{untagged} untagged</span>{/if}
-      {#if unplaced}<span class="badge warn">{unplaced} no location</span>{/if}
+      <span class="chips">
+      {#if untagged}<button class="badge" class:on={filter === "untagged"} aria-pressed={filter === "untagged"} onclick={() => narrowTo("untagged")}>{untagged} untagged</button>{/if}
+      {#if unplaced}<button class="badge" class:on={filter === "unplaced"} aria-pressed={filter === "unplaced"} onclick={() => narrowTo("unplaced")}>{unplaced} unplaced</button>{/if}
       <button class="btn small" class:on={selectMode} aria-pressed={selectMode} onclick={() => (selectMode ? exitSelect() : (selectMode = true))}>{selectMode ? "Done" : "Select"}</button>
+      </span>
     </section>
+    {/if}
 
     {#if currentGallery}
       <p class="hint muted small">Showing <strong>{currentGallery.title}</strong>. Photos you add now go straight into it.</p>
     {/if}
 
-    <MomentList moments={shown} selectedId={editingId} {selectMode} {selection}
-      onSelect={(id) => (selectMode ? toggleSelect(id) : (editingId = id))} />
+    <!-- The one thing the app is for. Photos uploaded and no gallery made is
+         a dead stop: they are private, nothing is shareable, and nothing on
+         this screen said so or offered the next step. -->
+    {#if loaded && moments.length && !galleries.length}
+      <section class="nudge">
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M9.6 13.6a4 4 0 0 0 6 .5l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.5 1.5M14.4 10.4a4 4 0 0 0-6-.5L5.8 12.5a4 4 0 0 0 5.7 5.7l1.5-1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
+        <p><strong>{moments.length} photo{moments.length === 1 ? "" : "s"}, no gallery yet.</strong> They stay private until they are in one — a gallery is the link you send people.</p>
+        <button class="btn small primary" onclick={() => { switchTab("galleries"); makeFirst = true; }}>Make your first gallery</button>
+      </section>
+    {/if}
+
+    <!-- Two different kinds of nothing. An empty LIBRARY is not a failure to
+         report -- the invitation above is already the whole screen, and
+         "Nothing here yet" under it just says the obvious twice. An empty
+         FILTER is somebody's question that came back blank, and it needs an
+         answer and a way out. -->
+    {#if shown.length}
+      <MomentList moments={shown} selectedId={editingId} {selectMode} {selection}
+        onSelect={(id) => (selectMode ? toggleSelect(id) : (editingId = id))} />
+    {:else if moments.length}
+      <p class="nothing muted">Nothing matches that. <button class="link" onclick={() => { exitSelect(); filter = "all"; }}>Show all {moments.length} photos</button></p>
+    {/if}
   {:else}
-    <GalleryList {galleries} {tracks} onChange={refresh} onShow={showGallery} />
+    <GalleryList {galleries} {tracks} momentIds={moments.map((m) => m.id)} openNow={makeFirst} onChange={() => { makeFirst = false; refresh(); }} onShow={showGallery} />
   {/if}
 </main>
 
@@ -287,13 +325,35 @@
   main { max-width: 960px; margin: 0 auto; padding: 14px 14px 120px; }
   /* Room to scroll the last row out from under the fixed bulk bar. */
   main.selecting { padding-bottom: 220px; }
-  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 18px 2px 8px; }
-  .filter { display: flex; align-items: center; gap: 8px; }
-  .filter select { width: auto; max-width: 60vw; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
-  .spacer { flex: 1; }
+  /* Two complete rows on a phone, one on a desktop. Letting the whole thing
+     wrap freely broke it mid-group -- the filter and one chip on the first
+     line, the other chip and Select on the second, nothing lining up with
+     anything. */
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 18px 2px 8px; }
+  .filter { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+  .filter select { flex: 1 1 auto; min-width: 0; max-width: 340px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .chips { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
+  .spacer { display: none; }
+  @media (max-width: 560px) {
+    .filter { flex: 1 0 100%; }
+    .filter select { max-width: none; }
+    .chips { margin-left: 0; flex: 1 0 100%; }
+    .chips .btn { margin-left: auto; }
+  }
   .btn.small { padding: 7px 12px; }
   .btn.on { background: rgba(255, 255, 255, 0.16); color: #fff; }
   .hint { margin: 0 2px 8px; }
+  .nothing { margin: 28px 2px; text-align: center; }
+  .nudge {
+    display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+    margin: 6px 2px 16px; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+  }
+  .nudge svg { flex: 0 0 auto; color: var(--accent); margin-top: 1px; }
+  .nudge p { margin: 0; flex: 1 1 15em; min-width: 0; font-size: 13px; line-height: 1.45; }
+  .nudge .btn { flex: 0 0 auto; }
+  .link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
   .small { font-size: 13px; }
   .error { padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
   .shared { position: relative; display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 12px 44px 12px 12px; border-radius: 12px; background: color-mix(in srgb, var(--accent, #7aa2f7) 16%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent, #7aa2f7) 40%, transparent); }

@@ -173,3 +173,14 @@ export function groupByPlace(moments) {
   }
   return [...groups.values()];
 }
+
+// How much room to leave around the photos when the whole trip is framed.
+// The sides used to be a flat 40px, which is less than one pin is wide: on a
+// wide screen the outermost pins ended up half a marker from the edge, as if
+// the trip carried on past the window. Scaling with the viewport keeps the
+// same breathing room on a phone and on a desktop, and the floor stops a
+// narrow window from squeezing them together again.
+export function fitPadding(width = 0, { top = 90, bottom = 130 } = {}) {
+  const side = Math.round(Math.min(160, Math.max(64, width * 0.09)));
+  return { top, bottom, left: side, right: side };
+}
