@@ -19,7 +19,7 @@ describe("GalleryList", () => {
     await fireEvent.input(screen.getByLabelText("Title"), { target: { value: "Friends" } });
     await fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await new Promise((r) => setTimeout(r, 0));
-    expect(api.createGallery).toHaveBeenCalledWith({ title: "Friends", description: "", home: true });
+    expect(api.createGallery).toHaveBeenCalledWith({ title: "Friends", slug: null, description: "", home: true });
     expect(onChange).toHaveBeenCalled();
   });
   it("shows the share link, counts and home badge; toggles home and routes", async () => {

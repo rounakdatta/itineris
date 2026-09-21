@@ -10,6 +10,8 @@ import path from "node:path";
 //   users/<uid>/galleries.json  their curated subsets: which moments/tracks, title, home
 //   library/owners.json         gallery token -> uid, so one person's galleries
 //                               can be published and pruned without touching anyone else's
+//   library/slugs.json          pretty name -> token, global because the pretty
+//                               name lives at the root of the site (/singaporeeats)
 //   library/instance.json       { owner } -- whose home gallery "/" shows
 //   data/home.json              { gallery } -> what "/" shows; absent = landing page
 //   data/galleries/<id>.json    one public projection per gallery, any owner
@@ -149,6 +151,7 @@ export class Store {
     this.paths = {
       users: path.join(dataDir, "users"),
       owners: path.join(dataDir, "library", "owners.json"),
+      slugs: path.join(dataDir, "library", "slugs.json"),
       instance: path.join(dataDir, "library", "instance.json"),
       home: path.join(dataDir, "data", "home.json"),
       pubGalleries: path.join(dataDir, "data", "galleries"),
@@ -216,6 +219,13 @@ export class Store {
   async legacy() { return (await exists(this.paths.legacyMomentsV1)) && !(await this.users()).length ? new Library(this, LEGACY) : null; }
 
   #owners() { return readJson(this.paths.owners, {}); }
+  slugs() { return readJson(this.paths.slugs, {}); }
+  // Who, if anyone, already answers to this name. Global: there is only one
+  // root namespace, and it is first come, first served.
+  async slugTaken(slug, exceptToken = null) {
+    const t = (await this.slugs())[slug];
+    return !!t && t !== exceptToken;
+  }
   #instance() { return readJson(this.paths.instance, {}); }
 
   // Whose home gallery "/" shows. The first person to sign in; after that it
@@ -259,18 +269,41 @@ export class Store {
       const [moments, tracks, galleries] = await Promise.all([lib.moments(), lib.tracks(), lib.galleries()]);
       await mkdir(this.paths.pubGalleries, { recursive: true });
       const owners = await this.#owners();
+      const slugs = await this.slugs();
+      // Which galleries were this person's BEFORE this pass. Both prunes need
+      // it, and the owners prune below is about to forget the deleted ones.
+      const wasMine = new Set(Object.entries(owners).filter(([, o]) => o === uid).map(([id]) => id));
       const keep = new Set();
       for (const g of galleries) {
-        await atomicWrite(path.join(this.paths.pubGalleries, `${g.id}.json`), materializeGallery(g, moments, tracks));
+        const projection = materializeGallery(g, moments, tracks);
+        await atomicWrite(path.join(this.paths.pubGalleries, `${g.id}.json`), projection);
         owners[g.id] = uid;
         keep.add(g.id);
+        // The pretty name is published as a second copy under its own name, so
+        // the viewer resolves /singaporeeats with one fetch and no routing.
+        // The token file stays forever: a link already sent must keep working.
+        if (g.slug) {
+          await atomicWrite(path.join(this.paths.pubGalleries, `${g.slug}.json`), projection);
+          slugs[g.slug] = g.id;
+        }
       }
-      for (const [id, owner] of Object.entries(owners)) {
-        if (owner !== uid || keep.has(id)) continue;
+      for (const id of wasMine) {
+        if (keep.has(id)) continue;
         delete owners[id];
         await unlink(path.join(this.paths.pubGalleries, `${id}.json`)).catch(() => {});
       }
+      // A name this person's gallery has given up -- renamed, cleared, or the
+      // whole gallery deleted -- stops answering, and the name is free for
+      // anybody again. Someone else's names are not ours to touch.
+      const mine = new Map(galleries.map((g) => [g.id, g.slug ?? null]));
+      for (const [slug, tok] of Object.entries(slugs)) {
+        if (!wasMine.has(tok) && !keep.has(tok)) continue;
+        if (mine.get(tok) === slug) continue;
+        delete slugs[slug];
+        await unlink(path.join(this.paths.pubGalleries, `${slug}.json`)).catch(() => {});
+      }
       await atomicWrite(this.paths.owners, owners);
+      await atomicWrite(this.paths.slugs, slugs);
       // "/" belongs to the instance owner; everyone else shares by link. Until
       // anyone has signed in, that is the library the deployment came with.
       const owner = await this.ownerUid();
@@ -292,10 +325,11 @@ export class Store {
     // serve -- the seed, or whatever the single-tenant layout left behind.
     if (await this.legacy()) await this.materialize(LEGACY);
     const owners = await this.#owners();
+    const slugs = await this.slugs();
     for (const f of await readdir(this.paths.pubGalleries).catch(() => [])) {
       if (!f.endsWith(".json")) continue;
       const id = f.slice(0, -5);
-      if (owners[id]) continue;
+      if (owners[id] || slugs[id]) continue;
       await unlink(path.join(this.paths.pubGalleries, f)).catch(() => {});
     }
   }
@@ -312,12 +346,19 @@ export class Store {
   async forget(uid) {
     return this.serialize(async () => {
       const owners = await this.#owners();
+      const slugs = await this.slugs();
       for (const [id, owner] of Object.entries(owners)) {
         if (owner !== uid) continue;
         delete owners[id];
         await unlink(path.join(this.paths.pubGalleries, `${id}.json`)).catch(() => {});
+        for (const [slug, token] of Object.entries(slugs)) {
+          if (token !== id) continue;
+          delete slugs[slug];
+          await unlink(path.join(this.paths.pubGalleries, `${slug}.json`)).catch(() => {});
+        }
       }
       await atomicWrite(this.paths.owners, owners);
+      await atomicWrite(this.paths.slugs, slugs);
       await rm(path.join(this.paths.users, uid), { recursive: true, force: true });
       await rm(path.join(this.dir, "media", uid), { recursive: true, force: true });
       await rm(path.join(this.dir, "originals", uid), { recursive: true, force: true });

@@ -63,7 +63,13 @@
   );
   const offered = $derived(suggestions.filter((s) => !tags.includes(s) && (!tagDraft || s.includes(tagDraft.toLowerCase()))).slice(0, 12));
   const homeGallery = $derived(galleries.find((g) => g.home));
-  const viewerLink = $derived(inGalleries.length ? storyUrl(homeGallery && inGalleries.includes(homeGallery.id) ? null : inGalleries[0], moment.id) : null);
+  // The prettiest link to this photo: the home gallery needs no path at all,
+  // otherwise the gallery's own name if it has one (galleryPath takes either).
+  const viewerLink = $derived.by(() => {
+    if (!inGalleries.length) return null;
+    if (homeGallery && inGalleries.includes(homeGallery.id)) return storyUrl(null, moment.id);
+    return storyUrl(galleries.find((g) => g.id === inGalleries[0]) ?? inGalleries[0], moment.id);
+  });
 
   function addTag(raw) {
     const v = raw.trim().toLowerCase().replace(/[,#]/g, "");

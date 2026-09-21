@@ -335,6 +335,26 @@ try {
     ok("the worker lets sign-in through to the server", controlled && !/<!doctype|<html/i.test(r.body), `controlled=${controlled} ${r.status} ${JSON.stringify(r.body)}`);
   }
 
+  // A gallery's own name at the ROOT of the site. nginx serves the SPA for any
+  // path it has no file for, and the projection is published under the name as
+  // well as the token, so this resolves in one fetch with no routing at all.
+  console.log("--- a gallery's own name in the URL ---");
+  await fetch(`${A}/creator/api/galleries/${friendsId}`, { method: "PATCH", headers: { "remote-email": WHO, "content-type": "application/json" }, body: JSON.stringify({ slug: "friendstrip" }) });
+  await page.goto(`${V}/friendstrip`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".tick", { timeout: 20000 });
+  ok("the pretty URL opens the gallery", (await text(page, ".brand .title")) === "Friends", await text(page, ".brand .title"));
+  ok("...and a story deep-link under it works too", await (async () => {
+    const id = await page.$eval(".tick", (e) => e.dataset.id);
+    await page.goto(`${V}/friendstrip#m/${id}`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".story", { timeout: 15000 });
+    return (await hash(page)) === `#m/${id}`;
+  })());
+  await page.keyboard.press("Escape"); await sleep(300);
+  await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick", { timeout: 20000 });
+  ok("...and the token URL still opens the same one, as it always must", (await text(page, ".brand .title")) === "Friends");
+  ok("a name nobody has taken is not a gallery", (await (await fetch(`${V}/data/galleries/nobodyhasthis.json`)).status) === 404);
+  await page.goto(`${A}/creator/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".cell");   // back to the creator app for what follows
+
   console.log("--- creator: editor ---");
   const editId = await page.$eval(".cell", (c) => c.dataset.id);
   const editRec = (await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json()).find((m) => m.id === editId);

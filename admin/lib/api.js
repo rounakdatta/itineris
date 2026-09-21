@@ -68,8 +68,11 @@ export const stillUrl = (media, tier = "medium") => {
     : (m.medium ?? m.poster ?? m.thumb ?? m.src);
   return rel ? mediaUrl(rel) : "";
 };
-export const galleryUrl = (id) => `${location.origin}/g/${id}`;
-export const storyUrl = (galleryId, momentId) => `${location.origin}${galleryId ? `/g/${galleryId}` : "/"}#m/${momentId}`;
+// The prettiest URL this gallery has: its own name if it has one, else the
+// token. Both keep working -- a link already shared must never stop resolving.
+export const galleryPath = (g) => (typeof g === "string" ? `/g/${g}` : g?.slug ? `/${g.slug}` : `/g/${g?.id}`);
+export const galleryUrl = (g) => `${location.origin}${galleryPath(g)}`;
+export const storyUrl = (gallery, momentId) => `${location.origin}${gallery ? galleryPath(gallery) : "/"}#m/${momentId}`;
 
 // "2026-03-14T08:40:12+08:00" -> { local: "2026-03-14T08:40", seconds: ":12", offset: "+08:00" }
 export function splitIso(t) {

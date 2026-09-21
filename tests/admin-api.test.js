@@ -15,5 +15,10 @@ describe("time editing helpers", () => {
     expect(galleryUrl("abc")).toMatch(/\/g\/abc$/);
     expect(storyUrl("abc", "m1")).toMatch(/\/g\/abc#m\/m1$/);
     expect(storyUrl(null, "m1")).toMatch(/\/#m\/m1$/);
+    // A gallery that has been given its own name gets the pretty URL; one
+    // that has not falls back to the token, which never stops working.
+    expect(galleryUrl({ id: "abc", slug: "singaporeeats" })).toMatch(/\/singaporeeats$/);
+    expect(galleryUrl({ id: "abc" })).toMatch(/\/g\/abc$/);
+    expect(storyUrl({ id: "abc", slug: "singaporeeats" }, "m1")).toMatch(/\/singaporeeats#m\/m1$/);
   });
 });

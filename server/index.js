@@ -12,6 +12,7 @@ import { isLocalIso } from "./time.js";
 import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
 import { lookupPlace, needsLookup, searchPlaces, fetchPlaceDetails, isStale, isPlaceId } from "./places.js";
 import { validateStyle, validateCaptions, captionsOf, normalizeStyle, styleOf, MAX_CAPTION_TEXT } from "./caption.js";
+import { slugProblem, cleanSlug } from "./slug.js";
 import {
   SESSION_COOKIE, SESSION_DAYS, uidFor, normalizeEmail, signSession, readSession, newSession,
   randomState, authorizeUrl, exchangeCode, readIdToken, allowedBy, redirectUriFor, safeNext,
@@ -422,11 +423,26 @@ app.delete(`${BASE}/api/moments/:id`, async (c) => {
 });
 
 // ---- galleries -----------------------------------------------------------
+// The gallery's own name in the URL. Global, because it lives at the root of
+// the site, so "taken" means taken by anybody. Absent or "" clears it back to
+// the token URL, which never stops working either way.
+async function wantedSlug(body, exceptToken = null) {
+  if (!("slug" in body)) return {};
+  if (body.slug === null || body.slug === "") return { slug: null };
+  const slug = cleanSlug(body.slug);
+  const problem = slugProblem(slug);
+  if (problem) return { error: `slug: ${problem}` };
+  if (await store.slugTaken(slug, exceptToken)) return { error: `slug: “${slug}” is already somebody's gallery` };
+  return { slug };
+}
+
 app.post(`${BASE}/api/galleries`, async (c) => {
   const lib = c.get("lib");
   let body; try { body = await c.req.json(); } catch { return c.json({ error: "invalid json" }, 400); }
   const title = STR(body.title, 120);
   if (!title) return c.json({ error: "title required" }, 400);
+  const want = await wantedSlug(body);
+  if (want.error) return c.json({ error: want.error }, 400);
   const now = new Date().toISOString();
   const known = new Set((await lib.moments()).map((m) => m.id));
   // Only the instance owner's home gallery is what "/" shows; for everyone else
@@ -434,6 +450,7 @@ app.post(`${BASE}/api/galleries`, async (c) => {
   const wantsHome = body.home === true;
   const g = {
     id: token(), title, description: STR(body.description, 1000) ?? "", home: false,
+    ...(want.slug ? { slug: want.slug } : {}),
     momentIds: (IDS(body.momentIds) ?? []).filter((id) => known.has(id)), trackIds: IDS(body.trackIds) ?? [],
     createdAt: now, updatedAt: now, createdBy: c.get("who").email,
   };
@@ -450,6 +467,8 @@ app.patch(`${BASE}/api/galleries/:id`, async (c) => {
   if (!TOKEN_RE.test(id)) return c.json({ error: "bad id" }, 400);
   let body; try { body = await c.req.json(); } catch { return c.json({ error: "invalid json" }, 400); }
   const [known, knownTracks] = [new Set((await lib.moments()).map((m) => m.id)), new Set((await lib.tracks()).map((t) => t.id))];
+  const want = await wantedSlug(body, id);
+  if (want.error) return c.json({ error: want.error }, 400);
   let result = null, bad = null;
   await lib.updateGalleries((gs) => {
     if (!gs.some((g) => g.id === id)) return gs;
@@ -459,6 +478,7 @@ app.patch(`${BASE}/api/galleries/:id`, async (c) => {
       const n = { ...g };
       if ("title" in body) { const t = STR(body.title, 120); if (!t) { bad = "title required"; return g; } n.title = t; }
       if ("description" in body) n.description = STR(body.description, 1000) ?? "";
+      if ("slug" in want) { if (want.slug) n.slug = want.slug; else delete n.slug; }
       if (body.home === false) n.home = false;
       let ms = new Set(n.momentIds ?? []), ts = new Set(n.trackIds ?? []);
       if (IDS(body.momentIds)) ms = new Set(IDS(body.momentIds));

@@ -1,10 +1,15 @@
 <script>
   import { api, galleryUrl, copyText } from "./lib/api.js";
+  import { slugProblem, cleanSlug, slugFrom } from "../server/slug.js";
 
   let { galleries, tracks = [], onChange, onShow } = $props();
   let creating = $state(false);
   let title = $state("");
   let description = $state("");
+  // The gallery's own name in the URL. Never filled in automatically: a link
+  // somebody is going to share should be one they chose.
+  let slug = $state("");
+  const slugIssue = $derived(slug.trim() ? slugProblem(slug) : null);
   let editingId = $state(null);
   let busy = $state(false);
   let error = $state(null);
@@ -14,21 +19,37 @@
   // `title`/`description` are shared by the new-gallery form and the edit form,
   // so both have to be seeded when they open: editing a gallery and cancelling
   // used to leave its title sitting in the New gallery form.
-  function startCreate() { title = ""; description = ""; creating = true; }
-  function startEdit(g) { title = g.title; description = g.description ?? ""; editingId = g.id; }
+  function startCreate() { title = ""; description = ""; slug = ""; creating = true; }
+  function startEdit(g) { title = g.title; description = g.description ?? ""; slug = g.slug ?? ""; editingId = g.id; }
 
   async function run(fn) { busy = true; error = null; try { await fn(); onChange?.(); } catch (e) { error = e.message; } finally { busy = false; } }
-  const create = () => run(async () => { await api.createGallery({ title, description, home: galleries.length === 0 }); title = ""; description = ""; creating = false; });
-  const save = (g) => run(async () => { await api.patchGallery(g.id, { title, description }); editingId = null; });
+  const create = () => run(async () => { await api.createGallery({ title, description, slug: cleanSlug(slug) || null, home: galleries.length === 0 }); title = ""; description = ""; slug = ""; creating = false; });
+  const save = (g) => run(async () => { await api.patchGallery(g.id, { title, description, slug: cleanSlug(slug) || null }); editingId = null; });
   const setHome = (g) => run(() => api.patchGallery(g.id, { home: !g.home }));
   const remove = (g) => { if (window.confirm(`Delete “${g.title}”? Its link stops working. Photos stay in the library.`)) run(() => api.removeGallery(g.id)); };
   const toggleTrack = (g, tid) => run(() => api.patchGallery(g.id, (g.trackIds ?? []).includes(tid) ? { removeTracks: [tid] } : { addTracks: [tid] }));
   async function copy(g) {
-    const ok = await copyText(galleryUrl(g.id));
+    const ok = await copyText(galleryUrl(g));
     copied = ok ? g.id : null; copyFailed = ok ? null : g.id;
     setTimeout(() => { copied = null; copyFailed = null; }, 1600);
   }
 </script>
+
+{#snippet slugField()}
+  <label class="slug">
+    <span class="muted small">Its own web address (optional)</span>
+    <span class="row">
+      <span class="host">{location.host}/</span>
+      <input bind:value={slug} maxlength="40" spellcheck="false" autocapitalize="none" autocorrect="off"
+        placeholder={slugFrom(title) || "singaporeeats"} aria-label="Web address" aria-invalid={!!slugIssue} />
+    </span>
+    {#if slugIssue}
+      <span class="err small" role="alert">{slugIssue}</span>
+    {:else}
+      <span class="muted small">The /g/… link keeps working either way, so nothing you have already shared breaks.</span>
+    {/if}
+  </label>
+{/snippet}
 
 <section class="intro">
   <p class="muted">A gallery is a link. Put any subset of photos in it, share the link with one group, make another for another group. Photos can be in as many as you like, and uploads are private until they're in one.</p>
@@ -38,7 +59,8 @@
     <form class="new" onsubmit={(e) => { e.preventDefault(); if (title.trim()) create(); }}>
       <input bind:value={title} placeholder="Title — e.g. Singapore, for the family" maxlength="120" aria-label="Title" />
       <input bind:value={description} placeholder="A line of description (optional)" maxlength="1000" aria-label="Description" />
-      <div class="actions"><button class="btn primary" type="submit" disabled={busy || !title.trim()}>Create</button><button class="btn" type="button" onclick={() => (creating = false)}>Cancel</button></div>
+      {@render slugField()}
+      <div class="actions"><button class="btn primary" type="submit" disabled={busy || !title.trim() || !!slugIssue}>Create</button><button class="btn" type="button" onclick={() => (creating = false)}>Cancel</button></div>
     </form>
   {/if}
   {#if error}<p class="err" role="alert">{error}</p>{/if}
@@ -50,7 +72,8 @@
       <form class="edit" onsubmit={(e) => { e.preventDefault(); save(g); }}>
         <input bind:value={title} maxlength="120" aria-label="Title" />
         <input bind:value={description} maxlength="1000" placeholder="Description" aria-label="Description" />
-        <div class="actions"><button class="btn primary" type="submit" disabled={busy || !title.trim()}>Save</button><button class="btn" type="button" onclick={() => (editingId = null)}>Cancel</button></div>
+        {@render slugField()}
+        <div class="actions"><button class="btn primary" type="submit" disabled={busy || !title.trim() || !!slugIssue}>Save</button><button class="btn" type="button" onclick={() => (editingId = null)}>Cancel</button></div>
       </form>
     {:else}
       <div class="head">
@@ -61,9 +84,9 @@
         </div>
       </div>
       <div class="link">
-        <code>{galleryUrl(g.id)}</code>
+        <code>{galleryUrl(g)}</code>
         <button class="btn small" onclick={() => copy(g)}>{copied === g.id ? "Copied" : copyFailed === g.id ? "Copy failed" : "Copy link"}</button>
-        <a class="btn small" href={galleryUrl(g.id)} target="_blank" rel="noopener">Open ↗</a>
+        <a class="btn small" href={galleryUrl(g)} target="_blank" rel="noopener">Open ↗</a>
       </div>
       {#if tracks.length}
         <div class="tracks">
@@ -88,6 +111,12 @@
   .intro { margin: 8px 2px 18px; }
   .intro p { margin: 0 0 12px; }
   .new, .edit { display: grid; gap: 8px; }
+  .slug { display: grid; gap: 4px; margin: 2px 0 0; }
+  .slug .row { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow: hidden; }
+  .slug .host { display: flex; align-items: center; padding: 0 2px 0 10px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .slug input { border: 0; background: transparent; border-radius: 0; flex: 1; min-width: 0; }
+  .slug input[aria-invalid="true"] { color: var(--danger); }
+  .slug .err { color: var(--danger); }
   .gallery { padding: 14px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 12px; }
   .gallery.home { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
   h3 { margin: 0 0 4px; font-size: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

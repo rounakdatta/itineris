@@ -435,6 +435,47 @@ try {
   } finally { s5.server.kill(); }
 
   // =========================================================================
+  console.log("--- a gallery's own name in the URL ---");
+  // /singaporeeats instead of /g/2mro45eyznpc. It lives at the ROOT of the
+  // site, so the namespace is global and every name is one the site can never
+  // use again -- which is why uniqueness and the reserved list are server-side.
+  const d7 = path.join(root, "slugs");
+  const s7 = await startServer({ port: 4328, dataDir: d7, seedDir: "" });
+  const ada7 = async (method, p, body) => j(await fetch(`${s7.BASE}${p}`, { method, headers: { "remote-email": "ada@example.com", "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }));
+  const bo7 = async (method, p, body) => j(await fetch(`${s7.BASE}${p}`, { method, headers: { "remote-email": "bo@example.com", "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }));
+  try {
+    const g = await ada7("POST", "/creator/api/galleries", { title: "Singapore eats", slug: "singaporeeats" });
+    ok("a gallery can be given its own name", g.status === 201 && g.body.slug === "singaporeeats", JSON.stringify(g.body.slug));
+    ok("...published under that name", (await fetch(`${s7.BASE}/data/galleries/singaporeeats.json`)).status === 200);
+    ok("...AND still under its token, so shared links never break", (await fetch(`${s7.BASE}/data/galleries/${g.body.id}.json`)).status === 200);
+    ok("...and the two are the same gallery", (await readJson(path.join(d7, "data", "galleries", "singaporeeats.json"))).id === g.body.id);
+
+    ok("nobody else can take that name", (await bo7("POST", "/creator/api/galleries", { title: "Mine now", slug: "singaporeeats" })).status === 400);
+    ok("...not even by renaming into it", (await bo7("POST", "/creator/api/galleries", { title: "Other", slug: "othereats" })).status === 201
+      && (await bo7("PATCH", `/creator/api/galleries/${(await bo7("GET", "/creator/api/galleries")).body.find((x) => x.slug === "othereats").id}`, { slug: "singaporeeats" })).status === 400);
+    ok("...but keeping your own name is not 'taken by somebody else'", (await ada7("PATCH", `/creator/api/galleries/${g.body.id}`, { title: "Singapore eats!", slug: "singaporeeats" })).status === 200);
+
+    for (const [bad, why] of [["creator", "reserved"], ["data", "reserved"], ["ab", "too short"], ["Has Space", "shape"], ["config.json", "filename"], ["-nope", "shape"]]) {
+      ok(`refused: ${why} (${bad})`, (await ada7("POST", "/creator/api/galleries", { title: "x", slug: bad })).status === 400);
+    }
+
+    const renamed = await ada7("PATCH", `/creator/api/galleries/${g.body.id}`, { slug: "sgeats" });
+    ok("renaming moves the name", renamed.body.slug === "sgeats");
+    ok("...the new one answers", (await fetch(`${s7.BASE}/data/galleries/sgeats.json`)).status === 200);
+    ok("...the old one stops", (await fetch(`${s7.BASE}/data/galleries/singaporeeats.json`)).status === 404);
+    ok("...and the token still answers, as it always must", (await fetch(`${s7.BASE}/data/galleries/${g.body.id}.json`)).status === 200);
+    ok("...so the freed name is available again", (await bo7("POST", "/creator/api/galleries", { title: "Bo's", slug: "singaporeeats" })).status === 201);
+
+    ok("clearing the name is allowed", (await ada7("PATCH", `/creator/api/galleries/${g.body.id}`, { slug: null })).body.slug === undefined);
+    ok("...and it stops answering", (await fetch(`${s7.BASE}/data/galleries/sgeats.json`)).status === 404);
+
+    const doomed = (await ada7("POST", "/creator/api/galleries", { title: "Doomed", slug: "doomedtrip" })).body;
+    await ada7("DELETE", `/creator/api/galleries/${doomed.id}`);
+    ok("deleting a gallery takes its name with it", (await fetch(`${s7.BASE}/data/galleries/doomedtrip.json`)).status === 404 && (await fetch(`${s7.BASE}/data/galleries/${doomed.id}.json`)).status === 404);
+    ok("...without touching anyone else's", (await fetch(`${s7.BASE}/data/galleries/singaporeeats.json`)).status === 200);
+  } finally { s7.server.kill(); }
+
+  // =========================================================================
   console.log("--- signing in with Google, for real (against a fake Google) ---");
   const d6 = path.join(root, "oauth");
   const s6 = await startServer({ port: 4327, dataDir: d6, seedDir: "", env: {
