@@ -492,7 +492,8 @@ try {
     const first = await see(g.id);
     ok("the first visitor is counted", first.status === 200 && first.body.views === 1, JSON.stringify(first.body));
     for (let i = 0; i < 5; i++) await see(g.id);
-    ok("...and reloading all afternoon still counts once", (await see(g.id)).body.views === 1);
+    const again = await see(g.id);
+    ok("...and reloading all afternoon still counts once", again.body.views === 1 && again.body.counted === false, JSON.stringify(again.body));
     ok("a different person counts", (await see(g.id, { ip: "198.51.100.4" })).body.views === 2);
     ok("...and so does a different browser on the same address", (await see(g.id, { ua: "Mozilla/5.0 (Android)" })).body.views === 3);
 

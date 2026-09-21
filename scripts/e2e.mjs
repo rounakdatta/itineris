@@ -257,6 +257,66 @@ try {
   ok("a count badge where several photos share the place", (await count(gp, ".gpin .ring .n")) === [...perPlace.values()].filter((n) => n > 1).length);
   ok("every ring is bright: nothing seen yet", (await count(gp, ".gpin .ring.seen")) === 0 && (await count(gp, ".gpin .ring")) === perPlace.size);
   ok("the pins are the photos", await gp.$eval(".gpin .ring img", (i) => /\/media\//.test(i.getAttribute("src"))));
+
+  // A real trip puts several places within a few hundred metres, and their
+  // name chips then land on top of one another. Squeeze the stub's grid until
+  // they do, and the map should thin the LABELS out -- never the pins, which
+  // are the photos and the thing you tap.
+  const overlaps = () => gp.evaluate(() => {
+    const on = [...document.querySelectorAll(".gpin .chip")].filter((c) => !c.classList.contains("crowded")).map((c) => c.getBoundingClientRect());
+    let n = 0;
+    for (let i = 0; i < on.length; i++) for (let j = i + 1; j < on.length; j++) {
+      const a = on[i], b = on[j];
+      if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) n++;
+    }
+    return { n, showing: on.length };
+  });
+  const roomy = await overlaps();
+  ok("with room to breathe, no two labels overlap either", roomy.n === 0, JSON.stringify(roomy));
+
+  // evaluateOnNewDocument, not evaluate: a reload throws away the page's JS
+  // context, so a value set on the old one is gone before the stub reads it --
+  // which made the first version of this test pass against a grid it had
+  // never actually squeezed.
+  const squeeze = await gp.evaluateOnNewDocument(() => { globalThis.__gmapsSpread = { x: 34, y: 30 }; });
+  await gp.reload({ waitUntil: "domcontentloaded" });
+  await gp.waitForSelector('.map[data-engine="google"] .gpin', { timeout: 20000 });
+  await sleep(1400);
+  const crowded = await overlaps();
+  ok("crowded together, no two labels are left sitting on each other", crowded.n === 0, JSON.stringify(crowded));
+  ok("...which it manages by showing fewer of them, not by shrinking them",
+    crowded.showing < roomy.showing && crowded.showing >= 1, `${roomy.showing} with room -> ${crowded.showing} crowded`);
+  ok("...but every pin is still there: the photo is never what gets hidden",
+    (await count(gp, ".gpin .ring")) === perPlace.size, `${await count(gp, ".gpin .ring")} of ${perPlace.size}`);
+  ok("...nor is one left half behind somebody else's photo",
+    await gp.evaluate(() => {
+      // Grazed at one end is allowed -- the name ellipsizes anyway; what is
+      // not allowed is a neighbour's photo eating a readable chunk of it.
+      const on = [...document.querySelectorAll(".gpin")].filter((g) => g.querySelector(".chip:not(.crowded)"));
+      const rings = [...document.querySelectorAll(".gpin .ring")];
+      return on.every((g) => {
+        const c = g.querySelector(".chip").getBoundingClientRect();
+        return rings.filter((r) => !g.contains(r)).every((r) => {
+          const b = r.getBoundingClientRect();
+          const w = Math.min(c.right, b.right) - Math.max(c.left, b.left);
+          const h = Math.min(c.bottom, b.bottom) - Math.max(c.top, b.top);
+          return !(w > 0 && h > 0) || (w * h) / (c.width * c.height) < 0.16;
+        });
+      });
+    }));
+  ok("...and no label hangs off the edge of the map",
+    await gp.evaluate(() => {
+      const v = document.querySelector('.map[data-engine="google"]').getBoundingClientRect();
+      return [...document.querySelectorAll(".gpin .chip")].filter((c) => !c.classList.contains("crowded"))
+        .every((c) => { const r = c.getBoundingClientRect(); return r.left >= v.left - 1 && r.right <= v.right + 1; });
+    }));
+  await shot(gp, `${SHOTS}/19b-google-crowded.png`);
+  // Given room again, every name that fits comes back -- nothing is hidden for good.
+  await gp.removeScriptToEvaluateOnNewDocument(squeeze.identifier);
+  await gp.reload({ waitUntil: "domcontentloaded" });
+  await gp.waitForSelector('.map[data-engine="google"] .gpin', { timeout: 20000 });
+  await sleep(1400);
+  ok("given room again, the names come back", (await overlaps()).showing === roomy.showing, JSON.stringify(await overlaps()));
   // The map's bottom reserve and the dock's height were two independent magic
   // numbers (100px vs 12 + 72 + max(10, safe-area)); they now both come from
   // --dock-h. Flush means Google's logo and terms are never under the strip,

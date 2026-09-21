@@ -112,7 +112,7 @@
           {:else}
             <img class="mark" src="/mark-96.png" alt="" width="22" height="22" decoding="async" />
           {/if}
-          {#if trip.title}<span class="title">{trip.title}</span>{/if}
+          {#if trip.title}<span class="title" title={trip.title}>{trip.title}</span>{/if}
         </h1>
         {#if !online || trip.fromCache}<span class="pill" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
         {#if !hasAnyCoords(trip.moments, trip.tracks)}<span class="pill muted" role="status">No locations yet</span>{/if}

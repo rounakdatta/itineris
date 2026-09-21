@@ -154,8 +154,10 @@ app.post(`${BASE}/api/views/:token`, async (c) => {
     const n = await store.viewsOf(id);
     return n === 0 && !(await store.ownerOf(id)) ? c.json({ error: "no such gallery" }, 404) : c.json({ views: n, counted: false });
   }
-  const n = await store.recordView(token, { ip, ua: c.req.header("user-agent") ?? "" });
-  return n === null ? c.json({ error: "no such gallery" }, 404) : c.json({ views: n, counted: true });
+  const seen = await store.recordView(token, { ip, ua: c.req.header("user-agent") ?? "" });
+  // `counted` is false for somebody already counted today, not just for the
+  // owner and the rate limit -- it should mean what it says.
+  return seen === null ? c.json({ error: "no such gallery" }, 404) : c.json({ views: seen.n, counted: seen.fresh });
 });
 
 app.use(`${BASE}/api/*`, async (c, next) => {

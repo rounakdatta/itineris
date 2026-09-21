@@ -52,7 +52,7 @@
         // places (e.placeId) opens Google's own card, so leave ours alone.
         map.addListener("click", (e) => { if (!e?.placeId) trip.focusId = null; });
         // Test hook, same as MapView: tiles loaded and nothing pending.
-        map.addListener("idle", () => { container.dataset.idle = "1"; });
+        map.addListener("idle", () => { container.dataset.idle = "1"; declutterSoon(); });
         map.addListener("dragstart", () => { container.dataset.idle = "0"; });
         map.addListener("zoom_changed", () => { container.dataset.idle = "0"; });
         ready = true;
@@ -140,7 +140,63 @@
       } else if (!l.getMap?.() && l.map !== map) l.setMap(map);
     }
     for (const [id, l] of lines) if (!wantT.has(id)) l.setMap(null);
+    declutterSoon();
   });
+
+  // A dense trip puts several places within a few hundred metres of each
+  // other, and their name chips then sit on top of one another -- three
+  // half-readable labels where one readable one would have been better, and
+  // some of them hanging off the edge of the screen. So the labels declutter:
+  // walked in order of how much each place is carrying, a chip that would
+  // land on one already kept steps aside. The PIN always stays -- it is the
+  // photo, and it is what you tap. Only the label goes.
+  //
+  // `visibility`, not `display`: the chip has to keep its box, because
+  // .has-chip shifts the whole pin up by the chip's height and a chip that
+  // stopped taking space would make its pin jump.
+  const CLEAR = 3;   // px of air required between two labels
+  function declutter() {
+    if (!container) return;
+    const live = [...pins.values()].filter((p) => p.chip && p.mk.map);
+    for (const p of live) p.chip.classList.remove("crowded");
+    if (live.length < 2) return;
+    const view = container.getBoundingClientRect();
+    // Most photos first, then nearest the middle of the map: the biggest
+    // stop keeps its name, and ties resolve the same way on every redraw
+    // rather than flickering between two equally good answers.
+    const mid = { x: view.left + view.width / 2, y: view.top + view.height / 2 };
+    const scored = live.map((p) => {
+      const r = p.chip.getBoundingClientRect();
+      return { p, r, n: p.group?.moments.length ?? 1, d: Math.hypot(r.left + r.width / 2 - mid.x, r.top + r.height / 2 - mid.y) };
+    }).filter((x) => x.r.width > 0)
+      .sort((a, b) => b.n - a.n || a.d - b.d || (a.p.group?.key < b.p.group?.key ? -1 : 1));
+    // The rings are obstacles, not candidates: a pin is never hidden, so a
+    // label half behind somebody else's photo is just a label you cannot
+    // read. (Its own ring sits directly above it by design.)
+    const rings = new Map(live.map((p) => [p, p.ring.getBoundingClientRect()]));
+    const hits = (a, b) => a.left < b.right + CLEAR && a.right > b.left - CLEAR && a.top < b.bottom + CLEAR && a.bottom > b.top - CLEAR;
+    const covered = (a, b) => {
+      const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      return w > 0 && h > 0 ? (w * h) / (a.width * a.height) : 0;
+    };
+    const kept = [];
+    for (const { p, r } of scored) {
+      const outside = r.left < view.left || r.right > view.right || r.top < view.top || r.bottom > view.bottom;
+      // Grazed at one end is fine -- the name is ellipsized anyway. Hidden
+      // only when a neighbour's photo eats enough of it to matter.
+      const behindAPin = [...rings].some(([q, rr]) => q !== p && covered(r, rr) >= 0.15);
+      const clash = kept.some((k) => hits(r, k));
+      if (outside || behindAPin || clash) p.chip.classList.add("crowded");
+      else kept.push(r);
+    }
+  }
+  // After the pins settle, and after every camera move.
+  let declutterRaf = 0;
+  const declutterSoon = () => {
+    cancelAnimationFrame(declutterRaf);
+    declutterRaf = requestAnimationFrame(() => requestAnimationFrame(declutter));
+  };
 
   // Focus -> that place's pin grows and its chip turns dark; the camera goes there.
   $effect(() => {
@@ -247,8 +303,11 @@
   :global(.gpin .chip) {
     display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 7px; border: 0; border-radius: 999px; cursor: pointer;
     background: #fff; color: #111; font: 700 11px/20px system-ui, -apple-system, sans-serif; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
-    transition: background 160ms, color 160ms;
+    transition: background 160ms, color 160ms, opacity 140ms;
   }
+  /* Stepped aside for a neighbour, or hanging off the edge of the map. */
+  :global(.gpin .chip.crowded) { visibility: hidden; opacity: 0; pointer-events: none; }
+  :global(.gpin.on .chip.crowded) { visibility: visible; opacity: 1; pointer-events: auto; }
   :global(.gpin .chip .nm) { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   :global(.gpin .chip b) { font-weight: 800; }
   :global(.gpin .chip i) { font-style: normal; color: #f4b400; font-size: 10px; }

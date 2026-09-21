@@ -24,7 +24,13 @@ export const GMAPS_STUB = `
       if (!m) { this.content.remove(); return; }
       const c = this.content;
       // A grid with room for a ring + a NAMED chip per cell (content up to ~170 px wide, 68 px tall shifted 46 px down), so no pin ever sits on another.
-      c.style.position = "absolute"; c.style.left = (24 + (this.i % 3) * 135) + "px"; c.style.top = (200 + Math.floor(this.i / 3) * 125) + "px";
+      // __gmapsSpread squeezes that grid on purpose: a real trip puts
+      // several places within a few hundred metres, and the only way to test
+      // what the map does about labels landing on each other is to make them
+      // land on each other.
+      const sp = globalThis.__gmapsSpread;
+      const dx = sp?.x ?? 135, dy = sp?.y ?? 125;
+      c.style.position = "absolute"; c.style.left = (24 + (this.i % 3) * dx) + "px"; c.style.top = (200 + Math.floor(this.i / 3) * dy) + "px";
       c.dataset.gmarker = "1";
       if (!c.__wired) { c.__wired = true; c.addEventListener("click", () => (this.h.click || []).forEach((f) => f())); }
       m.el.appendChild(c);
