@@ -34,10 +34,19 @@ describe("page side of the worker", () => {
     expect(buttons).toHaveLength(1);
     expect(buttons[0]).toHaveTextContent("Updated · Reload");
   });
+  it("every page load asks for a new version straight away, not in an hour", async () => {
+    // Navigations come from the versioned shell cache, so until a new worker
+    // activates the visitor keeps getting the previous build -- and never sees
+    // the reload pill either, because the controller never changes.
+    registerServiceWorker("/sw.js");
+    await Promise.resolve(); await Promise.resolve();
+    expect(fake.update).toHaveBeenCalledTimes(1);   // before any timer has run
+  });
   it("long-lived pages keep checking for updates", async () => {
     registerServiceWorker("/sw.js");
     await Promise.resolve(); await Promise.resolve();
+    expect(fake.update).toHaveBeenCalledTimes(1);   // the one on load
     vi.advanceTimersByTime(60 * 60 * 1000);
-    expect(fake.update).toHaveBeenCalledTimes(1);
+    expect(fake.update).toHaveBeenCalledTimes(2);   // ...and one an hour later
   });
 });

@@ -5,6 +5,13 @@ export function registerServiceWorker(url, { scope, label = "Updated · Reload" 
   if (!("serviceWorker" in navigator)) return;
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register(url, scope ? { scope } : undefined).then((reg) => {
+    // Ask NOW, not in an hour. Navigations are served from the versioned shell
+    // cache, so until a new worker activates the visitor keeps getting the
+    // previous build -- and never even sees the reload pill, because the
+    // controller never changes. The browser's own soft update after a
+    // navigation did not land within three full reloads when this was
+    // measured, which is how a shared link kept showing a fixed bug.
+    reg.update().catch(() => {});
     // Long-lived tabs (a story left open on a shelf) still learn about updates.
     setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
   }).catch(() => {});
