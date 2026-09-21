@@ -180,18 +180,37 @@
   // "Next stop": while the story hands over, the pin it is travelling to pulses.
   $effect(() => { if (container) container.classList.toggle("travel", trip.handoff); });
 
+  // The whole selection on screen at once. (The map element already stops
+  // above the dock, so it only needs padding for the top bar.)
+  function fitAll() {
+    const box = bboxOf(trip.visibleMoments, trip.visibleTracks);
+    if (!box) return;
+    map.fitBounds(new g.LatLngBounds({ lat: box[1], lng: box[0] }, { lat: box[3], lng: box[2] }), { top: 90, bottom: 40, left: 40, right: 40 });
+    // A single spot would zoom to the rooftops; keep it street-level.
+    g.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 16) map.setZoom(16); });
+  }
+
   // Filter changed, or data arrived -> refit (inputs only, like MapView).
   $effect(() => {
     trip.facets;
     trip.loaded;
     trip.galleryId;
     if (!ready || !map) return;
+    untrack(fitAll);
+  });
+
+  // Opening a story flies the camera to that one pin and holds it at zoom 15.
+  // Nothing used to bring it back, so closing the story left the map stranded
+  // on the last place you looked at, with the rest of the trip off screen --
+  // and every story after that stranded it somewhere else again. Coming back
+  // to the map means coming back to the whole trip.
+  let storyWasOpen = false;
+  $effect(() => {
+    const open = trip.storyOpen;
+    if (!ready || !map) { storyWasOpen = open; return; }
     untrack(() => {
-      const box = bboxOf(trip.visibleMoments, trip.visibleTracks);
-      if (!box) return;
-      map.fitBounds(new g.LatLngBounds({ lat: box[1], lng: box[0] }, { lat: box[3], lng: box[2] }), { top: 90, bottom: 40, left: 40, right: 40 });
-      // A single spot would zoom to the rooftops; keep it street-level.
-      g.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 16) map.setZoom(16); });
+      if (storyWasOpen && !open) fitAll();
+      storyWasOpen = open;
     });
   });
 </script>
