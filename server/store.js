@@ -249,8 +249,8 @@ export class Store {
     return viewSalt;
   }
 
-  // Returns the gallery's total, or null if there is no such published
-  // gallery -- so this endpoint cannot be used to make up entries.
+  // Returns `{ n, fresh }`, or null if there is no such published gallery --
+  // so this endpoint cannot be used to make up entries.
   async recordView(name, { ip, ua, at = new Date() } = {}) {
     if (!/^[a-z0-9][a-z0-9-]{1,40}$/.test(String(name ?? ""))) return null;
     return this.serialize(async () => {
@@ -263,7 +263,7 @@ export class Store {
       const file = await this.#viewFile();
       const { entry, n, fresh } = countView(file[token], visitorKey({ salt, ip, ua, token, day }), day);
       if (fresh) await atomicWrite(this.paths.views, { ...file, [token]: entry });
-      return n;
+      return { n, fresh };
     });
   }
 
