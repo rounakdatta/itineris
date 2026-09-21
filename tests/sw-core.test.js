@@ -94,7 +94,7 @@ describe("worker: serving", () => {
     expect(fetched).toEqual(["/media/p1-960.webp", "/v/1/2/3.mvt"]);
   });
   it("leaves uploads, edits and other sites alone", async () => {
-    expect(await request("/admin/api/upload", { method: "POST" })).toBeNull();
+    expect(await request("/creator/api/upload", { method: "POST" })).toBeNull();
     expect(await request("https://example.com/x")).toBeNull();
   });
 });

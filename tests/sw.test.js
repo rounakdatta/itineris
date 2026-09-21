@@ -5,7 +5,7 @@ import { moments, tracks } from "./fixtures.js";
 
 const origin = "https://itineris.taptappers.club";
 const viewer = { origin, scope: "/", dataPrefixes: ["/data/"] };
-const admin = { origin, scope: "/admin/", apiPaths: ["/admin/api/library", "/admin/api/me"] };
+const admin = { origin, scope: "/creator/", apiPaths: ["/creator/api/library", "/creator/api/me"] };
 
 describe("what each request is", () => {
   it("viewer", () => {
@@ -16,18 +16,18 @@ describe("what each request is", () => {
     expect(classify(`${origin}/data/home.json`, viewer)).toBe("data");
     expect(classify(`${origin}/data/galleries/x.json`, viewer)).toBe("data");
     expect(classify(`${origin}/media/abc-400.webp`, viewer)).toBe("media");
-    expect(classify(`${origin}/admin/api/me`, viewer)).toBe("network");   // not ours
+    expect(classify(`${origin}/creator/api/me`, viewer)).toBe("network");   // not ours
     expect(classify("https://tiles-c.basemaps.cartocdn.com/vectortiles/carto.streets/v1/12/3/2.mvt", viewer)).toBe("tiles");
     expect(classify("https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json", viewer)).toBe("tiles");
     expect(classify("https://tiles.basemaps.cartocdn.com/fonts/Montserrat%20Medium/0-255.pbf", viewer)).toBe("tiles");
     expect(classify("https://example.com/x", viewer)).toBe("network");
   });
-  it("admin", () => {
-    expect(classify(`${origin}/admin/`, admin)).toBe("navigation");
-    expect(classify(`${origin}/admin/assets/index-abc.js`, admin)).toBe("shell");
-    expect(classify(`${origin}/admin/api/library`, admin)).toBe("data");
-    expect(classify(`${origin}/admin/api/me`, admin)).toBe("data");
-    expect(classify(`${origin}/admin/api/moments`, admin)).toBe("network");   // mutations and lists we don't cache
+  it("creator", () => {
+    expect(classify(`${origin}/creator/`, admin)).toBe("navigation");
+    expect(classify(`${origin}/creator/assets/index-abc.js`, admin)).toBe("shell");
+    expect(classify(`${origin}/creator/api/library`, admin)).toBe("data");
+    expect(classify(`${origin}/creator/api/me`, admin)).toBe("data");
+    expect(classify(`${origin}/creator/api/moments`, admin)).toBe("network");   // mutations and lists we don't cache
     expect(classify(`${origin}/media/abc-400.webp`, admin)).toBe("media");     // thumbnails, shared cache
     expect(classify(`${origin}/data/home.json`, admin)).toBe("network");      // outside its scope
   });

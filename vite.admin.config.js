@@ -5,16 +5,16 @@ import { stampVersion } from "./vite.config.js";
 
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
-// The admin UI is a separate build: served by the admin server under /admin/,
+// The admin UI is a separate build: served by the admin server under /creator/,
 // never part of the public nginx image.
 export default defineConfig({
   root: "admin",
-  base: "/admin/",
+  base: "/creator/",
   plugins: [svelte(), stampVersion(version)],
   build: {
     outDir: "../dist-admin",
     emptyOutDir: true,
     rollupOptions: { output: { manualChunks: { maplibre: ["maplibre-gl"] } } },
   },
-  server: { proxy: { "/admin/api": "http://localhost:8080", "/media": "http://localhost:8080", "/data": "http://localhost:8080" } },
+  server: { proxy: { "/creator/api": "http://localhost:8080", "/media": "http://localhost:8080", "/data": "http://localhost:8080" } },
 });

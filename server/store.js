@@ -1,20 +1,31 @@
-import { readFile, writeFile, rename, mkdir, cp, unlink, access, readdir } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir, cp, unlink, access, readdir, rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 
 // ---------------------------------------------------------------------------
 // Layout under the data dir. Only data/ and media/ are ever served publicly.
 //
-//   library/moments.json      every moment, private (has uploader, filename…)
-//   library/tracks.json       every track, private
-//   library/galleries.json    curated subsets: which moments/tracks, title, home
-//   data/home.json            { gallery } -> what "/" shows; absent = landing page
-//   data/galleries/<id>.json  one public projection per gallery
-//   media/                    content-hashed derivatives (public by obscurity)
-//   originals/                never served
+//   users/<uid>/moments.json    one person's moments, private (uploader, filename…)
+//   users/<uid>/tracks.json     their tracks
+//   users/<uid>/galleries.json  their curated subsets: which moments/tracks, title, home
+//   library/owners.json         gallery token -> uid, so one person's galleries
+//                               can be published and pruned without touching anyone else's
+//   library/instance.json       { owner } -- whose home gallery "/" shows
+//   data/home.json              { gallery } -> what "/" shows; absent = landing page
+//   data/galleries/<id>.json    one public projection per gallery, any owner
+//   media/<uid>/                content-hashed derivatives (public by obscurity)
+//   originals/<uid>/            never served
 //
 // Uploads are therefore private until placed in a gallery, a photo can sit in
 // many galleries, and every gallery URL is an unguessable token.
+//
+// Gallery tokens are global, so `/g/<token>` means the same thing whoever made
+// it; everything else is per person. Media is filed under the uid as well --
+// two people who upload the same photo would otherwise share one derivative,
+// and the first to delete it would break the other's gallery.
+//
+// Before 0.21 there was one library at library/moments.json, because there was
+// one person behind tinyauth. `adopt()` hands that to whoever signs in first.
 // ---------------------------------------------------------------------------
 
 const exists = (p) => access(p).then(() => true, () => false);
@@ -40,6 +51,11 @@ export function token(n = 12) {
   return s;
 }
 export const TOKEN_RE = /^[a-z0-9-]{4,40}$/;
+export const UID_RE = /^[0-9a-f]{16}$/;
+// The single-tenant library from before 0.21, standing in as a person until
+// somebody signs in and adopts it. Deliberately not a valid uid, so it can
+// never collide with a real one or turn up in users().
+export const LEGACY = "legacy";
 
 // The public shape of a moment. Whitelist, never blacklist: a new private field
 // on the library record must be added here on purpose before it can leak.
@@ -70,76 +86,45 @@ export function materializeGallery(g, moments, tracks) {
   };
 }
 
-export class Store {
-  constructor(dataDir) {
-    this.dir = dataDir;
+// One person's journal. Every route works through one of these, so there is no
+// path in the API that can reach somebody else's photos by construction.
+export class Library {
+  constructor(store, uid) {
+    this.store = store;
+    this.uid = uid;
+    this.dir = uid === LEGACY ? path.join(store.dir, "library") : path.join(store.dir, "users", uid);
     this.paths = {
-      moments: path.join(dataDir, "library", "moments.json"),
-      tracks: path.join(dataDir, "library", "tracks.json"),
-      galleries: path.join(dataDir, "library", "galleries.json"),
-      home: path.join(dataDir, "data", "home.json"),
-      pubGalleries: path.join(dataDir, "data", "galleries"),
-      legacyMoments: path.join(dataDir, "data", "moments.json"),
-      legacyTracks: path.join(dataDir, "data", "tracks.json"),
+      moments: path.join(this.dir, "moments.json"),
+      tracks: path.join(this.dir, "tracks.json"),
+      galleries: path.join(this.dir, "galleries.json"),
     };
-    this.queue = Promise.resolve();
   }
 
-  // Returns how the volume was brought up: existing | migrated | seeded | empty.
-  async init(seedDir) {
-    for (const d of ["library", "data/galleries", "media", "originals"]) await mkdir(path.join(this.dir, d), { recursive: true });
-    if (await exists(this.paths.moments)) {
-      await this.materialize();                 // heals any stale or missing public file
-      return "existing";
+  async ensure() {
+    if (await exists(this.paths.moments)) return this;
+    await mkdir(this.dir, { recursive: true });
+    for (const p of [this.paths.moments, this.paths.tracks, this.paths.galleries]) {
+      if (!(await exists(p))) await atomicWrite(p, []);
     }
-    if (await exists(this.paths.legacyMoments)) {
-      await this.#migrateLegacy();
-      return "migrated";
-    }
-    if (seedDir && (await exists(path.join(seedDir, "library", "moments.json")))) {
-      // Never clobber: whichever pod seeds first wins, the other finds it done.
-      for (const d of ["library", "data", "media"]) {
-        if (await exists(path.join(seedDir, d))) await cp(path.join(seedDir, d), path.join(this.dir, d), { recursive: true, force: false, errorOnExist: false });
-      }
-      await this.materialize();
-      return "seeded";
-    }
-    await atomicWrite(this.paths.moments, []);
-    await atomicWrite(this.paths.tracks, []);
-    await atomicWrite(this.paths.galleries, []);
-    await this.materialize();
-    return "empty";
-  }
-
-  // 0.2.x served the whole library publicly from data/moments.json. Move it
-  // into the library, wrap everything in one home gallery so the live site
-  // keeps showing exactly what it showed, then remove the public copies.
-  async #migrateLegacy() {
-    const moments = await readJson(this.paths.legacyMoments, []);
-    const tracks = await readJson(this.paths.legacyTracks, []);
-    const now = new Date().toISOString();
-    const home = {
-      id: token(), title: "My journal", description: "", home: true,
-      momentIds: moments.map((m) => m.id), trackIds: tracks.map((t) => t.id), createdAt: now, updatedAt: now,
-    };
-    await atomicWrite(this.paths.moments, moments);
-    await atomicWrite(this.paths.tracks, tracks);
-    await atomicWrite(this.paths.galleries, [home]);
-    await this.materialize();
-    await unlink(this.paths.legacyMoments).catch(() => {});
-    await unlink(this.paths.legacyTracks).catch(() => {});
+    return this;
   }
 
   moments() { return readJson(this.paths.moments, []); }
   tracks() { return readJson(this.paths.tracks, []); }
   galleries() { return readJson(this.paths.galleries, []); }
 
-  // Every write goes through one queue and ends with a rematerialisation, so
-  // the public files always reflect the library and never interleave.
+  // Every write goes through the store's one queue and ends with a
+  // rematerialisation, so the public files always reflect the library and
+  // never interleave -- with other writes of this person's OR anyone else's.
   #run(fn) {
-    const run = this.queue.then(async () => { const r = await fn(); await this.materialize(); return r; });
-    this.queue = run.catch(() => {});
-    return run;
+    return this.store.serialize(async () => {
+      const r = await fn();
+      // `locked`: we are already inside the queue. Asking materialize to take
+      // it again waits for a turn that cannot come until we return -- which is
+      // a deadlock, and the request simply never answers.
+      await this.store.materialize(this.uid, { locked: true });
+      return r;
+    });
   }
   updateMoments(fn) {
     return this.#run(async () => {
@@ -156,21 +141,163 @@ export class Store {
       return next;
     });
   }
+}
 
-  async materialize() {
-    const [moments, tracks, galleries] = await Promise.all([this.moments(), this.tracks(), this.galleries()]);
-    await mkdir(this.paths.pubGalleries, { recursive: true });
-    const keep = new Set();
-    for (const g of galleries) {
-      await atomicWrite(path.join(this.paths.pubGalleries, `${g.id}.json`), materializeGallery(g, moments, tracks));
-      keep.add(`${g.id}.json`);
+export class Store {
+  constructor(dataDir) {
+    this.dir = dataDir;
+    this.paths = {
+      users: path.join(dataDir, "users"),
+      owners: path.join(dataDir, "library", "owners.json"),
+      instance: path.join(dataDir, "library", "instance.json"),
+      home: path.join(dataDir, "data", "home.json"),
+      pubGalleries: path.join(dataDir, "data", "galleries"),
+      legacyLibrary: path.join(dataDir, "library"),
+      legacyMomentsV1: path.join(dataDir, "library", "moments.json"),
+      legacyTracksV1: path.join(dataDir, "library", "tracks.json"),
+      legacyGalleriesV1: path.join(dataDir, "library", "galleries.json"),
+      legacyMoments: path.join(dataDir, "data", "moments.json"),
+      legacyTracks: path.join(dataDir, "data", "tracks.json"),
+    };
+    this.queue = Promise.resolve();
+  }
+
+  // One writer at a time across every library on the volume.
+  serialize(fn) {
+    const run = this.queue.then(fn);
+    this.queue = run.catch(() => {});
+    return run;
+  }
+
+  // Returns how the volume was brought up: existing | migrated | seeded | empty.
+  async init(seedDir) {
+    for (const d of ["library", "users", "data/galleries", "media", "originals"]) await mkdir(path.join(this.dir, d), { recursive: true });
+    const how = await this.#bring(seedDir);
+    await this.reconcile();
+    return how;
+  }
+
+  async #bring(seedDir) {
+    if ((await this.users()).length || (await exists(this.paths.legacyMomentsV1))) return "existing";
+    if (await exists(this.paths.legacyMoments)) { await this.#migrateV0(); return "migrated"; }
+    if (seedDir && (await exists(path.join(seedDir, "library", "moments.json")))) {
+      // Never clobber: whichever pod seeds first wins, the other finds it done.
+      for (const d of ["library", "data", "media"]) {
+        if (await exists(path.join(seedDir, d))) await cp(path.join(seedDir, d), path.join(this.dir, d), { recursive: true, force: false, errorOnExist: false });
+      }
+      return "seeded";
     }
-    for (const f of await readdir(this.paths.pubGalleries)) {
-      if (f.endsWith(".json") && !keep.has(f)) await unlink(path.join(this.paths.pubGalleries, f)).catch(() => {});
+    return "empty";
+  }
+
+  // 0.2.x served the whole library publicly from data/moments.json. Move it
+  // into the (then single) library and wrap everything in one home gallery.
+  async #migrateV0() {
+    const moments = await readJson(this.paths.legacyMoments, []);
+    const tracks = await readJson(this.paths.legacyTracks, []);
+    const now = new Date().toISOString();
+    const home = {
+      id: token(), title: "My journal", description: "", home: true,
+      momentIds: moments.map((m) => m.id), trackIds: tracks.map((t) => t.id), createdAt: now, updatedAt: now,
+    };
+    await atomicWrite(this.paths.legacyMomentsV1, moments);
+    await atomicWrite(this.paths.legacyTracksV1, tracks);
+    await atomicWrite(this.paths.legacyGalleriesV1, [home]);
+    await unlink(this.paths.legacyMoments).catch(() => {});
+    await unlink(this.paths.legacyTracks).catch(() => {});
+  }
+
+  async users() {
+    const names = await readdir(this.paths.users).catch(() => []);
+    return names.filter((n) => UID_RE.test(n));
+  }
+  library(uid) { return new Library(this, uid); }
+  // Present only until the first sign-in adopts it.
+  async legacy() { return (await exists(this.paths.legacyMomentsV1)) && !(await this.users()).length ? new Library(this, LEGACY) : null; }
+
+  #owners() { return readJson(this.paths.owners, {}); }
+  #instance() { return readJson(this.paths.instance, {}); }
+
+  // Whose home gallery "/" shows. The first person to sign in; after that it
+  // does not move, so somebody else making their own journal cannot take over
+  // the front page.
+  async ownerUid() { return (await this.#instance()).owner ?? null; }
+
+  // The single-tenant library from before 0.21 belongs to whoever signs in
+  // first -- on a deployment that has been running, that is the person whose
+  // photos they already are.
+  async adopt(uid, email) {
+    return this.serialize(async () => {
+      const inst = await this.#instance();
+      if (!inst.owner) await atomicWrite(this.paths.instance, { ...inst, owner: uid, ownerEmail: email ?? null, since: new Date().toISOString() });
+      const lib = this.library(uid);
+      const legacy = await exists(this.paths.legacyMomentsV1);
+      const mine = await exists(lib.paths.moments);
+      if (legacy && !mine && (await this.users()).length === 0) {
+        await mkdir(lib.dir, { recursive: true });
+        for (const [from, to] of [[this.paths.legacyMomentsV1, lib.paths.moments], [this.paths.legacyTracksV1, lib.paths.tracks], [this.paths.legacyGalleriesV1, lib.paths.galleries]]) {
+          if (await exists(from)) await rename(from, to);
+        }
+        // Everything already published under the old layout is now theirs.
+        const owners = await this.#owners();
+        for (const [id, who] of Object.entries(owners)) if (who === LEGACY) owners[id] = uid;
+        for (const g of await lib.galleries()) owners[g.id] = uid;
+        await atomicWrite(this.paths.owners, owners);
+      }
+      await lib.ensure();
+      await this.materialize(uid, { locked: true });
+      return lib;
+    });
+  }
+
+  // Publish one person's galleries and retire the ones they have deleted.
+  // Scoped by the owners index: pruning by "everything not in this list" would
+  // delete every other person's gallery on the volume.
+  async materialize(uid, { locked = false } = {}) {
+    const run = async () => {
+      const lib = this.library(uid);
+      const [moments, tracks, galleries] = await Promise.all([lib.moments(), lib.tracks(), lib.galleries()]);
+      await mkdir(this.paths.pubGalleries, { recursive: true });
+      const owners = await this.#owners();
+      const keep = new Set();
+      for (const g of galleries) {
+        await atomicWrite(path.join(this.paths.pubGalleries, `${g.id}.json`), materializeGallery(g, moments, tracks));
+        owners[g.id] = uid;
+        keep.add(g.id);
+      }
+      for (const [id, owner] of Object.entries(owners)) {
+        if (owner !== uid || keep.has(id)) continue;
+        delete owners[id];
+        await unlink(path.join(this.paths.pubGalleries, `${id}.json`)).catch(() => {});
+      }
+      await atomicWrite(this.paths.owners, owners);
+      // "/" belongs to the instance owner; everyone else shares by link. Until
+      // anyone has signed in, that is the library the deployment came with.
+      const owner = await this.ownerUid();
+      if (owner === uid || (uid === LEGACY && !owner)) {
+        const home = galleries.find((g) => g.home);
+        if (home) await atomicWrite(this.paths.home, { gallery: home.id });
+        else await unlink(this.paths.home).catch(() => {});
+      }
+    };
+    return locked ? run() : this.serialize(run);
+  }
+
+  // Boot-time tidy: publish what every library says, and drop public files for
+  // galleries nobody owns any more (a half-finished delete, an old layout).
+  async reconcile() {
+    const uids = await this.users();
+    for (const uid of uids) await this.materialize(uid);
+    // A deployment that has never been signed into still has a journal to
+    // serve -- the seed, or whatever the single-tenant layout left behind.
+    if (await this.legacy()) await this.materialize(LEGACY);
+    const owners = await this.#owners();
+    for (const f of await readdir(this.paths.pubGalleries).catch(() => [])) {
+      if (!f.endsWith(".json")) continue;
+      const id = f.slice(0, -5);
+      if (owners[id]) continue;
+      await unlink(path.join(this.paths.pubGalleries, f)).catch(() => {});
     }
-    const home = galleries.find((g) => g.home);
-    if (home) await atomicWrite(this.paths.home, { gallery: home.id });
-    else await unlink(this.paths.home).catch(() => {});
   }
 
   async removeFiles(rels) {
@@ -178,5 +305,22 @@ export class Store {
       if (!rel || rel.includes("..")) continue;
       await unlink(path.join(this.dir, rel)).catch(() => {});
     }
+  }
+
+  // Everything a person has, gone. (Not wired to a route yet; here so that
+  // "delete my account" is a five-line change rather than an archaeology dig.)
+  async forget(uid) {
+    return this.serialize(async () => {
+      const owners = await this.#owners();
+      for (const [id, owner] of Object.entries(owners)) {
+        if (owner !== uid) continue;
+        delete owners[id];
+        await unlink(path.join(this.paths.pubGalleries, `${id}.json`)).catch(() => {});
+      }
+      await atomicWrite(this.paths.owners, owners);
+      await rm(path.join(this.paths.users, uid), { recursive: true, force: true });
+      await rm(path.join(this.dir, "media", uid), { recursive: true, force: true });
+      await rm(path.join(this.dir, "originals", uid), { recursive: true, force: true });
+    });
   }
 }

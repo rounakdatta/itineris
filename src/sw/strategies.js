@@ -14,7 +14,7 @@ export function classify(url, { origin, scope = "/", dataPrefixes = [], apiPaths
   const p = u.pathname;
   if (p.startsWith("/media/")) return "media";                       // shared by both apps
   if (!p.startsWith(scope)) return "network";
-  if (scope === "/" && p.startsWith("/admin")) return "network";     // the admin has its own worker
+  if (scope === "/" && p.startsWith("/creator")) return "network";     // the creator app has its own worker
   if (p.startsWith(`${scope}assets/`) || p === `${scope}sw.js` || /\.(webmanifest|png|svg|ico)$/.test(p)) return "shell";
   if (dataPrefixes.some((d) => p.startsWith(d))) return "data";
   if (apiPaths.some((a) => p === a)) return "data";

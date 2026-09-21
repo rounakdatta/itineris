@@ -22,8 +22,8 @@ describe("page side of the worker", () => {
   });
   it("a new version taking over an open page offers one reload button, once it has finished activating", () => {
     fake.controller = { state: "activated" };
-    registerServiceWorker("/admin/sw.js", { scope: "/admin/" });
-    expect(fake.register).toHaveBeenCalledWith("/admin/sw.js", { scope: "/admin/" });
+    registerServiceWorker("/creator/sw.js", { scope: "/creator/" });
+    expect(fake.register).toHaveBeenCalledWith("/creator/sw.js", { scope: "/creator/" });
     let onState = null;
     fake.controller = { state: "activating", addEventListener: (t, fn) => (onState = fn) };
     controllerChange();

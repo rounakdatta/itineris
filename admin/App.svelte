@@ -10,6 +10,7 @@
   import MomentEditor from "./MomentEditor.svelte";
   import GalleryList from "./GalleryList.svelte";
   import BulkBar from "./BulkBar.svelte";
+  import SignIn from "./SignIn.svelte";
   import { extractMapsUrl } from "../server/links.js";
 
   let me = $state(null);
@@ -120,8 +121,20 @@
       error = null;
     } catch (e) { error = e.message; }
   }
+  async function signOut() {
+    try { await api.signOut(); } catch { /* the cookie is gone either way */ }
+    location.assign("/creator/");
+  }
+
   onMount(() => {
-    (async () => { try { me = await api.me(); await refresh(); } catch (e) { error = e.message; } })();
+    // `me` answers signed out too, so the app can offer a sign-in instead of
+    // an error. Nothing else is fetched until there is somebody to fetch for.
+    (async () => {
+      try {
+        me = await api.me();
+        if (me.signedIn) await refresh();
+      } catch (e) { error = e.message; }
+    })();
     takeSharedFromUrl();
     const unsub = outbox.subscribe((snap) => { queue = snap; });
     outbox.onUploaded = () => refresh();
@@ -148,15 +161,26 @@
   });
 </script>
 
+{#if !me}
+  <p class="booting" role="status">Loading…</p>
+{:else if !me.signedIn}
+  <SignIn {me} />
+{:else}
 <header>
   <div class="brand">
-    <img class="mark" src="/admin/mark-96.png" alt="" width="20" height="20" decoding="async" />
-    <strong>itineris</strong> <span class="muted">admin</span>
-    {#if me}<span class="muted who">{me.email}</span>{/if}
+    <img class="mark" src="/creator/mark-96.png" alt="" width="20" height="20" decoding="async" />
+    <strong>itineris</strong> <span class="muted">creator</span>
+    {#if me.picture}<img class="avatar" src={me.picture} alt="" width="22" height="22" referrerpolicy="no-referrer" />{/if}
+    <!-- The name is friendlier; the address is what actually decides whose
+         journal this is, so it stays one hover away. -->
+    <span class="muted who" title={me.email}>{me.name || me.email}</span>
     {#if !online || fromCache}<span class="pill offline" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
     {#if queue.items.length}<span class="pill" role="status">{queue.items.length} queued</span>{/if}
   </div>
-  <a class="muted small" href="/" target="_blank" rel="noopener">view site ↗</a>
+  <div class="acct">
+    <a class="muted small" href="/" target="_blank" rel="noopener">view site ↗</a>
+    {#if me.google}<button class="btn small ghost" onclick={signOut}>Sign out</button>{/if}
+  </div>
 </header>
 
 <nav class="tabs" aria-label="Sections">
@@ -229,6 +253,7 @@
       onClose={() => (pendingEditId = null)} />
   {/key}
 {/if}
+{/if}
 
 <style>
   header {
@@ -246,6 +271,10 @@
   /* The mark is drawn on white, so it wears a small white chip on the dark bar. */
   .brand .mark { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 5px; background: #fff; }
   .who { font-size: 13px; }
+  .avatar { border-radius: 50%; flex: 0 0 auto; background: var(--panel); }
+  .acct { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .booting { padding: 40px 16px; text-align: center; color: var(--muted); }
   .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: var(--muted); }
   .pill.offline { background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }
   .tabs {

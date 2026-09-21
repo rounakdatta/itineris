@@ -98,6 +98,20 @@
       <FacetBar />
     </div>
     <Timeline />
+
+    <!-- Every gallery is somebody showing you a trip; this is the quiet offer
+         to go and make one. Bottom centre on purpose: Google's logo sits
+         bottom-left and its terms bottom-right, and the zoom controls are
+         bottom-right too, so the middle is the one strip of map that is free
+         on both engines. -->
+    <a class="mine" class:hidden={trip.storyOpen} class:wall={trip.view === "wall"} href="/creator/" aria-label="Make your own travel journal">
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        <path d="M11 21s-6.5-6.9-6.5-11a6.5 6.5 0 1 1 13 0c0 1.2-.55 2.6-1.3 3.95" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+        <circle cx="11" cy="9.8" r="2.1" fill="currentColor" />
+        <path d="M18.6 16.2v5M16.1 18.7h5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+      </svg>
+      <span>Make my own</span>
+    </a>
   {/if}
 
   {#if trip.status === "loading"}
@@ -167,6 +181,28 @@
 
   .pill { flex: 0 0 auto; font-size: 11px; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, #ffb347 22%, transparent); color: #ffb347; }
   .pill.muted { background: rgba(255, 255, 255, 0.08); color: var(--muted); }
+
+  .mine {
+    position: absolute; left: 50%; translate: -50% 0; z-index: 21;
+    /* Clear of the attribution row that both engines draw along the bottom of
+       the map -- Google's "Map data ©" on the right, MapLibre's OpenStreetMap
+       credit in the same place -- which a 10px gap sat straight on top of. */
+    bottom: calc(var(--dock-h) + 48px);
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 13px 6px 11px; border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(11, 13, 16, 0.72);
+    backdrop-filter: blur(10px); color: rgba(255, 255, 255, 0.86);
+    font-size: 12px; font-weight: 500; letter-spacing: 0.01em; text-decoration: none; white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    transition: color 160ms, border-color 160ms, transform 160ms, background 160ms;
+  }
+  .mine:hover, .mine:focus-visible { color: #fff; border-color: rgba(255, 255, 255, 0.34); background: rgba(11, 13, 16, 0.88); transform: translateY(-1px); }
+  .mine svg { opacity: 0.85; flex: 0 0 auto; }
+  /* The wall hides the dock, so there is no strip to sit above. */
+  .mine.wall { bottom: max(14px, env(safe-area-inset-bottom)); }
+  .mine.hidden { visibility: hidden; }
+  /* A phone in landscape has no room for a floating word; the icon carries it. */
+  @media (max-height: 460px) { .mine span { display: none; } .mine { padding: 7px; } }
 
   .status { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 30; color: var(--muted); font-size: 13px; }
   .card {
