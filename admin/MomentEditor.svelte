@@ -124,7 +124,13 @@
         {#if isVideo(moment.media)}<span class="vid" aria-hidden="true">▶</span>{/if}
       </div>
     {:else}
-      <div class="shot empty" aria-hidden="true">{isVideo(moment.media) ? "🎬" : "📷"}</div>
+      <div class="shot empty" aria-hidden="true">
+        {#if isVideo(moment.media)}
+          <svg viewBox="0 0 24 24" width="22" height="22"><rect x="2.6" y="5.4" width="13.4" height="13.2" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M16 11.2 21.4 8v8l-5.4-3.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        {:else}
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 7.6h3.4l1.5-2.2h6.2l1.5 2.2H20v11H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12.8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        {/if}
+      </div>
     {/if}
     <div class="meta">
       <div class="muted small">{moment.filename ?? moment.id}{#if moment.camera}{" · "}{moment.camera}{/if}</div>

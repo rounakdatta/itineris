@@ -59,7 +59,7 @@
         <option value="__new__">New gallery…</option>
       </select>
       {#if pick === "__new__"}
-        <input bind:value={newTitle} maxlength="120" placeholder="Name it — e.g. Singapore, for the family" aria-label="New gallery name"
+        <input class="name" bind:value={newTitle} maxlength="120" placeholder="Name the gallery" aria-label="New gallery name"
           onkeydown={(e) => e.key === "Enter" && newTitle.trim() && addToGallery()} />
         <button class="btn small primary" disabled={busy || !newTitle.trim()} onclick={addToGallery}>Create with {ids.length}</button>
       {:else}
@@ -98,6 +98,9 @@
     background: rgba(20, 24, 30, 0.96); backdrop-filter: blur(14px); border-top: 1px solid var(--line);
   }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 960px; margin: 0 auto; }
+  /* Naming a gallery deserves the width; squeezed between a select and a
+     button on a phone the placeholder was cut off mid-word. */
+  .name { flex: 1 1 14em; min-width: 0; }
   .spacer { flex: 1; }
   .btn.small { padding: 7px 11px; font-size: 13px; }
   select, input { width: auto; max-width: 44vw; padding: 7px 10px; }

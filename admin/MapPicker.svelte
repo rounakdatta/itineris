@@ -62,7 +62,10 @@
 <div class="pick">
   <PlaceSearch {known} {placesEnabled} bias={Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : hint ? { lat: hint.lat, lng: hint.lng } : null} onPick={picked} />
   <div class="tools">
-    <button type="button" class="btn tiny" onclick={locate} disabled={locating} title="Use this device's current position">{locating ? "Locating…" : "📍 My location"}</button>
+    <!-- Drawn, not an emoji: this machine has no emoji font and renders one as
+         a tofu box, and even where they do render, emoji-as-icon sits badly
+         next to the SVGs the rest of the app uses. -->
+    <button type="button" class="btn tiny icon" onclick={locate} disabled={locating} title="Use this device's current position">{#if locating}Locating…{:else}<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg> My location{/if}</button>
     {#if note}<span class="muted note" role="status">{note}</span>{/if}
   </div>
   <div class="picker" bind:this={container} role="application" aria-label="Map: tap to set the location"></div>
@@ -70,6 +73,8 @@
 
 <style>
   .pick { display: grid; gap: 8px; }
+  .btn.icon { display: inline-flex; align-items: center; gap: 5px; }
+  .btn.icon :global(svg) { opacity: 0.85; }
   .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .btn.tiny { padding: 6px 9px; font-size: 12px; white-space: nowrap; }
   .note { font-size: 12px; }

@@ -46,7 +46,7 @@ describe("Outbox UI", () => {
     Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition: (ok) => ok({ coords: { latitude: 37.7614, longitude: -122.4118, accuracy: 9 } }) } });
     const outbox = fakeOutbox();
     render(Outbox, { outbox, queue: { items: [item({ id: "a", lat: 1.29, lng: 103.85 }), item({ id: "b" }), item({ id: "c" })], blocked: false, flushing: false, online: true } });
-    await fireEvent.click(screen.getByRole("button", { name: "📍 Use my location for these 2" })); await flush();
+    await fireEvent.click(screen.getByRole("button", { name: /Use my location for these 2/ })); await flush();
     expect(outbox.updateMeta).toHaveBeenCalledTimes(2);
     expect(outbox.updateMeta).toHaveBeenCalledWith("b", { lat: 37.7614, lng: -122.4118, locEdited: true });
     expect(outbox.updateMeta).toHaveBeenCalledWith("c", { lat: 37.7614, lng: -122.4118, locEdited: true });
@@ -73,7 +73,8 @@ describe("Outbox UI", () => {
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [{ ...item({ id: "v", state: "uploading", progress: 1 }), type: "video/mp4", name: "clip.mp4" }, item({ id: "b" })], blocked: false, flushing: true, online: true } });
     expect(screen.getByRole("status")).toHaveTextContent("Uploading 1 of 2 · 100% · processing the video…");
     expect(document.querySelectorAll(".tile .vid")).toHaveLength(1);
-    expect(screen.getByText("🎬")).toBeInTheDocument();
+    // A drawn clapperboard, not an emoji -- see the editor's placeholder.
+    expect(document.querySelector(".tile .noimg svg")).not.toBeNull();
   });
   it("no queue, no panel", () => {
     render(Outbox, { outbox: fakeOutbox(), queue: { items: [], blocked: false, flushing: false, online: true } });
