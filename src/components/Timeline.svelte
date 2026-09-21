@@ -28,7 +28,7 @@
         style:--accent={TAG_COLOR[m.tags[0]] ?? "#e6e6e6"}
         onclick={() => onTick(m)}
         aria-label={`${clockOf(m.t)} ${m.place || m.caption || ""}`.trim()}
-        title={trip.focusId === m.id ? "Open" : `${m.place}${m.caption ? " — " + m.caption : ""}`}
+        title={trip.focusId === m.id ? "Open" : [m.place, m.caption].filter(Boolean).join(" — ")}
       >
         <img src={mediaUrl(m.media.thumb ?? m.media.src)} alt="" loading="lazy" />
         {#if m.media.type === "video"}<span class="vid" aria-hidden="true">▶</span>{/if}

@@ -27,9 +27,11 @@
         attributionControl: { compact: true },
       });
 
-      // Zoom buttons only where there is a mouse; on a phone they cost space and
-      // pinch does the job.
-      if (globalThis.matchMedia?.("(pointer: fine)")?.matches) {
+      // Zoom buttons everywhere except a touchscreen, where they cost space and
+      // pinch does the job. The test is for coarse, NOT for fine: `pointer: none`
+      // is a device with no pointing device at all -- a keyboard, a TV remote --
+      // and that is precisely the visitor who cannot zoom without the buttons.
+      if (!globalThis.matchMedia?.("(pointer: coarse)")?.matches) {
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
       }
 

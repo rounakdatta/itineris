@@ -21,8 +21,11 @@
     const [{ default: maplibregl }] = await Promise.all([import("maplibre-gl"), import("maplibre-gl/dist/maplibre-gl.css")]);
     if (cancelled) return;
     const has = Number.isFinite(lat) && Number.isFinite(lng);
-    const center = has ? [lng, lat] : hint ? [hint.lng, hint.lat] : [103.85, 1.29];
-    map = new maplibregl.Map({ container, style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json", center, zoom: has || hint ? 14 : 10, attributionControl: { compact: true } });
+    // With nothing to go on, a world view -- never a particular city. This used
+    // to open on Singapore, left over from the demo trip, which told everyone
+    // whose photos were not taken there that the picker was broken.
+    const center = has ? [lng, lat] : hint ? [hint.lng, hint.lat] : [20, 15];
+    map = new maplibregl.Map({ container, style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json", center, zoom: has || hint ? 14 : 1.1, attributionControl: { compact: true } });
     marker = new maplibregl.Marker({ draggable: true, color: "#7aa2f7" });
     if (has) marker.setLngLat(center).addTo(map);
     const byHand = (a, b) => { onLink?.(null); onPick?.(null); onChange?.(+a.toFixed(6), +b.toFixed(6)); };

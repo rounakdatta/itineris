@@ -1,15 +1,14 @@
 <script>
   import { trip } from "../lib/trip.svelte.js";
-  import { FACETS, TAG_COLOR, dayKey, momentMatches, trackMatches } from "../lib/data.js";
+  import { FACETS, TAG_COLOR, momentMatches, trackMatches } from "../lib/data.js";
 
-  // Counts are computed against the day filter but NOT the facet filter, so the
-  // numbers don't collapse to zero as soon as you select something.
-  const scoped = $derived(trip.day ? trip.moments.filter((m) => dayKey(m.t) === trip.day) : trip.moments);
+  // Counts are computed over the whole gallery, NOT the current facet selection,
+  // so the numbers don't collapse to zero as soon as you select something.
   const counts = $derived(
     Object.fromEntries(
       FACETS.map((f) => [
         f.id,
-        scoped.filter((m) => momentMatches(m, [f.id])).length + trip.tracks.filter((t) => trackMatches(t, [f.id])).length,
+        trip.moments.filter((m) => momentMatches(m, [f.id])).length + trip.tracks.filter((t) => trackMatches(t, [f.id])).length,
       ])
     )
   );

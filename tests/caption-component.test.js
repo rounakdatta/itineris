@@ -1,8 +1,28 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
+import { tick } from "svelte";
 import Caption from "../src/components/Caption.svelte";
 
 const frame = (el) => { el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 300, height: 600, right: 300, bottom: 600 }); };
+
+// jsdom lays nothing out, so the box sizes the bounding effect reads are stubbed
+// on the prototype: the frame is 300x600, the caption whatever the test says.
+function layout({ frameW = 300, frameH = 600, capW = 200, capH = 40 } = {}) {
+  const undo = [];
+  // clientWidth/Height live on Element, offsetWidth/Height on HTMLElement, so
+  // the override goes on HTMLElement and is simply deleted again afterwards.
+  const set = (prop, fn) => {
+    const orig = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
+    Object.defineProperty(HTMLElement.prototype, prop, { configurable: true, get() { return fn(this); } });
+    undo.push(() => (orig ? Object.defineProperty(HTMLElement.prototype, prop, orig) : Reflect.deleteProperty(HTMLElement.prototype, prop)));
+  };
+  const is = (el, c) => el.classList?.contains(c);
+  set("clientWidth", (el) => (is(el, "cap-layer") ? frameW : 0));
+  set("clientHeight", (el) => (is(el, "cap-layer") ? frameH : 0));
+  set("offsetWidth", (el) => (is(el, "cap") ? capW : 0));
+  set("offsetHeight", (el) => (is(el, "cap") ? capH : 0));
+  return () => undo.forEach((f) => f());
+}
 
 describe("Caption", () => {
   it("renders the text with the style's custom properties; nothing without text", () => {
@@ -82,6 +102,39 @@ describe("Caption", () => {
     await fireEvent.keyDown(cap, { key: "[", shiftKey: true });
     expect(onRotate).toHaveBeenLastCalledWith(-23);
     expect(onCommit).toHaveBeenCalledTimes(2);
+  });
+  it("a caption too near an edge is nudged back onto the photo, and what is stored stays put", async () => {
+    // Wide caption, centre at x=0.2 of a 300px frame: 60 - 100 = 40px off the left.
+    let restore = layout({ capW: 200, capH: 40 });
+    try {
+      const { container } = render(Caption, { text: "bottom left", style: { x: 0.2, y: 0.9 } });
+      await tick();
+      const style = container.querySelector(".cap").getAttribute("style").replace(/\s/g, "");
+      expect(style).toContain("--cap-nx:40px");
+      expect(style).toContain("--cap-ny:0px");
+      expect(style).toContain("--cap-x:20.00%");   // the author's position is untouched
+    } finally { restore(); }
+    // Tall caption near the top: 0.14*600 = 84, half of 400 is 200 -> 116px above the frame.
+    restore = layout({ capW: 260, capH: 400 });
+    try {
+      const { container } = render(Caption, { text: "a paragraph", style: { x: 0.5, y: 0.14 } });
+      await tick();
+      const style = container.querySelector(".cap").getAttribute("style").replace(/\s/g, "");
+      expect(style).toContain("--cap-ny:116px");
+      expect(style).toContain("--cap-nx:0px");
+    } finally { restore(); }
+  });
+  it("a rotated caption is bounded by the box it actually occupies", async () => {
+    // Turned 90 degrees, a 200x40 caption is 40 wide and 200 tall: at y=0.92 of
+    // a 600px frame (552) its foot would be at 652, so it comes back up by 52.
+    const restore = layout({ capW: 200, capH: 40 });
+    try {
+      const { container } = render(Caption, { text: "sideways", style: { x: 0.5, y: 0.92, rot: 90 } });
+      await tick();
+      const style = container.querySelector(".cap").getAttribute("style").replace(/\s/g, "");
+      expect(style).toContain("--cap-ny:-52px");
+      expect(style).toContain("--cap-nx:0px");   // only 40px wide once turned: nothing to fix sideways
+    } finally { restore(); }
   });
   it("not editable: no drag handling, no button role", async () => {
     const onMove = vi.fn();

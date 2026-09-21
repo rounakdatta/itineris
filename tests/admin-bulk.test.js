@@ -79,9 +79,12 @@ describe("MomentList", () => {
   it("select mode reports toggles through onSelect and shows checks", async () => {
     const selection = new SvelteSet(["a"]); const onSelect = vi.fn();
     render(MomentList, { moments: ms, selectMode: true, selection, onSelect });
-    const cells = screen.getAllByRole("listitem");
-    expect(cells[0]).toHaveAttribute("aria-pressed", "true");
-    await fireEvent.click(cells[1]);
+    // The cells are buttons, not list items: a <button> cannot be a listitem,
+    // and listitem does not support aria-pressed -- which is the state that
+    // tells a screen reader whether a photo is selected.
+    expect(screen.getByLabelText(/08:40/)).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText(/09:40/)).toHaveAttribute("aria-pressed", "false");
+    await fireEvent.click(screen.getByLabelText(/09:40/));
     expect(onSelect).toHaveBeenCalledWith("b");
   });
 });

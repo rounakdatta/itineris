@@ -40,7 +40,9 @@
           zoom: 2,
           mapId: config.googleMapsMapId || "DEMO_MAP_ID",   // AdvancedMarkerElement needs a vector map id
           disableDefaultUI: true,
-          zoomControl: !!globalThis.matchMedia?.("(pointer: fine)")?.matches,
+          // Not `pointer: fine`: `pointer: none` (keyboard only, a TV remote) is
+          // exactly the visitor who cannot zoom without the buttons. See MapView.
+          zoomControl: !globalThis.matchMedia?.("(pointer: coarse)")?.matches,
           gestureHandling: "greedy",
           clickableIcons: true,      // Google's own place labels stay tappable: that IS the point of Google Maps
           keyboardShortcuts: false,

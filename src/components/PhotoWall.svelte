@@ -17,8 +17,15 @@
     <h2>{dateLabel(key)}<span>{key.slice(0, 4)}</span></h2>
     <div class="grid">
       {#each items as m (m.id)}
-        <button class="cell" onclick={() => trip.openStory(m.id)} title={m.caption}>
-          <img src={mediaUrl(m.media.thumb ?? m.media.src)} alt={m.caption} loading="lazy" />
+        <!-- The picture is decorative (alt=""), so the button needs a name of
+             its own or a screen reader announces nothing but "button". -->
+        <button
+          class="cell"
+          onclick={() => trip.openStory(m.id)}
+          title={[m.place, m.caption].filter(Boolean).join(" — ")}
+          aria-label={`${clockOf(m.t)} ${m.place || m.caption || "photo"}`.trim()}
+        >
+          <img src={mediaUrl(m.media.thumb ?? m.media.src)} alt="" loading="lazy" />
           {#if m.media.type === "video"}<span class="vid" aria-hidden="true">▶</span>{/if}
           <span class="t">{clockOf(m.t)}</span>
         </button>

@@ -12,10 +12,13 @@
 
 {#each groups as [day, items] (day)}
   <h2>{day} <span class="muted">{items.length}</span></h2>
-  <div class="grid" role="list">
+  <!-- A grid of labelled buttons, not a list: a <button> cannot carry
+       role="listitem", and role="listitem" does not support aria-pressed, so
+       the list semantics were costing the selection state its announcement. -->
+  <div class="grid">
     {#each items as m (m.id)}
       <button
-        class="cell" role="listitem" data-id={m.id}
+        class="cell" data-id={m.id}
         class:on={m.id === selectedId && !selectMode}
         class:picked={selectMode && selection?.has(m.id)}
         onclick={() => onSelect(m.id)}
@@ -28,7 +31,10 @@
         <span class="flags">
           {#if m.galleries?.length === 0}<i class="flag private" title="not in any gallery — private">🔒</i>{/if}
           {#if m.tags.length === 0}<i class="flag" title="untagged">#</i>{/if}
-          {#if m.lat === null || m.lng === null}<i class="flag" title="no location">⌖</i>{/if}
+          <!-- Drawn, not U+2316: the crosshair has no glyph in a lot of system
+               fonts and showed up as a tofu box. (Same lesson as the story's
+               speaker icon.) -->
+          {#if m.lat === null || m.lng === null}<i class="flag" title="no location"><svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2.6" /><path d="M12 1.6v3.6M12 18.8v3.6M1.6 12h3.6M18.8 12h3.6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></svg></i>{/if}
           {#if m.media?.type === "video"}<i class="flag vid" title="video">▶</i>{/if}
           {#if m.tz === "unknown"}<i class="flag" title="time zone unknown">⏱</i>{/if}
         </span>
@@ -54,6 +60,7 @@
   .t { position: absolute; left: 7px; bottom: 6px; font-size: 11px; color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); font-variant-numeric: tabular-nums; }
   .flags { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
   .flag { font-style: normal; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 6px; background: rgba(255, 179, 71, 0.9); color: #1a1000; font-weight: 700; }
+  .flag svg { display: block; }   /* an inline svg would sit on the text baseline and unbalance the pill */
   .flag.private { background: rgba(20, 24, 30, 0.85); color: #fff; }
   .check { position: absolute; left: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; background: rgba(0, 0, 0, 0.45); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
   .picked .check { background: var(--ok); border-color: var(--ok); color: #05261c; }

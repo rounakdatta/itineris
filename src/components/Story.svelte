@@ -216,8 +216,8 @@
           <!-- The place name opens Google Maps; it must not read as a tap on the story. -->
           <span class="placerow"><a class="place" href={link} target="_blank" rel="noopener noreferrer" title="Open in Google Maps"
             onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>{current.place}<span class="ext" aria-hidden="true">↗</span></a>{#if Number.isFinite(current.google?.rating)}<span class="rate" title={`${current.google.rating.toFixed(1)} on Google${current.google.ratingCount ? ` from ${current.google.ratingCount.toLocaleString("en")} ratings` : ""}`}>{current.google.rating.toFixed(1)}<i aria-hidden="true">★</i></span>{/if}</span>
-        {:else}
-          <strong>{current.place || " "}</strong>
+        {:else if current.place}
+          <strong>{current.place}</strong>
         {/if}
         <span class="clock">{clockOf(current.t)}</span>
       </div>
@@ -382,6 +382,9 @@
   .meta .clock { font-size: 12px; opacity: 0.65; font-variant-numeric: tabular-nums; }
   .close {
     background: rgba(0, 0, 0, 0.35); border: 0; color: #fff; opacity: 0.9; font-size: 16px; line-height: 1;
+    /* flex-shrink is load-bearing: a long place name in .meta squeezed this
+       from 36px to 25px, turning the tap target into an oval too small to hit. */
+    flex: 0 0 auto;
     width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: grid; place-items: center; touch-action: manipulation;
   }
 
