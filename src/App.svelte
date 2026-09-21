@@ -3,6 +3,7 @@
   import { trip } from "./lib/trip.svelte.js";
   import { applyHash, syncHash } from "./lib/router.js";
   import { hasAnyCoords } from "./lib/data.js";
+  import { allSeen } from "./lib/seen.svelte.js";
   import MapView from "./components/MapView.svelte";
   import PhotoWall from "./components/PhotoWall.svelte";
   import FacetBar from "./components/FacetBar.svelte";
@@ -72,7 +73,34 @@
   {#if trip.loaded}
     <div class="chrome" class:hidden={trip.storyOpen} class:wall={trip.view === "wall"}>
       <div class="top">
-        <h1 class="brand"><img class="mark" src="/mark-96.png" alt="" width="22" height="22" decoding="async" /><span class="word">itineris</span>{#if trip.title}<span class="sep" aria-hidden="true">·</span><span class="title">{trip.title}</span>{/if}</h1>
+        <!-- The mark alone: on a phone the gallery's name is the useful half,
+             and the wordmark was eating it. "itineris" stays for screen
+             readers so the heading still has a name of its own.
+
+             When photos belong to no place there is no pin to put them on, so
+             the mark carries them: a story ring around it, the same one the
+             pins wear, greying once they have been watched. No loose photos,
+             no ring -- a decorated logo that does nothing would be worse than
+             none. Nor on the wall: the wall only stands in when NOTHING is
+             placed, so every photo is already in the grid and the ring would
+             be pointing at all of them. -->
+        <h1 class="brand">
+          <span class="sr">itineris</span>
+          {#if trip.loose.length && trip.view === "map"}
+            <button
+              class="mine-story" class:seen={allSeen(trip.loose)}
+              onclick={() => trip.openStory(trip.loose[0].id)}
+              aria-label={`Open the ${trip.loose.length} photo${trip.loose.length === 1 ? "" : "s"} that aren't on the map`}
+              title="Photos with no place"
+            >
+              <img class="mark" src="/mark-96.png" alt="" width="28" height="28" decoding="async" />
+              {#if trip.loose.length > 1}<span class="n">{trip.loose.length}</span>{/if}
+            </button>
+          {:else}
+            <img class="mark" src="/mark-96.png" alt="" width="22" height="22" decoding="async" />
+          {/if}
+          {#if trip.title}<span class="title">{trip.title}</span>{/if}
+        </h1>
         {#if !online || trip.fromCache}<span class="pill" role="status">{online ? "Saved copy" : "Offline"}</span>{/if}
         {#if !hasAnyCoords(trip.moments, trip.tracks)}<span class="pill muted" role="status">No locations yet</span>{/if}
         {#if here.status === "denied"}<span class="pill muted" role="status">Location is blocked for this site</span>
@@ -162,9 +190,24 @@
   .brand { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
   /* The mark is drawn on white, so it wears a small white chip on the dark bar. */
   .brand .mark { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 6px; background: #fff; }
-  .word { color: #fff; }
-  .sep { color: var(--muted); font-weight: 400; }
-  .title { color: var(--muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  /* The gallery's name is the heading now, so it reads as the title it is. */
+  .title { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The same ring the map pins wear, so it reads as "a story" on sight. */
+  .mine-story {
+    flex: 0 0 auto; position: relative; width: 36px; height: 36px; padding: 3px; border: 0; border-radius: 50%;
+    background: conic-gradient(from 200deg, #f9ce34, #ee2a7b, #6228d7, #f9ce34);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); cursor: pointer;
+    transition: transform 160ms, box-shadow 160ms;
+  }
+  .mine-story .mark { width: 100%; height: 100%; border-radius: 50%; display: block; border: 2px solid #fff; }
+  .mine-story.seen { background: #cfcfcf; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.75); }
+  .mine-story:hover, .mine-story:focus-visible { transform: scale(1.06); }
+  .mine-story .n {
+    position: absolute; right: -4px; top: -4px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px;
+    border: 2px solid #0b0d10; background: #111; color: #fff;
+    font: 700 9.5px/12px system-ui, -apple-system, sans-serif; text-align: center; box-sizing: border-box;
+  }
   .toggle {
     flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
     background: var(--panel); backdrop-filter: blur(12px); color: var(--text); cursor: pointer;
