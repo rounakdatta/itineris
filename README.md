@@ -14,7 +14,11 @@ with Google and the journal is yours. Live at
 
 - **The map is the interface** — Google Maps, one photo pin per place, its rating on the pin, a story ring that opens it.
 - **Stories per place** — a place's photos play together, then the map travels to the next pin.
+- **Photos that belong nowhere** — no pin to put them on, so the mark carries them, wearing the ring that turns until they have been watched.
+- **Pinch to zoom** — two fingers on a photo or a video; while it is zoomed a drag pans and the story waits.
 - **Captions on the photo** — up to five, dragged anywhere, tilted to any angle, in twelve faces.
+- **A gallery's own name in the URL** — `/singaporeeats` as well as `/g/<token>`, and the token keeps working forever.
+- **How many have seen it** — an eye in the corner, counted once per visitor per day, storing nothing that could identify anybody.
 - **Videos** — transcoded to H.264 with a poster frame.
 - **Offline** — whatever you looked at reopens without a signal.
 - **Uploads that survive bad networks** — a queue in IndexedDB, with retries.
@@ -49,6 +53,7 @@ The demo trip is generated, not committed: `dev`, `build` and `test` all run
 npm test             # vitest + jsdom
 npm run test:server  # the API, on a fresh, a legacy and an existing volume
 npm run test:e2e     # real headless Chromium via nix, with screenshots
+npm run test:pinch   # two-finger input through the browser's own touch pipeline
 npm run check:live   # production, then again with the network unreachable
 ```
 
@@ -63,6 +68,8 @@ GHCR; `homelab.setup` pins the chart version.
 - Phones strip GPS from photos handed to a website, so pictures picked on a phone arrive unplaced — the creator app can place a whole selection at once.
 - One volume, many journals: `users/<uid>/` per person, `media/<uid>/` for their derivatives, and a gallery token that is global so `/g/<token>` means the same thing whoever made it. The single-tenant library from before 0.21 belongs to whoever signs in first.
 - The Maps key reaches the browser via `/config.json`, mounted by the chart. Place details are looked up server-side, once per place.
+- The viewer and the creator are one origin in production: Traefik path-routes `/creator` to the creator pod, and nginx never sees it. The viewer relies on that to record a view, so a local harness has to reproduce the routing or it is testing a layout that exists nowhere.
+- A view stores a salted hash of address, browser, gallery and date — nothing that can be walked back to a person, matched across galleries, or that means anything after midnight. Only the total is ever served.
 - Caption faces are bundled: SIL OFL 1.1, except Permanent Marker (Apache 2.0). Licences in `src/assets/fonts/`.
 
 ---

@@ -1,6 +1,6 @@
 apiVersion: v2
 name: itineris
-description: A travel journal viewed from several angles at once - map, timeline, photo wall and story - with a tinyauth-gated admin for uploads
+description: A travel journal viewed from several angles at once - map, timeline, photo wall and story - with a Google sign-in creator app for uploads
 type: application
 version: 0.19.1
 appVersion: "0.19.1"
