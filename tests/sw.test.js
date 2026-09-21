@@ -25,6 +25,11 @@ describe("what each request is", () => {
   it("creator", () => {
     expect(classify(`${origin}/creator/`, admin)).toBe("navigation");
     expect(classify(`${origin}/creator/assets/index-abc.js`, admin)).toBe("shell");
+    // Signing in must reach the server: the worker answering with the cached
+    // shell is how "Continue with Google" quietly does nothing.
+    expect(classify(`${origin}/creator/auth/google?next=%2Fcreator%2F`, admin)).toBe("network");
+    expect(classify(`${origin}/creator/auth/callback?code=x&state=y`, admin)).toBe("network");
+    expect(classify(`${origin}/creator/auth/signout`, admin)).toBe("network");
     expect(classify(`${origin}/creator/api/library`, admin)).toBe("data");
     expect(classify(`${origin}/creator/api/me`, admin)).toBe("data");
     expect(classify(`${origin}/creator/api/moments`, admin)).toBe("network");   // mutations and lists we don't cache
