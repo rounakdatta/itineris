@@ -47,3 +47,33 @@ export function zoomAbout(box, from, scale, anchor) {
   const p = clampPan(box, z, ax - px * z, ay - py * z);
   return { z, x: p.x, y: p.y };
 }
+
+// --- how a picture should meet the frame ------------------------------------
+
+// What `object-fit: cover` throws away, as a fraction of the picture. Cover
+// scales until the frame is full and crops the overflow on one axis, so the
+// visible share is just the ratio of the two aspects.
+export const coverLoss = (frameAspect, imageAspect) => {
+  const a = Number(imageAspect), f = Number(frameAspect);
+  if (!(a > 0 && f > 0)) return 0;
+  return 1 - Math.min(a, f) / Math.max(a, f);
+};
+
+// Above this, fill the frame; beyond it, show the whole picture on a blurred
+// copy of itself.
+//
+// The old rule was `width > height` -- landscape fills, everything else is
+// cropped -- which is a cliff at exactly 1:1 while the HARM is continuous. In
+// a real gallery that meant a 9:16 phone photo and a 1:1 collage were treated
+// identically, though one lost 18% off the top and bottom and the other lost
+// 54%: whole faces, whole quarters of a four-photo collage, gone.
+//
+// A quarter is the line because it sits between those two. The 18% a phone
+// photo loses is the format working as intended -- that crop lands on sky and
+// pavement, and filling the screen is the whole point of a story. Past a
+// quarter you are no longer cropping a photo, you are re-composing somebody
+// else's, and no viewer should be doing that.
+export const COVER_LIMIT = 0.25;
+
+export const shouldContain = (frameAspect, imageAspect, limit = COVER_LIMIT) =>
+  coverLoss(frameAspect, imageAspect) > limit;

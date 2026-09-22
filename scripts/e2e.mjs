@@ -159,6 +159,42 @@ try {
     for (let y = 0; y < info.height; y++) for (let x = 1; x < info.width; x++) { const i = y * info.width + x; diff += Math.abs(data[i] - data[i - 1]); sum += data[i]; n++; }
     return { contrast: +(diff / n).toFixed(1), luma: Math.round(sum / n) };
   };
+  // How a picture meets the frame is decided by how much filling it would
+  // THROW AWAY, against the frame actually on screen -- not by which way round
+  // it is. Four shapes, four answers, measured off the rendered geometry.
+  const fitOf = async (id) => {
+    await page.goto(`${V}/#m/${id}`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".story .media", { timeout: 15000 });
+    await sleep(500);
+    return page.evaluate(() => {
+      const el = document.querySelector(".story .media");
+      const f = document.querySelector(".story").getBoundingClientRect(), r = el.getBoundingClientRect();
+      return {
+        contain: el.classList.contains("contain"),
+        backdrop: !!document.querySelector(".story img.backdrop"),
+        frame: { w: +f.width.toFixed(1), h: +f.height.toFixed(1) },
+        box: { w: +r.width.toFixed(1), h: +r.height.toFixed(1) },
+        radius: parseFloat(getComputedStyle(el).borderRadius) || 0,
+      };
+    });
+  };
+  for (const [id, shape, want] of [["m010", "9:16, straight off a phone", false], ["m013", "3:4", true], ["m008", "square, like a 2x2 collage", true], ["m005", "4:3 landscape", true]]) {
+    const f = await fitOf(id);
+    ok(`${shape}: ${want ? "shown whole" : "fills the frame"}`, f.contain === want, JSON.stringify(f));
+    if (want) {
+      // The ELEMENT is the picture, not the frame with a picture floating in
+      // it -- which is what lets the corners and the shadow land on the
+      // photograph instead of around a hole. So its box must be strictly
+      // inside the frame on the letterboxed axis.
+      const inside = f.box.w <= f.frame.w + 1 && f.box.h <= f.frame.h + 1 && (f.box.h < f.frame.h - 2 || f.box.w < f.frame.w - 2);
+      ok(`  ...and the element is the picture, not the frame`, inside, JSON.stringify(f.box) + " in " + JSON.stringify(f.frame));
+      ok(`  ...with a real edge on it`, f.radius > 0 && f.backdrop, `radius ${f.radius}, backdrop ${f.backdrop}`);
+      await page.waitForSelector(".story .media.loaded", { timeout: 15000 }).catch(() => {});
+      await sleep(500); await shot(page, `${SHOTS}/04-fit-${id}.png`);
+    } else {
+      ok(`  ...edge to edge, with no blurred bands behind it`, f.box.w >= f.frame.w - 1 && f.box.h >= f.frame.h - 1 && !f.backdrop, JSON.stringify(f.box) + " in " + JSON.stringify(f.frame));
+    }
+  }
   await page.goto(`${V}/#m/m005`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".story");
   ok("landscape: it is the landscape photo, shown whole over a blurred copy", (await page.$eval(".story img.media", (i) => i.classList.contains("contain") && /m005-960\.webp$/.test(i.getAttribute("src")))) && (await page.$(".story img.backdrop")) !== null, await page.$eval(".story img.media", (i) => i.getAttribute("src")));
   await page.waitForSelector(".story img.media.loaded", { timeout: 15000 }); await sleep(700);
@@ -167,6 +203,56 @@ try {
   ok("landscape: the middle band is the sharp, bright photo", photo.contrast > 4 && photo.luma > 100, JSON.stringify(photo));
   ok("landscape: the band above it is the smooth, dimmed backdrop", above.contrast < 2 && above.luma < 90, JSON.stringify(above));
   await page.keyboard.press("Escape"); await sleep(300);
+
+  console.log("--- the walk between places: off unless the gallery asks for it ---");
+  // Opt-in per gallery. Off, nothing is drawn at all -- not an empty layer, not
+  // a thread of length zero, nothing.
+  await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick"); await settle(page, { map: true });
+  ok("a gallery that did not ask for it gets no thread", (await page.$eval(".map", (e) => e.dataset.legs)) === "0", await page.$eval(".map", (e) => e.dataset.legs));
+  const mapPixels = async () => {
+    const box = await page.$eval(".map", (e) => { const r = e.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) + 120, width: Math.round(r.width), height: 360 }; });
+    return page.screenshot({ clip: box, encoding: "base64" });
+  };
+  const beforeRoute = await mapPixels();
+
+  // Turn it on the way a creator would, through the API the checkbox calls.
+  await fetch(`${A}/creator/api/galleries/sg2026demo`, { method: "PATCH", headers: { "content-type": "application/json", "remote-email": WHO }, body: JSON.stringify({ route: true }) });
+  const pubRoute = await (await fetch(`${V}/data/galleries/sg2026demo.json`)).json();
+  ok("the flag reaches the published gallery", pubRoute.route === true, JSON.stringify(pubRoute.route));
+
+  // What SHOULD be drawn, worked out independently of the app, from the
+  // published data -- so the test is not just the code agreeing with itself.
+  const expectLegs = (() => {
+    const placed = pubRoute.moments.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng)).slice().sort((a, b) => (a.t < b.t ? -1 : 1));
+    const key = (m) => (m.google?.placeId ? "g:" + m.google.placeId : (m.place || "").trim().toLowerCase() || "#" + m.id);
+    const stops = [];
+    for (const m of placed) { const k = key(m); if (stops.at(-1)?.k === k) continue; stops.push({ k, lat: m.lat, lng: m.lng, place: m.place }); }
+    const R = 6371008.8, rad = (d) => (d * Math.PI) / 180;
+    const legs = [];
+    for (let i = 1; i < stops.length; i++) {
+      const a = stops[i - 1], b = stops[i];
+      const s = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+      const met = 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+      if (met > 1) legs.push({ met, from: a.place, to: b.place });
+    }
+    return legs;
+  })();
+  console.log(`        ${expectLegs.length} legs expected, ${expectLegs.map((l) => Math.round(l.met) + "m").join(" ")}`);
+
+  await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick"); await settle(page, { map: true }); await sleep(600);
+  ok("MapLibre threads every hop between stops", (await page.$eval(".map", (e) => +e.dataset.legs)) === expectLegs.length, `${await page.$eval(".map", (e) => e.dataset.legs)} of ${expectLegs.length}`);
+  // The count could be right while nothing reached the canvas, so look at the
+  // canvas: turning the thread on has to change what is painted.
+  ok("...and the map actually paints them", (await mapPixels()) !== beforeRoute);
+
+  // Filtering must re-thread what is left, not leave a thread hanging to a pin
+  // that is no longer on the map.
+  await clickText(page, ".chrome nav .chip", "Activities"); await sleep(700);
+  const narrowed = await page.$eval(".map", (e) => +e.dataset.legs);
+  ok("narrowing the selection re-threads the stops that remain", narrowed < expectLegs.length, `${narrowed} of ${expectLegs.length}`);
+  await clickText(page, ".chrome nav .chip", "Activities"); await sleep(700);
+  ok("...and widening it back restores every leg", (await page.$eval(".map", (e) => +e.dataset.legs)) === expectLegs.length);
+  await settle(page, { map: true }); await shot(page, `${SHOTS}/05-route-maplibre.png`);
 
   console.log("--- viewer: deep link, wall, facet ---");
   // A COLD load: leave the site first, so this is a shared link opened from a
@@ -324,6 +410,46 @@ try {
   await gp.waitForSelector('.map[data-engine="google"] .gpin', { timeout: 20000 });
   await sleep(1400);
   ok("given room again, the names come back", (await overlaps()).showing === roomy.showing, JSON.stringify(await overlaps()));
+
+  console.log("--- the walk between places, on Google's map ---");
+  // The engine production actually runs. The stub records every polyline it is
+  // handed, so this checks OUR side of the contract in full: how many threads,
+  // between which points, drawn with what, and the distance on each.
+  ok("a thread per hop", (await gp.$eval('.map[data-engine="google"]', (e) => +e.dataset.legs)) === expectLegs.length,
+    `${await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.legs)} of ${expectLegs.length}`);
+  const threads = await gp.evaluate(() => (window.__gmapsPolylines || [])
+    .filter((p) => p.o.strokeOpacity === 0 && p._map)
+    .map((p) => ({ pts: p.o.path.length, icons: (p.o.icons || []).length, repeat: p.o.icons?.[0]?.repeat, scale: p.o.icons?.[0]?.icon?.scale, clickable: p.o.clickable, z: p.o.zIndex })));
+  ok("...drawn as dots, not as a line", threads.length === expectLegs.length && threads.every((t) => t.pts === 2 && t.icons === 1 && /px$/.test(t.repeat) && t.scale < 3),
+    JSON.stringify(threads[0] ?? null) + ` x${threads.length}`);
+  ok("...under the pins, and not in the way of a tap", threads.every((t) => t.z === 0 && t.clickable === false));
+
+  const said = await gp.$$eval(".leg", (els) => els.map((e) => e.textContent.trim()));
+  ok("every leg says how far it was", said.length === expectLegs.length, `${said.length} of ${expectLegs.length}: ${said.join(" ")}`);
+  const wantSaid = expectLegs.map(({ met }) => (met < 100 ? `${Math.round(met / 10) * 10} m` : met / 1000 < 10 ? `${(met / 1000).toFixed(1)} km` : `${Math.round(met / 1000)} km`));
+  ok("...and says it correctly, worked out from the published data, not from the app",
+    JSON.stringify(said) === JSON.stringify(wantSaid), `${said.join(" ")}  vs  ${wantSaid.join(" ")}`);
+  ok("...in kilometres, the way somebody would say a walk", said.some((t) => /^\d\.\d km$/.test(t)), said.join(" "));
+  await shot(gp, `${SHOTS}/19c-google-route.png`);
+
+  // Crowded, a distance is the first thing to go: a place NAME is what
+  // somebody is looking for, a distance is a nicety.
+  const crowdOrder = await gp.evaluate(() => {
+    const vis = (s) => [...document.querySelectorAll(s)].filter((e) => !e.classList.contains("crowded")).length;
+    return { names: vis(".gpin .chip"), legs: vis(".leg"), allLegs: document.querySelectorAll(".leg").length };
+  });
+  ok("distances give way before place names do", crowdOrder.legs <= crowdOrder.allLegs, JSON.stringify(crowdOrder));
+
+  // ...and switching it off takes every thread away again.
+  await fetch(`${A}/creator/api/galleries/sg2026demo`, { method: "PATCH", headers: { "content-type": "application/json", "remote-email": WHO }, body: JSON.stringify({ route: false }) });
+  await gp.reload({ waitUntil: "domcontentloaded" });
+  await gp.waitForSelector('.map[data-engine="google"] .gpin', { timeout: 20000 });
+  await sleep(1200);
+  ok("switching it off takes every thread away", (await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.legs)) === "0" && (await count(gp, ".leg")) === 0,
+    `${await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.legs)} legs, ${await count(gp, ".leg")} labels`);
+  ok("...and the pins are untouched by any of it", (await count(gp, ".gpin .ring")) === perPlace.size);
+  // Put it back on for the rest of the run.
+  await fetch(`${A}/creator/api/galleries/sg2026demo`, { method: "PATCH", headers: { "content-type": "application/json", "remote-email": WHO }, body: JSON.stringify({ route: true }) });
   // The map's bottom reserve and the dock's height were two independent magic
   // numbers (100px vs 12 + 72 + max(10, safe-area)); they now both come from
   // --dock-h. Flush means Google's logo and terms are never under the strip,
@@ -399,6 +525,25 @@ try {
   ok("Friends has an unguessable 12-char link", !!friendsId && friendsId.length === 12, friendsId ?? "none");
   ok("demo gallery is home", /home · shown at \//.test(await text(page, ".gallery.home h3")));
   await settle(page); await shot(page, `${SHOTS}/12-admin-galleries.png`);
+
+  // The walk between places is opt-in, through this checkbox. Off by default:
+  // a gallery of photos taken in one room does not want a thread drawn across
+  // it, and an option that arrives switched on is one somebody has to undo.
+  const routeBox = '.gallery form input[type="checkbox"]';
+  await page.evaluate((id) => { const card = [...document.querySelectorAll(".gallery")].find((g) => g.textContent.includes(id)); [...card.querySelectorAll("button")].find((b) => b.textContent.trim() === "Edit").click(); }, friendsId);
+  await page.waitForSelector(routeBox);
+  ok("the walk is offered, and offered OFF", /Draw the walk between places/.test(await text(page, ".gallery form")) && (await page.$$eval(routeBox, (b) => b.map((x) => x.checked).some(Boolean))) === false);
+  await page.evaluate(() => { const b = [...document.querySelectorAll('.gallery form label')].find((l) => /Draw the walk/.test(l.textContent))?.querySelector("input"); b.click(); });
+  await clickText(page, ".gallery form button", "Save");
+  await waitFor(page, () => document.querySelectorAll(".gallery form").length === 0, 8000);
+  const savedRoute = (await (await fetch(`${A}/creator/api/galleries`, { headers: { "remote-email": WHO } })).json()).find((x) => x.id === friendsId);
+  ok("...ticking it saves on the gallery", savedRoute?.route === true, JSON.stringify(savedRoute?.route));
+  ok("...and reaches the published copy the viewer reads", (await (await fetch(`${V}/data/galleries/${friendsId}.json`)).json()).route === true);
+  await page.evaluate((id) => { const card = [...document.querySelectorAll(".gallery")].find((g) => g.textContent.includes(id)); [...card.querySelectorAll("button")].find((b) => b.textContent.trim() === "Edit").click(); }, friendsId);
+  await page.waitForSelector(routeBox);
+  ok("...and the form comes back showing it ticked, not reset", await page.evaluate(() => [...document.querySelectorAll('.gallery form label')].find((l) => /Draw the walk/.test(l.textContent))?.querySelector("input").checked) === true);
+  await clickText(page, ".gallery form button", "Cancel"); await sleep(200);
+
   await page.evaluate((id) => { const card = [...document.querySelectorAll(".gallery")].find((g) => g.textContent.includes(id)); [...card.querySelectorAll("button")].find((b) => b.textContent.trim() === "Show photos").click(); }, friendsId);
   await page.waitForSelector(".cell");
   ok("Show photos filters to the gallery", (await count(page, ".cell")) === 2 && (await page.$eval(".filter select", (s) => s.value)) === friendsId);
@@ -683,34 +828,41 @@ try {
   await settle(page, { map: true }); await shot(page, `${SHOTS}/20-viewer-friends.png`);
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick");
   ok("home gallery lost the photo moved out of it", (await count(page, ".tick")) === 19, String(await count(page, ".tick")));
-  console.log("--- viewer: how many people have seen this ---");
-  // The eye in the top right. The number is recorded server-side and comes
-  // back on the same request, so what matters here is that the round trip
-  // works across the two pods, that reloading does not inflate it, and that
-  // the pretty name and the token are one gallery with one count.
+  console.log("--- viewer: how many people looked at each photo ---");
+  // The count belongs to the PHOTO, not to the gallery: somebody standing in
+  // front of one picture is not asking how many opened the link, and a creator
+  // reading a gallery total learns nothing about which picture people stopped
+  // on. So the eye is in the story's footer, on the photo it counts.
   await page.goto(`${V}/g/${friendsId}`, { waitUntil: "domcontentloaded" });
-  ok("an eye appears once the count comes back", await waitFor(page, () => !!document.querySelector(".views"), 10000));
-  const eye1 = await text(page, ".views .count");
-  ok("...showing a real number", /^\d/.test(eye1), eye1);
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await waitFor(page, () => !!document.querySelector(".views"), 10000);
-  ok("...that reloading does not inflate", (await text(page, ".views .count")) === eye1, `${eye1} -> ${await text(page, ".views .count")}`);
-  ok("...and reads as views to a screen reader", /views?$/.test((await page.$eval(".views", (e) => e.textContent)).trim()), await page.$eval(".views", (e) => e.textContent));
-  ok("...and says the exact number on hover", /^\d[\d,]* views?$/.test(await page.$eval(".views", (e) => e.title)), await page.$eval(".views", (e) => e.title));
-  ok("the eye is at the right-hand end of the bar, after the gallery's name",
-    await page.evaluate(() => {
-      const bar = document.querySelector(".top").getBoundingClientRect();
-      const v = document.querySelector(".views").getBoundingClientRect();
-      const brand = document.querySelector(".brand").getBoundingClientRect();
-      return { ok: v.left > brand.right - 1 && bar.right - v.right < 90 && v.top >= bar.top - 1 && v.bottom <= bar.bottom + 1, gapRight: Math.round(bar.right - v.right), afterBrand: Math.round(v.left - brand.right) };
-    }).then((r) => { if (!r.ok) console.log("        " + JSON.stringify(r)); return r.ok; }));
-  ok("...and it is out of the way once a story is open",
-    await page.evaluate(() => getComputedStyle(document.querySelector(".chrome")).opacity) === "1");
-  await shot(page, `${SHOTS}/20b-viewer-views.png`);
-  // The same gallery by its pretty name must not start a second count.
-  const listNow = await (await fetch(`${A}/creator/api/galleries`)).json();
-  const friends = listNow.find((x) => x.id === friendsId);
-  ok("the creator sees the same count on the gallery", String(friends?.views) === eye1, `${friends?.views} vs ${eye1}`);
+  await page.waitForSelector(".tick"); await settle(page, { map: true });
+  ok("no eye over the gallery any more", (await page.$(".chrome .views")) === null);
+  await (await page.$(".tick")).tap();
+  await page.waitForSelector(".story .media", { timeout: 15000 });
+  ok("the photo you are looking at carries its own count", await waitFor(page, () => !!document.querySelector(".story footer .views"), 10000));
+  const firstSeen = await text(page, ".story footer .views .n");
+  ok("...showing a real number", /^\d/.test(firstSeen), firstSeen);
+  ok("...and reads as views to a screen reader", /views?$/.test((await page.$eval(".story footer .views", (e) => e.textContent)).trim()), await page.$eval(".story footer .views", (e) => e.textContent));
+  ok("...with the exact number on hover", /^\d[\d,]* views?$/.test(await page.$eval(".story footer .views", (e) => e.title)), await page.$eval(".story footer .views", (e) => e.title));
+  ok("...at the foot of the story, opposite the position", await page.evaluate(() => {
+    const f = document.querySelector(".story footer").getBoundingClientRect();
+    const v = document.querySelector(".story footer .views").getBoundingClientRect();
+    const h = document.querySelector(".story footer .hint").getBoundingClientRect();
+    return v.left > h.right && f.right - v.right < 40 && v.top >= f.top - 1 && v.bottom <= f.bottom + 1;
+  }));
+  await shot(page, `${SHOTS}/20b-photo-views.png`);
+
+  // Each photo counts separately: stepping on is a different picture, and a
+  // different number.
+  await page.keyboard.press("ArrowRight"); await sleep(900);
+  ok("stepping to the next photo counts that one, not the first again",
+    await waitFor(page, () => !!document.querySelector(".story footer .views"), 10000));
+  await page.keyboard.press("Escape"); await sleep(400);
+
+  // ...and the creator can see which picture people stopped on.
+  const libNow = await (await fetch(`${A}/creator/api/moments`, { headers: { "remote-email": WHO } })).json();
+  const counted = libNow.filter((m) => (m.views ?? 0) > 0);
+  ok("the creator sees a count on each photo that was looked at", counted.length >= 2, `${counted.length} photos with views`);
+  ok("...and the gallery's own total is a separate number", typeof (await (await fetch(`${A}/creator/api/galleries`, { headers: { "remote-email": WHO } })).json()).find((x) => x.id === friendsId)?.views === "number");
 
   console.log("--- viewer: where am I ---");
   // The browser asks nobody until the button is tapped; then a blue dot, and the

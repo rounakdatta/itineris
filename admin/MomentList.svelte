@@ -1,7 +1,18 @@
 <script>
   import { dayKey, dayLabel, clockOf, stillUrl } from "./lib/api.js";
+  import { short, exact } from "../server/count.js";
 
   let { moments, selectedId = null, selectMode = false, selection, onSelect } = $props();
+
+  // "Which of my photos did people stop on" is a question about the maximum,
+  // and scanning thirty numbers for it is work. So the best-watched photo is
+  // marked -- but only when there IS one: if every photo has the same count
+  // there is no answer, and marking them all would be the same noise as
+  // badging every tile with what it has in common.
+  const best = $derived.by(() => {
+    const distinct = [...new Set(moments.map((m) => m.views ?? 0))].sort((a, z) => z - a);
+    return distinct[0] > 0 && distinct.length > 1 ? distinct[0] : null;
+  });
 
   // Newest day first -- what you just uploaded is what you want to tag.
   const groups = $derived(
@@ -29,6 +40,14 @@
         <img src={stillUrl(m.media, "thumb")} alt="" loading="lazy" />
         <span class="scrim" aria-hidden="true"></span>
         <span class="t">{clockOf(m.t)}</span>
+        {#if m.views}
+          <span class="seen" class:best={m.views === best} title={m.views === best ? `${exact(m.views)} — your best-watched photo` : exact(m.views)}>
+            <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+              <path d="M1.8 12S5.9 5.4 12 5.4 22.2 12 22.2 12 18.1 18.6 12 18.6 1.8 12 1.8 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+              <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2" />
+            </svg>{short(m.views)}
+          </span>
+        {/if}
         <!-- A tile flags what is EXCEPTIONAL about a photo, never what is
              ordinary. Untagged, unplaced and not-in-a-gallery are the state
              every photo arrives in, so badging them painted three orange
@@ -77,6 +96,18 @@
   /* The time was legible only because of a hard black text-shadow. A short
      gradient does the same job without smearing the bottom of the photo. */
   .scrim { position: absolute; inset: auto 0 0 0; height: 42%; background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent); pointer-events: none; }
+  /* Opposite the time, on the same scrim. Absent at zero rather than showing
+     "0" on a photo nobody has opened yet -- that reads as a verdict. */
+  .seen {
+    position: absolute; right: 7px; bottom: 6px; display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; font-weight: 600; line-height: 1; color: rgba(255, 255, 255, 0.86);
+    font-variant-numeric: tabular-nums;
+  }
+  .seen svg { opacity: 0.8; }
+  /* The one people watched most. A brighter version of the same mark, not a
+     new glyph: it answers the question without adding vocabulary. */
+  .seen.best { color: #fff; text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
+  .seen.best svg { opacity: 1; color: var(--accent); }
   .check { position: absolute; left: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; background: rgba(0, 0, 0, 0.45); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
   .picked .check { background: var(--ok); border-color: var(--ok); color: #05261c; }
   .tags { position: absolute; left: 0; right: 0; top: 0; padding: 26px 7px 0; font-size: 10px; color: #fff; background: linear-gradient(to bottom, rgba(0,0,0,.6), transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }

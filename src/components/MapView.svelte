@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { trip } from "../lib/trip.svelte.js";
   import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression, fitPadding } from "../lib/data.js";
+  import { legsOf, legsFC } from "../lib/route.js";
   import { here } from "../lib/here.svelte.js";
 
   let container;
@@ -36,6 +37,49 @@
       }
 
       map.on("load", () => {
+        // The walk between stops, under everything else: a thread the eye can
+        // follow when it looks for it and ignore when it does not. Round caps
+        // on a zero-length dash are how you draw dots rather than ticks, and
+        // the whole thing is deliberately dim -- it is the connective tissue
+        // of the trip, not one of its subjects.
+        map.addSource("legs", { type: "geojson", data: EMPTY });
+        map.addLayer({
+          id: "legs-line",
+          type: "line",
+          source: "legs",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": "#ffffff",
+            "line-opacity": 0.5,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.8, 16, 2.6],
+            "line-dasharray": [0, 2.2],
+          },
+        });
+        // The distance, halfway along. maplibre hides a label that would
+        // collide with another, which is exactly the behaviour wanted: on a
+        // dense trip the threads still read even when the numbers cannot all
+        // fit, and nothing overlaps.
+        map.addLayer({
+          id: "legs-label",
+          type: "symbol",
+          source: "legs",
+          layout: {
+            "symbol-placement": "line-center",
+            "text-field": ["get", "label"],
+            "text-size": 11,
+            "text-font": ["Noto Sans Regular"],
+            "text-letter-spacing": 0.02,
+            "text-padding": 6,
+            "text-allow-overlap": false,
+            "text-ignore-placement": false,
+          },
+          paint: {
+            "text-color": "rgba(255,255,255,0.92)",
+            "text-halo-color": "rgba(0,0,0,0.75)",
+            "text-halo-width": 1.4,
+          },
+        });
+
         map.addSource("tracks", { type: "geojson", data: EMPTY });
         map.addLayer({
           id: "tracks-line",
@@ -129,6 +173,15 @@
     if (!ready || !map) return;
     map.getSource("moments")?.setData(momentsFC(moments));
     map.getSource("tracks")?.setData(tracksFC(tracks));
+    // Opt-in per gallery, and only over what is currently shown -- filtering
+    // to one tag should re-thread the stops that remain, not leave a line
+    // hanging to a pin that is no longer there.
+    const legs = trip.route ? legsOf(moments) : [];
+    map.getSource("legs")?.setData(legs.length ? legsFC(legs) : EMPTY);
+    // What it drew, readable from outside: a test that only looked at the
+    // rendered canvas could not tell "no legs because the gallery said so"
+    // from "no legs because the layer never got any data".
+    if (container) container.dataset.legs = String(legs.length);
   });
 
   // Focus -> camera. flyTo, never a re-render.

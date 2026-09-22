@@ -1,5 +1,6 @@
 <script>
   import { api, stillUrl, splitIso, joinIso, OFFSETS, storyUrl } from "./lib/api.js";
+  import { exact } from "../server/count.js";
   import MapPicker from "./MapPicker.svelte";
   import CaptionStyler from "./CaptionStyler.svelte";
   import { captionsOf, nextCaption, normalizeStyle } from "../server/caption.js";
@@ -134,7 +135,7 @@
     {/if}
     <div class="meta">
       <div class="muted small">{moment.filename ?? moment.id}{#if moment.camera}{" · "}{moment.camera}{/if}</div>
-      {#if !pending}<div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy}{" · by "}{moment.uploadedBy}{/if}</div>{/if}
+      {#if !pending}<div class="muted small">{moment.media.w}×{moment.media.h}{#if moment.uploadedBy}{" · by "}{moment.uploadedBy}{/if}{#if moment.views}{" · "}<span class="seen" title={exact(moment.views)}>{exact(moment.views)}</span>{/if}</div>{/if}
       {#if pending}<span class="badge">waiting to upload — edits are kept on this device</span>{/if}
       {#if viewerLink && !pending}<a class="small" href={viewerLink} target="_blank" rel="noopener">open in viewer ↗</a>{/if}
       {#if !pending}
@@ -266,6 +267,7 @@
   /* Plain sentences in the app's own voice, next to the field they are about.
      The point is to be noticed while reading, not to interrupt. */
   .says { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .seen { color: var(--text); font-variant-numeric: tabular-nums; }
   .btn.tiny { padding: 4px 9px; font-size: 12px; }
   .tiny-note { font-size: 12px; margin: 6px 0 0; }
   code { font-size: 12px; }

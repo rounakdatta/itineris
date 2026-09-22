@@ -84,6 +84,9 @@ export function materializeGallery(g, moments, tracks) {
   const ms = new Set(g.momentIds ?? []), ts = new Set(g.trackIds ?? []);
   return {
     id: g.id, title: g.title, description: g.description ?? "", updatedAt: g.updatedAt ?? g.createdAt ?? null,
+    // Only when it is on: a projection should say what is true, not carry a
+    // false for every option that exists.
+    ...(g.route === true ? { route: true } : {}),
     moments: moments.filter((m) => ms.has(m.id)).map(pub).sort(byT),
     tracks: tracks.filter((t) => ts.has(t.id)),
   };
@@ -238,6 +241,16 @@ export class Store {
     return Object.fromEntries(Object.entries(await this.#viewFile()).map(([token, e]) => [token, e?.n ?? 0]));
   }
   async viewsOf(token) { return (await this.#viewFile())[token]?.n ?? 0; }
+  // How many people looked at each PHOTO, across every gallery it is in --
+  // "which of my pictures did people stop on" is a question about the photo,
+  // not about one link it happens to be shared through.
+  async momentViews() {
+    const out = {};
+    for (const e of Object.values(await this.#viewFile()))
+      for (const [id, n] of Object.entries(e?.m ?? {})) out[id] = (out[id] ?? 0) + n;
+    return out;
+  }
+  async momentViewsOf(token) { return (await this.#viewFile())[token]?.m ?? {}; }
 
   // The salt is per-instance and never leaves the volume: without it the
   // stored hashes are not linkable to anything, even by whoever holds the file.
@@ -251,17 +264,29 @@ export class Store {
 
   // Returns `{ n, fresh }`, or null if there is no such published gallery --
   // so this endpoint cannot be used to make up entries.
-  async recordView(name, { ip, ua, at = new Date() } = {}) {
+  async recordView(name, { ip, ua, moment = null, at = new Date() } = {}) {
     if (!/^[a-z0-9][a-z0-9-]{1,40}$/.test(String(name ?? ""))) return null;
+    if (moment !== null && !/^[a-z0-9]{4,64}$/.test(String(moment))) return null;
     return this.serialize(async () => {
       // A gallery reached by its pretty name is the same gallery: one count,
       // whichever of its two URLs somebody was given.
       const token = (await this.slugs())[name] ?? name;
-      if (!(await exists(path.join(this.paths.pubGalleries, `${token}.json`)))) return null;
+      const file_ = path.join(this.paths.pubGalleries, `${token}.json`);
+      if (!(await exists(file_))) return null;
+      // A photo is only countable if it is actually IN this gallery -- the
+      // endpoint is public, so the id has to be checked against what was
+      // published rather than trusted.
+      if (moment) {
+        const pub = await readJson(file_, null);
+        if (!pub?.moments?.some((m) => m.id === moment)) return null;
+      }
       const day = dayOf(at);
       const salt = await this.#viewSalt();
       const file = await this.#viewFile();
-      const { entry, n, fresh } = countView(file[token], visitorKey({ salt, ip, ua, token, day }), day);
+      // The photo's id goes into the visitor key, so each photo dedupes on its
+      // own: one visitor looking at six photos is six views, not one.
+      const key = visitorKey({ salt, ip, ua, token: moment ? `${token}/${moment}` : token, day });
+      const { entry, n, fresh } = countView(file[token], key, day, { moment });
       if (fresh) await atomicWrite(this.paths.views, { ...file, [token]: entry });
       return { n, fresh };
     });

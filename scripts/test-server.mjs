@@ -469,6 +469,20 @@ try {
     ok("clearing the name is allowed", (await ada7("PATCH", `/creator/api/galleries/${g.body.id}`, { slug: null })).body.slug === undefined);
     ok("...and it stops answering", (await fetch(`${s7.BASE}/data/galleries/sgeats.json`)).status === 404);
 
+    // The walk between places: opt-in, and the projection says what is true
+    // rather than carrying a false for every option that exists.
+    const plain = (await ada7("POST", "/creator/api/galleries", { title: "No walk" })).body;
+    ok("a gallery does not ask for the walk unless it says so", plain.route === false && !("route" in await readJson(path.join(d7, "data", "galleries", `${plain.id}.json`))), JSON.stringify(plain.route));
+    const walked = (await ada7("POST", "/creator/api/galleries", { title: "A walk", route: true })).body;
+    ok("...and asking for it publishes it", walked.route === true && (await readJson(path.join(d7, "data", "galleries", `${walked.id}.json`))).route === true);
+    await ada7("PATCH", `/creator/api/galleries/${walked.id}`, { route: false });
+    ok("...and turning it off takes it back out of the published copy", !("route" in await readJson(path.join(d7, "data", "galleries", `${walked.id}.json`))));
+    await ada7("PATCH", `/creator/api/galleries/${walked.id}`, { title: "Renamed" });
+    ok("...while an unrelated edit leaves it alone", !("route" in await readJson(path.join(d7, "data", "galleries", `${walked.id}.json`))));
+    await ada7("PATCH", `/creator/api/galleries/${walked.id}`, { route: true });
+    await ada7("PATCH", `/creator/api/galleries/${walked.id}`, { description: "x" });
+    ok("...and so does an unrelated edit after it is on", (await readJson(path.join(d7, "data", "galleries", `${walked.id}.json`))).route === true);
+
     const doomed = (await ada7("POST", "/creator/api/galleries", { title: "Doomed", slug: "doomedtrip" })).body;
     await ada7("DELETE", `/creator/api/galleries/${doomed.id}`);
     ok("deleting a gallery takes its name with it", (await fetch(`${s7.BASE}/data/galleries/doomedtrip.json`)).status === 404 && (await fetch(`${s7.BASE}/data/galleries/${doomed.id}.json`)).status === 404);
@@ -525,6 +539,40 @@ try {
     const hashes = await readJson(path.join(d8, "library", "views.json"));
     ok("...and the hashes are never served to the creator either",
       list.body.every((x) => !("seen" in x)) && !hashes[g.id].seen.some((h) => JSON.stringify(list.body).includes(h)));
+
+    // --- per photo ---------------------------------------------------------
+    // "Which of my pictures did people stop on" is a different question from
+    // "how many opened this", and the two must not contaminate each other.
+    const fd8 = new FormData();
+    fd8.append("files", new Blob([await jpeg({ seed: 8, w: 900, h: 1200, date: "2026:03:14 09:00:00", offset: "+08:00" })], { type: "image/jpeg" }), "seen.jpg");
+    await fetch(`${s8.BASE}/creator/api/upload`, { method: "POST", headers: { "remote-email": "ada@example.com" }, body: fd8 });
+    const mid = (await owner8("GET", "/creator/api/moments")).body[0]?.id;
+    const sawPhoto = async (m, o) => j(await fetch(`${s8.BASE}/creator/api/views/${g.id}`, {
+      method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": o.ip, "user-agent": o.ua },
+      body: JSON.stringify({ moment: m }),
+    }));
+    if (mid) {
+      await owner8("PATCH", `/creator/api/galleries/${g.id}`, { add: [mid] });
+      const galleryBefore = (await owner8("GET", "/creator/api/galleries")).body.find((x) => x.id === g.id).views;
+      const one = await sawPhoto(mid, { ip: "203.0.113.50", ua: "looker" });
+      ok("a photo carries its own count", one.status === 200 && one.body.views === 1 && one.body.counted === true, JSON.stringify(one.body));
+      ok("...and looking again today does not add to it", (await sawPhoto(mid, { ip: "203.0.113.50", ua: "looker" })).body.counted === false);
+      ok("...while somebody else does", (await sawPhoto(mid, { ip: "203.0.113.51", ua: "other" })).body.views === 2);
+      ok("...and none of it touched the gallery's own count",
+        (await owner8("GET", "/creator/api/galleries")).body.find((x) => x.id === g.id).views === galleryBefore);
+      const withCounts = (await owner8("GET", "/creator/api/moments")).body.find((x) => x.id === mid);
+      ok("the creator sees the count on the photo", withCounts.views === 2, String(withCounts.views));
+      // The endpoint is public, so an id has to be checked against what was
+      // actually published rather than trusted.
+      ok("a photo id that is not in this gallery is refused", (await sawPhoto("notinthisgallery", { ip: "203.0.113.52", ua: "x" })).status === 404);
+      ok("...and so is a shape that could never be an id", (await sawPhoto("../../etc", { ip: "203.0.113.53", ua: "x" })).status === 404);
+      ok("the owner looking at their own photo is not a view",
+        (await j(await fetch(`${s8.BASE}/creator/api/views/${g.id}`, { method: "POST", headers: { "content-type": "application/json", "remote-email": "ada@example.com", "x-forwarded-for": "7.7.7.7" }, body: JSON.stringify({ moment: mid }) }))).body.views === 2);
+      const raw2 = await readJson(path.join(d8, "library", "views.json"));
+      ok("photo tallies survive the day rolling over, unlike the hashes", typeof raw2[g.id].m[mid] === "number" && raw2[g.id].m[mid] === 2, JSON.stringify(raw2[g.id].m));
+    } else {
+      ok("a photo to count", false, "no moment in the library");
+    }
 
     // A busy address still gets the number; it just stops adding to it. An
     // eye that vanishes because a household was busy reads as broken.

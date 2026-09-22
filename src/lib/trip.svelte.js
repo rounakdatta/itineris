@@ -9,6 +9,8 @@ class Trip {
   galleryId = $state(null);
   title = $state("");
   description = $state("");
+  // Whether this gallery asked for the walk between its places to be drawn.
+  route = $state(false);
   // loading | ready | landing (no gallery at /) | notfound (bad token) | error
   status = $state("loading");
   error = $state(null);
@@ -78,6 +80,7 @@ class Trip {
       this.galleryId = g.id;
       this.title = g.title ?? "";
       this.description = g.description ?? "";
+      this.route = g.route === true;
       this.moments = g.moments ?? [];
       this.tracks = g.tracks ?? [];
       this.status = "ready";

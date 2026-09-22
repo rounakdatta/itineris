@@ -5,7 +5,6 @@
   import { hasAnyCoords } from "./lib/data.js";
   import { allSeen } from "./lib/seen.svelte.js";
   import { views } from "./lib/views.svelte.js";
-  import { short, exact } from "../server/count.js";
   import MapView from "./components/MapView.svelte";
   import PhotoWall from "./components/PhotoWall.svelte";
   import FacetBar from "./components/FacetBar.svelte";
@@ -119,20 +118,6 @@
         {#if here.status === "denied"}<span class="pill muted" role="status">Location is blocked for this site</span>
         {:else if here.status === "error"}<span class="pill muted" role="status">Couldn't find you</span>
         {:else if here.status === "unavailable"}<span class="pill muted" role="status">No location on this device</span>{/if}
-        <!-- How many people have seen this. Quiet on purpose: it is the last
-             thing in the bar, it carries no button behaviour, and it only
-             appears once a real number has come back -- an eye showing "0",
-             or a skeleton that never fills, would be worse than no eye. -->
-        {#if views.n !== null}
-          <span class="views" role="status" title={exact(views.n)}>
-            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-              <path d="M1.8 12S5.9 5.4 12 5.4 22.2 12 22.2 12 18.1 18.6 12 18.6 1.8 12 1.8 12Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
-              <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7" />
-            </svg>
-            <span class="count">{short(views.n)}</span>
-            <span class="sr">{views.n === 1 ? "view" : "views"}</span>
-          </span>
-        {/if}
         {#if trip.view === "map"}
           <!-- Ask for the browser's location only on this tap, and only show it while it is on. -->
           <button
@@ -221,23 +206,6 @@
   /* The mark is drawn on white, so it wears a small white chip on the dark bar. */
   .brand .mark { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 6px; background: #fff; }
   .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  /* Information, not a control: no hover, no cursor, no press. It fades up
-     when the number arrives rather than popping into the bar mid-read. */
-  .views {
-    /* Same height, border and glass as the locate button next to it, so the
-       two read as one cluster rather than two unrelated widgets. */
-    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
-    height: 38px; padding: 0 13px 0 11px; border-radius: 999px;
-    background: var(--panel); border: 1px solid var(--line);
-    color: var(--text); font-size: 13px; font-weight: 600; line-height: 1;
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    animation: views-in 420ms cubic-bezier(.2, .8, .2, 1) both;
-  }
-  .views svg { opacity: 0.72; }
-  /* Tabular figures: the pill must not jitter when 99 becomes 100. */
-  .views .count { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
-  @keyframes views-in { from { opacity: 0; transform: translateY(-3px) scale(0.96); } to { opacity: 1; transform: none; } }
-  @media (prefers-reduced-motion: reduce) { .views { animation: none; } }
   /* The gallery's name is the heading now, so it reads as the title it is. */
   .title { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* The same ring the map pins wear, so it reads as "a story" on sight -- but

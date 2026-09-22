@@ -246,8 +246,13 @@ async function rasterPhoto(m, { w, h, seed }) {
   }
   m.media = { type: "photo", src: `media/${m.id}-1600.webp`, w: info[1600].width, h: info[1600].height, medium: `media/${m.id}-960.webp`, thumb: `media/${m.id}-400.webp` };
 }
-await rasterPhoto(moments[12], { w: 1200, h: 1600, seed: 20260314 });   // portrait
-await rasterPhoto(moments[4], { w: 1600, h: 1200, seed: 20260315 });    // landscape
+// Four shapes, because how a picture meets a portrait frame is decided by how
+// much filling it would throw away -- not by which way round it is. See
+// shouldContain() in src/lib/zoom.js; every one of these is a different answer.
+await rasterPhoto(moments[12], { w: 1200, h: 1600, seed: 20260314 });   // 3:4  -- cover would lose 38%
+await rasterPhoto(moments[4], { w: 1600, h: 1200, seed: 20260315 });    // 4:3 landscape
+await rasterPhoto(moments[7], { w: 1600, h: 1600, seed: 20260316 });    // square, like a 2x2 collage -- 54%
+await rasterPhoto(moments[9], { w: 1080, h: 1920, seed: 20260317 });    // 9:16 phone -- 18%, and fills
 moments.forEach((m, i) => { if (m.media.src.endsWith(".svg")) writeFileSync(out(`seed/media/${m.id}.svg`), placeholder(m, i)); });
 writeFileSync(out("seed/library/moments.json"), JSON.stringify(moments, null, 2) + "\n");
 writeFileSync(out("seed/library/tracks.json"), JSON.stringify(tracks, null, 2) + "\n");

@@ -40,3 +40,16 @@ vi.mock("maplibre-gl", () => {
   return { default: { Map, NavigationControl, Marker }, Map, NavigationControl, Marker };
 });
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
+
+// jsdom has no ResizeObserver, and Svelte's bind:clientWidth/clientHeight uses
+// one. A no-op is the right shim rather than a fake that reports sizes: jsdom
+// lays nothing out, so every measurement would be zero anyway, and code that
+// measures its own frame should be tested for what it does when it cannot --
+// which here is to fall back to the picture's orientation.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
