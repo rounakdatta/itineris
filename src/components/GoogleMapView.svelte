@@ -11,7 +11,7 @@
   import { allSeen } from "../lib/seen.svelte.js";
   import { here } from "../lib/here.svelte.js";
   import { loadGoogleMaps, onAuthFailure, watchMapErrors } from "../lib/gmaps.js";
-  import { legsOf, LEG_INK, LEG_CASING } from "../../server/route.js";
+  import { legsOf, stopOrder, LEG_INK, LEG_CASING } from "../../server/route.js";
 
   let { config, onFail } = $props();
   let container;
@@ -88,7 +88,14 @@
     const img = document.createElement("img");
     img.src = mediaUrl(group.first.media.thumb ?? group.first.media.src); img.alt = ""; img.loading = "lazy"; img.draggable = false;
     ring.appendChild(img);
-    if (group.moments.length > 1) { const n = document.createElement("span"); n.className = "n"; n.textContent = String(group.moments.length); ring.appendChild(n); }
+    // The badge is WHICH STOP this was, and only when the gallery draws the
+    // walk -- a number that means something in the sequence you are looking at.
+    // It used to be how many photos are at this place, which reads as an
+    // unexplained "5" next to a "3" next to a "7": a count nobody asked for,
+    // in the one place on the screen the eye goes first.
+    const n = document.createElement("span");
+    n.className = "n";
+    ring.appendChild(n);
     if (group.moments.some((x) => x.media?.type === "video")) { const v = document.createElement("span"); v.className = "v"; v.textContent = "▶"; v.setAttribute("aria-hidden", "true"); ring.appendChild(v); }
     el.appendChild(ring);
     // The chip says which place this is -- "Yamo" -- and, when Google knows it, how it is rated.
@@ -111,7 +118,7 @@
     chip?.addEventListener("click", (e) => { e.stopPropagation(); trip.openStory(group.first.id); });
     // Anything else on the pin (padding, badge): what is this place?
     mk.addListener("click", () => trip.openStory(group.first.id));
-    return { mk, ring, chip, sig: group.moments.map((x) => x.id).join(","), group };
+    return { mk, ring, chip, n, sig: group.moments.map((x) => x.id).join(","), group };
   }
 
   // Selection -> pins and routes. A group whose photos changed is rebuilt;
@@ -120,6 +127,7 @@
     const groups = groupByPlace(trip.visibleMoments);
     const tracks = trip.visibleTracks;
     if (!ready || !map) return;
+    const order = stopOrder(trip.visibleMoments);
     const want = new Set();
     for (const grp of groups) {
       want.add(grp.key);
@@ -130,6 +138,11 @@
       else if (!pin.mk.map) pin.mk.map = map;
       pin.group = grp;
       pin.ring.classList.toggle("seen", allSeen(grp.moments));
+      // Numbered only when the walk is drawn: without a thread joining them,
+      // "1, 2, 3" on scattered pins is a sequence nobody can follow.
+      const nth = trip.route ? order.get(grp.key) : null;
+      pin.n.textContent = nth ? String(nth) : "";
+      pin.n.classList.toggle("on", !!nth);
     }
     for (const [key, pin] of pins) if (!want.has(key) && pin.mk.map) pin.mk.map = null;
     const wantT = new Set();
@@ -378,9 +391,13 @@
   }
   :global(.gpin .ring img) { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; border: 2px solid #fff; background: #14181e; pointer-events: none; }
   :global(.gpin .ring.seen) { background: #cfcfcf; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95), 0 3px 10px rgba(0, 0, 0, 0.25); }
+  :global(.gpin .ring .n:not(.on)) { display: none; }
+  /* The number belongs to the walk, so it wears the walk's colour: the eye
+     joins the amber thread to the amber badges without being told to. */
   :global(.gpin .ring .n) {
     position: absolute; right: -5px; top: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; border: 2px solid #fff;
-    background: #111; color: #fff; font: 700 10.5px/14px system-ui, -apple-system, sans-serif; text-align: center; box-sizing: border-box;
+    background: #b45309; color: #fff; font: 700 10.5px/14px system-ui, -apple-system, sans-serif; text-align: center; box-sizing: border-box;
+    font-variant-numeric: tabular-nums; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   }
   :global(.gpin .ring .v) { position: absolute; left: -5px; bottom: -5px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; background: #111; color: #fff; font-size: 8px; line-height: 14px; text-align: center; box-sizing: border-box; }
   :global(.gpin .chip) {

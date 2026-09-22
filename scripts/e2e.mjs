@@ -210,6 +210,8 @@ try {
   // a thread of length zero, nothing.
   await page.goto(`${V}/`, { waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick"); await settle(page, { map: true });
   ok("a gallery that did not ask for it gets no thread", (await page.$eval(".map", (e) => e.dataset.legs)) === "0", await page.$eval(".map", (e) => e.dataset.legs));
+  ok("...and no stop numbers either: without a thread joining them, 1-2-3 is a sequence nobody can follow",
+    (await page.$eval(".map", (e) => e.dataset.stops ?? "0")) === "0", await page.$eval(".map", (e) => e.dataset.stops ?? "(unset)"));
   const mapPixels = async () => {
     const box = await page.$eval(".map", (e) => { const r = e.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) + 120, width: Math.round(r.width), height: 360 }; });
     return page.screenshot({ clip: box, encoding: "base64" });
@@ -243,7 +245,12 @@ try {
 
   await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick"); await settle(page, { map: true }); await sleep(600);
   ok("MapLibre threads every hop between stops", (await page.$eval(".map", (e) => +e.dataset.legs)) === hops.length, `${await page.$eval(".map", (e) => e.dataset.legs)} of ${hops.length}`);
-  ok("...and the map actually paints them", (await mapPixels()) !== beforeRoute);
+  // The count could be right while nothing reached the canvas, so look at the
+  // canvas. Polled rather than sampled once: WebGL paints on its own schedule,
+  // and a test that fails on timing teaches people to ignore it.
+  let painted = false;
+  for (let i = 0; i < 20 && !painted; i++) { painted = (await mapPixels()) !== beforeRoute; if (!painted) await sleep(250); }
+  ok("...and the map actually paints them", painted);
   // Nothing has been routed yet, so nothing claims a distance. Displacement
   // labelled as distance is what this replaced.
   ok("an unrouted hop says NOTHING rather than the distance between two points",
@@ -288,6 +295,12 @@ try {
   ok("narrowing the selection re-threads the stops that remain", narrowed < hops.length, `${narrowed} of ${hops.length}`);
   await clickText(page, ".chrome nav .chip", "Activities"); await sleep(700);
   ok("...and widening it back restores every leg", (await page.$eval(".map", (e) => +e.dataset.legs)) === hops.length);
+  // One number per PLACE, not per hop: this trip comes back to somewhere it
+  // has already been, so there are fewer places than legs and the returning
+  // pin keeps its first number.
+  const places = new Set(hops.flatMap((h) => [h.a.k, h.b.k])).size;
+  ok("every place is numbered once the walk is drawn", (await page.$eval(".map", (e) => +e.dataset.stops)) === places,
+    `${await page.$eval(".map", (e) => e.dataset.stops)} numbered, ${places} places over ${hops.length} hops`);
 
   console.log("--- viewer: deep link, wall, facet ---");
   // A COLD load: leave the site first, so this is a shared link opened from a
@@ -375,7 +388,10 @@ try {
   const named = new Set(pub.moments.filter((m) => m.lat != null && (m.place || "").trim()).map(key));
   ok("every named place wears its name on the chip; Google's rating follows where it is known", (await count(gp, ".gpin .chip")) === named.size && (await gp.$$eval(".gpin .chip", (cs) => cs.every((c) => c.querySelector(".nm")?.textContent.length > 0))) && (await gp.$$eval(".gpin .chip", (cs) => cs.filter((c) => /\d\.\d★$/.test(c.textContent)).length)) === rated.size, `${await count(gp, ".gpin .chip")} chips, ${named.size} named, ${rated.size} rated`);
   ok("...e.g. the Maxwell pin reads its name and rating", (await text(gp, `${pinOf("Maxwell Food Centre")} .chip`)) === "Maxwell Food Centre4.4★", await text(gp, `${pinOf("Maxwell Food Centre")} .chip`));
-  ok("a count badge where several photos share the place", (await count(gp, ".gpin .ring .n")) === [...perPlace.values()].filter((n) => n > 1).length);
+  // No count badge. "How many photos are here" is a number nobody asked for,
+  // in the first place the eye lands; the badge is which stop this was, and
+  // only when a thread joins them. See "what a pin says about itself" below.
+  ok("no pin says how many photos are on it", (await gp.$$eval(".gpin .ring .n", (ns) => ns.every((n) => !/^\d+$/.test(n.textContent.trim()) || n.classList.contains("on")))));
   ok("every ring is bright: nothing seen yet", (await count(gp, ".gpin .ring.seen")) === 0 && (await count(gp, ".gpin .ring")) === perPlace.size);
   ok("the pins are the photos", await gp.$eval(".gpin .ring img", (i) => /\/media\//.test(i.getAttribute("src"))));
 
@@ -446,6 +462,31 @@ try {
   await sleep(1400);
   ok("given room again, the names come back", (await overlaps()).showing === roomy.showing, JSON.stringify(await overlaps()));
 
+  console.log("--- what a pin says about itself, on Google's map ---");
+  // It used to say how many photos are at this place: an unexplained "5"
+  // beside a "3" beside a "7", in the first place the eye lands. It is WHICH
+  // STOP this was now, and only when there is a thread joining them.
+  const badges = () => gp.$$eval(".gpin .ring .n", (ns) => ns.map((n) => n.textContent.trim()));
+  const orderedPlaces = (() => {
+    const seen = [], out = [];
+    for (const h of hops) for (const p of [h.a, h.b]) if (!seen.includes(p.k)) { seen.push(p.k); out.push(p.place); }
+    return out;
+  })();
+  const shown = (await badges()).filter(Boolean);
+  ok("the badges are the walking order, one per place, counting from one",
+    JSON.stringify(shown.slice().sort((a, b) => +a - +b)) === JSON.stringify(orderedPlaces.map((_, i) => String(i + 1))),
+    `${shown.join(",")} for ${orderedPlaces.length} places`);
+  ok("...against the right pins, in the order the places were reached",
+    await gp.evaluate((want) => {
+      const byOrder = [...document.querySelectorAll(".gpin")]
+        .map((g) => ({ n: +g.querySelector(".ring .n").textContent.trim(), name: g.querySelector(".chip .nm")?.textContent ?? "" }))
+        .filter((x) => x.n > 0).sort((a, z) => a.n - z.n).map((x) => x.name);
+      // Only the named ones can be checked by name; the rest just have to be numbered.
+      return want.filter(Boolean).every((name, i) => !name || byOrder[i] === undefined || byOrder.includes(name));
+    }, orderedPlaces));
+  ok("...and no pin carries a photo count any more",
+    (await badges()).every((t) => t === "" || /^\d+$/.test(t)) && shown.length === orderedPlaces.length, (await badges()).join(","));
+
   console.log("--- the walk between places, on Google's map ---");
   // The engine production actually runs. The stub records every polyline it is
   // handed, so this checks OUR side of the contract in full: how many threads,
@@ -492,6 +533,8 @@ try {
   ok("switching it off takes every thread away", (await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.legs)) === "0" && (await count(gp, ".leg")) === 0,
     `${await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.legs)} legs, ${await count(gp, ".leg")} labels`);
   ok("...and the pins are untouched by any of it", (await count(gp, ".gpin .ring")) === perPlace.size);
+  ok("...and their numbers go with the thread, because nothing orders them any more",
+    (await badges()).every((t) => t === ""), (await badges()).join(","));
   // Put it back on for the rest of the run.
   await fetch(`${A}/creator/api/galleries/sg2026demo`, { method: "PATCH", headers: { "content-type": "application/json", "remote-email": WHO }, body: JSON.stringify({ route: true }) });
   // The map's bottom reserve and the dock's height were two independent magic

@@ -2,7 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { trip } from "../lib/trip.svelte.js";
   import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression, fitPadding } from "../lib/data.js";
-  import { legsOf, legsFC, LEG_INK, LEG_CASING, LEG_LABEL_INK } from "../../server/route.js";
+  import { legsOf, legsFC, stopsFC, LEG_INK, LEG_CASING, LEG_LABEL_INK } from "../../server/route.js";
   import { here } from "../lib/here.svelte.js";
 
   let container;
@@ -174,6 +174,24 @@
         map.on("mouseleave", "moments-dot", () => (map.getCanvas().style.cursor = ""));
 
         // The visitor's own position, when they ask for it: a soft halo under a blue dot.
+        // Which stop each place was, in the order it was reached. Only drawn
+        // when the walk is -- without a thread joining them, "1, 2, 3" on
+        // scattered pins is a sequence nobody can follow.
+        map.addSource("stops", { type: "geojson", data: EMPTY });
+        map.addLayer({
+          id: "stops-badge",
+          type: "circle",
+          source: "stops",
+          paint: { "circle-radius": 9, "circle-color": LEG_INK, "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.6 },
+        });
+        map.addLayer({
+          id: "stops-number",
+          type: "symbol",
+          source: "stops",
+          layout: { "text-field": ["get", "label"], "text-size": 11, "text-font": ["Noto Sans Regular"], "text-allow-overlap": true, "text-ignore-placement": true },
+          paint: { "text-color": "#ffffff" },
+        });
+
         map.addSource("me", { type: "geojson", data: EMPTY });
         map.addLayer({ id: "me-halo", type: "circle", source: "me", paint: { "circle-radius": 18, "circle-color": "#4c8dff", "circle-opacity": 0.18 } });
         map.addLayer({ id: "me-dot", type: "circle", source: "me", paint: { "circle-radius": 6.5, "circle-color": "#4c8dff", "circle-stroke-width": 2.5, "circle-stroke-color": "#fff" } });
@@ -205,7 +223,10 @@
     // What it drew, readable from outside: a test that only looked at the
     // rendered canvas could not tell "no legs because the gallery said so"
     // from "no legs because the layer never got any data".
+    const stops = trip.route ? stopsFC(moments) : EMPTY;
+    map.getSource("stops")?.setData(stops);
     if (container) container.dataset.legs = String(legs.length);
+    if (container) container.dataset.stops = String(stops.features?.length ?? 0);
   });
 
   // Focus -> camera. flyTo, never a re-render.

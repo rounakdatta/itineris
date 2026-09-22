@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { metresBetween, prettyDistance, stopsOf, legsOf, legsFC, LEG_INK, LEG_CASING, LEG_LABEL_INK, BASEMAPS, contrast, rgbOf } from "../server/route.js";
+import { metresBetween, prettyDistance, stopsOf, legsOf, legsFC, stopOrder, stopsFC, LEG_INK, LEG_CASING, LEG_LABEL_INK, BASEMAPS, contrast, rgbOf } from "../server/route.js";
 
 const at = (t, place, lat, lng) => ({ id: `m${t}`, t: `2026-03-14T${t}:00+08:00`, place, lat, lng, tags: [], media: {} });
 
@@ -130,5 +130,39 @@ describe("the thread has to be visible on the maps that actually exist", () => {
   });
   it("and the label reads on a dark halo", () => {
     expect(contrast(rgbOf(LEG_LABEL_INK), [0, 0, 0])).toBeGreaterThan(10);
+  });
+});
+
+describe("numbering the places in the order they were reached", () => {
+  const at = (t, place, lat, lng) => ({ id: `m${t}`, t: `2026-03-14T${t}:00+08:00`, place, lat, lng, tags: [], media: {} });
+
+  it("numbers from one, by time, not by the order they happen to be listed in", () => {
+    const trip = [at("15", "Barrage", 1.2805, 103.8712), at("09", "Maxwell", 1.2803, 103.8447), at("12", "Lunch", 1.2836, 103.8434)];
+    expect([...stopOrder(trip).entries()]).toEqual([["maxwell", 1], ["lunch", 2], ["barrage", 3]]);
+  });
+  it("gives a place visited twice its FIRST number, because it is one pin", () => {
+    // A badge reading "1 and 4" is not something anybody wants; the thread
+    // already shows the return.
+    const back = [at("09", "A", 1.28, 103.84), at("10", "B", 1.29, 103.85), at("11", "A", 1.28, 103.84), at("12", "C", 1.30, 103.86)];
+    expect([...stopOrder(back).entries()]).toEqual([["a", 1], ["b", 2], ["c", 3]]);
+  });
+  it("ignores photos with no location, which are at no stop at all", () => {
+    const mixed = [at("09", "A", 1.28, 103.84), { ...at("10", "", 0, 0), lat: null, lng: null }, at("11", "B", 1.29, 103.85)];
+    expect([...stopOrder(mixed).values()]).toEqual([1, 2]);
+  });
+  it("renumbers when the selection narrows, so the badges match the threads", () => {
+    const all = [at("09", "A", 1.28, 103.84), at("10", "B", 1.29, 103.85), at("11", "C", 1.30, 103.86)];
+    expect(stopOrder(all.filter((m) => m.place !== "A")).get("c")).toBe(2);
+  });
+  it("hands the engine one numbered point per place, not one per photo", () => {
+    const many = [at("09", "A", 1.28, 103.84), at("10", "A", 1.28, 103.84), at("11", "B", 1.29, 103.85)];
+    const fc = stopsFC(many);
+    expect(fc.features).toHaveLength(2);
+    expect(fc.features.map((f) => f.properties.label)).toEqual(["1", "2"]);
+    expect(fc.features[0].geometry.coordinates).toEqual([103.84, 1.28]);
+  });
+  it("says nothing about a trip that never went anywhere", () => {
+    expect(stopsFC([]).features).toEqual([]);
+    expect(stopOrder([]).size).toBe(0);
   });
 });
