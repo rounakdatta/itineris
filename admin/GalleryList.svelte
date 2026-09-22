@@ -12,6 +12,10 @@
   const momentCount = $derived(momentIds.length);
   let creating = $state(false);
   let withAll = $state(true);
+  // Off by default: a gallery of photos taken in one room does not want a
+  // thread drawn across it, and an option that arrives switched on is an
+  // option somebody has to notice and undo.
+  let route = $state(false);
   let title = $state("");
   let description = $state("");
   // The gallery's own name in the URL. Never filled in automatically: a link
@@ -27,21 +31,21 @@
   // `title`/`description` are shared by the new-gallery form and the edit form,
   // so both have to be seeded when they open: editing a gallery and cancelling
   // used to leave its title sitting in the New gallery form.
-  function startCreate() { title = ""; description = ""; slug = ""; withAll = true; creating = true; }
+  function startCreate() { title = ""; description = ""; slug = ""; withAll = true; route = false; creating = true; }
   // Opening straight into the form when that is what the last tap asked for --
   // once. Re-reading the condition after the gallery was made found
   // `galleries` still empty for the moment before the refresh landed, and
   // helpfully opened a second, empty form on top of the result.
   let obliged = false;
   $effect(() => { if (openNow && !obliged) { obliged = true; startCreate(); } });
-  function startEdit(g) { title = g.title; description = g.description ?? ""; slug = g.slug ?? ""; editingId = g.id; }
+  function startEdit(g) { title = g.title; description = g.description ?? ""; slug = g.slug ?? ""; route = g.route === true; editingId = g.id; }
 
   async function run(fn) { busy = true; error = null; try { await fn(); onChange?.(); } catch (e) { error = e.message; } finally { busy = false; } }
   const create = () => run(async () => {
     await api.createGallery({ title, description, slug: cleanSlug(slug) || null, home: galleries.length === 0, ...(withAll && momentCount ? { momentIds } : {}) });
     title = ""; description = ""; slug = ""; creating = false;
   });
-  const save = (g) => run(async () => { await api.patchGallery(g.id, { title, description, slug: cleanSlug(slug) || null }); editingId = null; });
+  const save = (g) => run(async () => { await api.patchGallery(g.id, { title, description, slug: cleanSlug(slug) || null, route }); editingId = null; });
   const setHome = (g) => run(() => api.patchGallery(g.id, { home: !g.home }));
   const remove = (g) => { if (window.confirm(`Delete “${g.title}”? Its link stops working. Photos stay in the library.`)) run(() => api.removeGallery(g.id)); };
   const toggleTrack = (g, tid) => run(() => api.patchGallery(g.id, (g.trackIds ?? []).includes(tid) ? { removeTracks: [tid] } : { addTracks: [tid] }));
@@ -51,6 +55,16 @@
     setTimeout(() => { copied = null; copyFailed = null; }, 1600);
   }
 </script>
+
+{#snippet routeField()}
+  <label class="opt">
+    <input type="checkbox" bind:checked={route} />
+    <span>
+      Draw the walk between places
+      <span class="muted small">A dotted thread from each stop to the next, with how far it was.</span>
+    </span>
+  </label>
+{/snippet}
 
 {#snippet slugField()}
   <label class="slug">
@@ -89,8 +103,9 @@
       <input bind:value={title} placeholder="Title — e.g. Singapore, for the family" maxlength="120" aria-label="Title" />
       <input bind:value={description} placeholder="A line of description (optional)" maxlength="1000" aria-label="Description" />
       {@render slugField()}
+      {@render routeField()}
       {#if momentCount}
-        <label class="withall"><input type="checkbox" bind:checked={withAll} /> <span>Start it with all {momentCount} photo{momentCount === 1 ? "" : "s"}{#if galleries.length}{" you have"}{/if}</span></label>
+        <label class="opt"><input type="checkbox" bind:checked={withAll} /> <span>Start it with all {momentCount} photo{momentCount === 1 ? "" : "s"}{#if galleries.length}{" you have"}{/if}</span></label>
       {/if}
       <div class="actions"><button class="btn primary" type="submit" disabled={busy || !title.trim() || !!slugIssue}>Create</button><button class="btn" type="button" onclick={() => (creating = false)}>Cancel</button></div>
     </form>
@@ -105,6 +120,7 @@
         <input bind:value={title} maxlength="120" aria-label="Title" />
         <input bind:value={description} maxlength="1000" placeholder="Description" aria-label="Description" />
         {@render slugField()}
+        {@render routeField()}
         <div class="actions"><button class="btn primary" type="submit" disabled={busy || !title.trim() || !!slugIssue}>Save</button><button class="btn" type="button" onclick={() => (editingId = null)}>Cancel</button></div>
       </form>
     {:else}
@@ -149,8 +165,9 @@
   .intro.blank .mark { color: var(--accent); opacity: 0.9; margin-bottom: 10px; }
   .intro.blank h2 { margin: 0 0 6px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
   .intro.blank p { margin: 0 auto 18px; max-width: 26em; }
-  .withall { display: flex; align-items: center; gap: 8px; margin: 2px 0 0; color: var(--muted); font-size: 13px; cursor: pointer; }
-  .withall input { width: 16px; height: 16px; accent-color: var(--accent); flex: 0 0 auto; }
+  .opt { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 0; color: var(--text); font-size: 13px; cursor: pointer; }
+  .opt input { width: 16px; height: 16px; accent-color: var(--accent); flex: 0 0 auto; margin-top: 1px; }
+  .opt .small { display: block; margin-top: 2px; }
   .new, .edit { display: grid; gap: 8px; }
   .slug { display: grid; gap: 4px; margin: 2px 0 0; }
   .slug .row { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow: hidden; }

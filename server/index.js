@@ -144,6 +144,10 @@ app.post(`${BASE}/api/views/:token`, async (c) => {
   const token = c.req.param("token");
   const ip = clientIp((k) => c.req.header(k));
   const id = (await store.slugs())[token] ?? token;
+  // No body: somebody opened the gallery. With `moment`: they looked at that
+  // one photo. Two different questions, counted separately -- see views.js.
+  const body = await c.req.json().catch(() => ({}));
+  const moment = typeof body?.moment === "string" ? body.moment : null;
   // Two reasons not to count somebody, and neither is their problem: they are
   // the owner looking at their own gallery, or their address has been busy.
   // Both still get the number -- an eye that vanishes reads as broken, and
@@ -151,10 +155,10 @@ app.post(`${BASE}/api/views/:token`, async (c) => {
   const who = identify(c);
   const mine = who && (await store.ownerOf(id)) === who.uid;
   if (mine || !viewLimit(ip)) {
-    const n = await store.viewsOf(id);
+    const n = moment ? (await store.momentViewsOf(id))[moment] ?? 0 : await store.viewsOf(id);
     return n === 0 && !(await store.ownerOf(id)) ? c.json({ error: "no such gallery" }, 404) : c.json({ views: n, counted: false });
   }
-  const seen = await store.recordView(token, { ip, ua: c.req.header("user-agent") ?? "" });
+  const seen = await store.recordView(token, { ip, ua: c.req.header("user-agent") ?? "", moment });
   // `counted` is false for somebody already counted today, not just for the
   // owner and the rate limit -- it should mean what it says.
   return seen === null ? c.json({ error: "no such gallery" }, 404) : c.json({ views: seen.n, counted: seen.fresh });
@@ -177,12 +181,13 @@ const LINK = (v) => (v === null || v === "" ? null : typeof v === "string" && v.
 // A Google Place ID (photos pinned to one Google place share one pin), or null to unpin; undefined = invalid.
 const PLACE_ID = (v) => (v === null || v === "" ? null : isPlaceId(String(v).trim()) ? String(v).trim() : undefined);
 const cleanTags = (arr) => [...new Set(arr.map((t) => STR(t, 40)).filter(Boolean).map((t) => t.toLowerCase()))];
+const withViews = (moments, views) => moments.map((m) => ({ ...m, views: views[m.id] ?? 0 }));
 const withGalleries = (moments, galleries) => {
   const idx = new Map();
   for (const g of galleries) for (const id of g.momentIds ?? []) (idx.get(id) ?? idx.set(id, []).get(id)).push(g.id);
   return moments.map((m) => ({ ...m, galleries: idx.get(m.id) ?? [] }));
 };
-const galleryView = (g, views = {}) => ({ ...g, count: (g.momentIds ?? []).length, trackCount: (g.trackIds ?? []).length, views: views[g.id] ?? 0 });
+const galleryView = (g, views = {}) => ({ ...g, route: g.route === true, count: (g.momentIds ?? []).length, trackCount: (g.trackIds ?? []).length, views: views[g.id] ?? 0 });
 // The counts live outside anyone's library (a view is recorded by a stranger,
 // not by the owner), so they are fetched alongside rather than stored with it.
 const galleryViews = (galleries) => store.views().then((v) => galleries.map((g) => galleryView(g, v)));
@@ -191,9 +196,9 @@ const galleryViews = (galleries) => store.views().then((v) => galleries.map((g) 
 app.get(`${BASE}/api/library`, async (c) => {
   const lib = c.get("lib");
   const [moments, tracks, galleries] = await Promise.all([lib.moments(), lib.tracks(), lib.galleries()]);
-  return c.json({ moments: withGalleries(moments, galleries), tracks, galleries: await galleryViews(galleries) });
+  return c.json({ moments: withViews(withGalleries(moments, galleries), await store.momentViews()), tracks, galleries: await galleryViews(galleries) });
 });
-app.get(`${BASE}/api/moments`, async (c) => c.json(withGalleries(await c.get("lib").moments(), await c.get("lib").galleries())));
+app.get(`${BASE}/api/moments`, async (c) => c.json(withViews(withGalleries(await c.get("lib").moments(), await c.get("lib").galleries()), await store.momentViews())));
 app.get(`${BASE}/api/tracks`, async (c) => c.json(await c.get("lib").tracks()));
 app.get(`${BASE}/api/galleries`, async (c) => c.json(await galleryViews(await c.get("lib").galleries())));
 
@@ -480,6 +485,7 @@ app.post(`${BASE}/api/galleries`, async (c) => {
   const g = {
     id: token(), title, description: STR(body.description, 1000) ?? "", home: false,
     ...(want.slug ? { slug: want.slug } : {}),
+    ...(body.route === true ? { route: true } : {}),
     momentIds: (IDS(body.momentIds) ?? []).filter((id) => known.has(id)), trackIds: IDS(body.trackIds) ?? [],
     createdAt: now, updatedAt: now, createdBy: c.get("who").email,
   };
@@ -508,6 +514,7 @@ app.patch(`${BASE}/api/galleries/:id`, async (c) => {
       if ("title" in body) { const t = STR(body.title, 120); if (!t) { bad = "title required"; return g; } n.title = t; }
       if ("description" in body) n.description = STR(body.description, 1000) ?? "";
       if ("slug" in want) { if (want.slug) n.slug = want.slug; else delete n.slug; }
+    if (typeof body.route === "boolean") { if (body.route) n.route = true; else delete n.route; }
       if (body.home === false) n.home = false;
       let ms = new Set(n.momentIds ?? []), ts = new Set(n.trackIds ?? []);
       if (IDS(body.momentIds)) ms = new Set(IDS(body.momentIds));

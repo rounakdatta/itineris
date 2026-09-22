@@ -5,12 +5,20 @@
   import Caption from "../src/components/Caption.svelte";
   import { FONTS, GROUPS, SIZES, ACCENTS, ALIGNS, MAX_CAPTIONS, normalizeStyle, isDefaultStyle } from "../server/caption.js";
   import { stillUrl } from "./lib/api.js";
+  import { shouldContain } from "../src/lib/zoom.js";
 
   // `captions` is the whole list; `selected` is the one the controls act on.
   let { moment, captions = [], selected = 0, pending = false, onChange, onSelect, onAdd, onRemove } = $props();
   const current = $derived(captions[selected] ?? null);
   const st = $derived(normalizeStyle(current));
-  const landscape = $derived(!!moment.media && moment.media.w > moment.media.h);
+  // The SAME decision the story makes, against this preview's own frame --
+  // otherwise the author drags a caption over a photo that fills the frame
+  // here and letterboxes there, and the preview is a lie. 9/19.5 below.
+  const contain = $derived(
+    !!moment.media && moment.media.w > 0 && moment.media.h > 0
+      ? shouldContain(9 / 19.5, moment.media.w / moment.media.h)
+      : false
+  );
   const img = $derived(pending ? moment.media.src : stillUrl(moment.media));
   const set = (patch) => onChange?.({ ...st, ...patch });
   const short = (t) => { const s = (t ?? "").trim().replace(/\s+/g, " "); return s.length > 14 ? `${s.slice(0, 13)}…` : s || "empty"; };
@@ -19,9 +27,9 @@
 </script>
 
 <div class="styler">
-  <div class="frame" data-testid="caption-frame">
-    {#if landscape}<img class="blur" src={img} alt="" />{/if}
-    <img class="photo" class:contain={landscape} src={img} alt="" />
+  <div class="frame" data-testid="caption-frame" style:--ar="{moment.media?.w || 9} / {moment.media?.h || 16}">
+    {#if contain}<img class="blur" src={img} alt="" />{/if}
+    <img class="photo" class:contain={contain} src={img} alt="" />
     {#each captions as c, i (i)}
       <Caption text={c.text} style={i === selected ? st : c} editable selected={i === selected}
         onSelect={() => onSelect?.(i)} onMove={(x, y) => set({ x, y })} onRotate={(rot) => set({ rot })} />
@@ -81,9 +89,14 @@
 
 <style>
   .styler { margin-top: 8px; }
-  .frame { position: relative; width: min(100%, 250px); aspect-ratio: 9 / 19.5; margin: 0 auto; border-radius: 16px; overflow: hidden; background: #06070a; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45); }
+  .frame { position: relative; display: grid; place-items: center; width: min(100%, 250px); aspect-ratio: 9 / 19.5; margin: 0 auto; border-radius: 16px; overflow: hidden; background: #06070a; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45); }
   .photo, .blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
-  .photo.contain { object-fit: contain; }
+  .photo.contain {
+    inset: auto; position: relative; margin: auto; display: block;
+    width: auto; height: auto; max-width: 100%; max-height: 100%;
+    aspect-ratio: var(--ar); object-fit: contain;
+    border-radius: 5px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 12px 34px rgba(0, 0, 0, 0.5);
+  }
   .blur { filter: blur(22px) brightness(0.45); transform: scale(1.15); }
   .hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); pointer-events: none; }
   .controls { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }

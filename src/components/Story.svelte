@@ -1,8 +1,10 @@
 <script>
-  import { pictureBox, clampPan, zoomAbout, isZoomed } from "../lib/zoom.js";
+  import { pictureBox, clampPan, zoomAbout, isZoomed, shouldContain } from "../lib/zoom.js";
   import { trip } from "../lib/trip.svelte.js";
   import { clockOf, dayKey, dateLabel, mediaUrl, storySrc, placeLink, isVideo, fmtDuration, isLoose } from "../lib/data.js";
   import { markSeen } from "../lib/seen.svelte.js";
+  import { views } from "../lib/views.svelte.js";
+  import { short, exact } from "../../server/count.js";
   import Caption from "./Caption.svelte";
   import { captionsOf } from "../../server/caption.js";
 
@@ -65,7 +67,7 @@
   function frame() {
     if (!dialog || !current) return null;
     const r = dialog.getBoundingClientRect();
-    const box = pictureBox(r, current.media, landscape);
+    const box = pictureBox(r, current.media, contain);
     return box && { box, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
   }
   function zoomTo(scale, anchor) {
@@ -95,7 +97,23 @@
 
   const items = $derived(trip.storyGroup);   // this place's photos: its bars, its count
   const current = $derived(trip.storyMoment);
-  const landscape = $derived(!!current && current.media.w > current.media.h);
+  // Whether to fill the frame or show the whole picture on a blurred copy of
+  // itself. Decided by how much `cover` would THROW AWAY, measured against the
+  // frame actually on screen -- not by orientation, which is a cliff at 1:1
+  // while the harm is continuous. See shouldContain() for the reasoning and
+  // the real numbers that prompted it.
+  //
+  // The frame is bound rather than assumed because it is not a constant: a
+  // phone, a phone on its side and the card on a desktop are three different
+  // shapes, and the same photo deserves a different answer in each.
+  let frameW = $state(0), frameH = $state(0);
+  const contain = $derived(
+    !!current && current.media.w > 0 && current.media.h > 0 && frameW > 0 && frameH > 0
+      ? shouldContain(frameW / frameH, current.media.w / current.media.h)
+      // Before the frame has been measured, fall back to the old orientation
+      // test: it is right for the obvious cases and wrong only briefly.
+      : !!current && current.media.w > current.media.h
+  );
   const dateStr = $derived(current ? dateLabel(dayKey(current.t)) : "");   // "14 Mar": the date, minimally
   const thumbUrl = $derived(current ? mediaUrl(current.media.thumb ?? current.media.src) : "");
   const fullUrl = $derived(current ? storySrc(current.media) : "");
@@ -105,6 +123,7 @@
   const failed = $derived(!!current && failedId === current.id);
   const link = $derived(placeLink(current));
   const captions = $derived(current ? captionsOf(current) : []);
+  const seenBy = $derived(current ? views.of(current.id) : null);
   // What the Next stop pill says about the place we are arriving at.
   const nextStop = $derived.by(() => {
     if (!handoff || !current) return null;
@@ -140,7 +159,7 @@
   }
   $effect(() => { if (!trip.storyOpen) endHandoff(); });
   // Seen = shown, like a story: the ring on the map goes quiet for this photo.
-  $effect(() => { if (trip.storyOpen && current) markSeen(current.id); });
+  $effect(() => { if (trip.storyOpen && current) { markSeen(current.id); views.seen(current.id); } });
 
   // Advance timer. Restarts whenever the index changes; `paused`/`axis` are
   // read inside rAF (outside the tracking pass) so they gate without restarting.
@@ -301,6 +320,9 @@
     class:zoomed
     class:pinching
     bind:this={dialog}
+    bind:clientWidth={frameW}
+    bind:clientHeight={frameH}
+    style:--ar="{current.media.w || 9} / {current.media.h || 16}"
     style:--z={zoom}
     style:--zx="{zx}px"
     style:--zy="{zy}px"
@@ -341,16 +363,17 @@
 
     {#key current.id}
       {@const id = current.id}
-      {#if landscape}
-        <!-- A landscape photo on a portrait screen: show all of it, over a blurred copy of itself. -->
+      {#if contain}
+        <!-- Shown whole, so the frame is filled by a blurred copy of the photo
+             itself rather than a slab of grey. -->
         <img class="backdrop" src={thumbUrl} alt="" draggable="false" aria-hidden="true" />
       {/if}
       <!-- The thumbnail is already on the device (it is in the strip): show it
            sharp at once, and fade the full-size image in over it when it lands. -->
-      <img class="placeholder" class:contain={landscape} src={thumbUrl} alt="" draggable="false" aria-hidden="true" />
+      <img class="placeholder" class:contain={contain} src={thumbUrl} alt="" draggable="false" aria-hidden="true" />
       {#if video_}
         <!-- svelte-ignore a11y_media_has_caption -->
-        <video class="media" class:contain={landscape} class:loaded bind:this={video} src={videoUrl} poster={fullUrl} playsinline autoplay muted preload="auto"
+        <video class="media" class:contain={contain} class:loaded bind:this={video} src={videoUrl} poster={fullUrl} playsinline autoplay muted preload="auto"
           onloadeddata={() => (loadedId = id)} onerror={() => (failedId = id)}
           ontimeupdate={(e) => { const v = e.currentTarget; if (v.duration > 0) progress = Math.min(1, v.currentTime / v.duration); }}
           onended={() => { if (!zoomed && !pinching) next(); }}></video>
@@ -368,7 +391,7 @@
         </button>
         {#if Number.isFinite(current.media.duration)}<span class="dur" aria-hidden="true">{fmtDuration(current.media.duration)}</span>{/if}
       {:else}
-        <img class="media" class:contain={landscape} class:loaded src={fullUrl} alt={current.caption || current.place || ""} draggable="false"
+        <img class="media" class:contain={contain} class:loaded src={fullUrl} alt={current.caption || current.place || ""} draggable="false"
           onload={() => (loadedId = id)} onerror={() => (failedId = id)} />
       {/if}
       {#if captions.length}
@@ -387,7 +410,25 @@
       {#if current.tags.length}
         <div class="tags">{#each current.tags as t (t)}<span class="tag">{t}</span>{/each}</div>
       {/if}
-      <div class="hint">{trip.storyPos + 1} / {items.length}{paused ? " · paused" : ""}</div>
+      <!-- The photo's own count, on the photo it belongs to. It used to be the
+           GALLERY's count in the top bar, which answered a question nobody
+           standing in front of one picture was asking, and told a creator
+           nothing about which of their pictures people actually stopped on.
+           Bottom right, opposite the position: the foot of a story is where
+           its small print lives. -->
+      <div class="foot">
+        <span class="hint">{trip.storyPos + 1} / {items.length}{paused ? " · paused" : ""}</span>
+        {#if seenBy !== null}
+          <span class="views" role="status" title={exact(seenBy)}>
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+              <path d="M1.8 12S5.9 5.4 12 5.4 22.2 12 22.2 12 18.1 18.6 12 18.6 1.8 12 1.8 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+            <span class="n">{short(seenBy)}</span>
+            <span class="sr">{seenBy === 1 ? "view" : "views"}</span>
+          </span>
+        {/if}
+      </div>
     </footer>
   </div>
   {#if (handoff && nextStop) || expanding}
@@ -472,10 +513,31 @@
   /* Nothing should sit over a photo somebody is inspecting. */
   .story.zoomed .bars, .story.zoomed .meta, .story.zoomed footer, .story.zoomed .sound { opacity: 0; transition: opacity 180ms ease; pointer-events: none; }
   .story.zoomed header { background: none; transition: background 180ms ease; }
-  .placeholder.contain { object-fit: contain; }
+  /* Shown whole, the picture becomes an OBJECT rather than a fill.
+     `object-fit: contain` leaves the element spanning the frame with the
+     picture floating somewhere inside it, so a radius or a shadow draws around
+     the frame and the photograph itself has no edge at all -- it dissolves
+     into its own blur. Sized to the picture instead, the corners and the
+     shadow land where the photograph actually is, and it reads as a print
+     resting on a blurred field rather than a hole cut in one.
+
+     The aspect comes from the stored dimensions, not from the file, so a video
+     does not flash at 300x150 while its metadata loads. */
+  .placeholder.contain, .media.contain {
+    place-self: center;
+    width: auto; height: auto; max-width: 100%; max-height: 100%;
+    aspect-ratio: var(--ar);
+    object-fit: contain;
+    border-radius: 7px;
+  }
+  /* The edge lives on the placeholder alone: it is always opaque and exactly
+     coincident with the photo, so there is one shadow at every moment instead
+     of two stacking up while the full-size image fades in over it. */
+  .placeholder.contain {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 20px 56px rgba(0, 0, 0, 0.55);
+  }
   .media { z-index: 2; object-fit: cover; opacity: 0; transition: opacity 260ms ease; }
   .media.loaded { opacity: 1; }
-  .media.contain { object-fit: contain; }
   /* No background on the video: a landscape clip is letterboxed, and the blurred
      backdrop must show through those bands exactly as it does behind a photo. */
   .sound {
@@ -528,7 +590,20 @@
   .cap-host { grid-row: 1 / -1; grid-column: 1; position: relative; z-index: 3; pointer-events: none; }
   .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
   .tag { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
+  .foot { display: flex; align-items: center; gap: 10px; }
   .hint { font-size: 11px; opacity: 0.55; }
+  /* Quiet enough to ignore while looking at the photo, legible when looked
+     for. It fades up when the count lands rather than appearing mid-read. */
+  .views {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600; line-height: 1; opacity: 0.62;
+    font-variant-numeric: tabular-nums;
+    animation: views-in 380ms cubic-bezier(.2, .8, .2, 1) both;
+  }
+  .views svg { opacity: 0.85; }
+  @keyframes views-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 0.62; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .views { animation: none; } }
+  .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   @media (min-width: 760px) {
     .story {

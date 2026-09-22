@@ -15,7 +15,19 @@ export const GMAPS_STUB = `
     fitBounds(b) { this.lastFit = b; setTimeout(() => this.fire("idle"), 20); }
     panTo(c) { this.center = c; } setZoom(z) { this.zoom = z; } getZoom() { return this.zoom; } moveCamera() {}
   }
-  class Polyline { constructor(o) { this.o = o; this._map = o.map || null; } setMap(m) { this._map = m; } getMap() { return this._map; } setPath() {} }
+  // Polylines are not rendered -- there is nothing to render onto -- but they
+  // are RECORDED, so a test can ask what was drawn between which points, with
+  // which symbols, and whether it was taken away again. That is the whole of
+  // our side of the contract; Google's job is to paint it.
+  const drawn = [];
+  window.__gmapsPolylines = drawn;
+  class Polyline {
+    constructor(o) {
+      this.o = o; this._map = o.map || null;
+      drawn.push(this);
+    }
+    setMap(m) { this._map = m; } getMap() { return this._map; } setPath() {}
+  }
   let n = 0;
   class AdvancedMarkerElement {
     constructor(o) { this.content = o.content; this.position = o.position; this.title = o.title; this.zIndex = o.zIndex; this.h = {}; this._map = null; this.i = n++; this.map = o.map; }
@@ -38,8 +50,9 @@ export const GMAPS_STUB = `
     get map() { return this._map; }
     addListener(ev, fn) { (this.h[ev] = this.h[ev] || []).push(fn); return { remove() {} }; }
   }
-  const libs = { maps: { Map: GMap, Polyline, LatLngBounds }, marker: { AdvancedMarkerElement } };
-  window.google = { maps: { importLibrary: async (name) => libs[name] || {}, Map: GMap, Polyline, LatLngBounds, event: { addListenerOnce: (m, ev, fn) => setTimeout(fn, 25) } } };
+  const SymbolPath = { CIRCLE: 0, FORWARD_CLOSED_ARROW: 1, FORWARD_OPEN_ARROW: 2, BACKWARD_CLOSED_ARROW: 3, BACKWARD_OPEN_ARROW: 4 };
+  const libs = { maps: { Map: GMap, Polyline, LatLngBounds, SymbolPath }, marker: { AdvancedMarkerElement } };
+  window.google = { maps: { importLibrary: async (name) => libs[name] || {}, Map: GMap, Polyline, LatLngBounds, SymbolPath, event: { addListenerOnce: (m, ev, fn) => setTimeout(fn, 25) } } };
   const cb = new URL(window.__gmapsStubUrl).searchParams.get("callback");
   if (cb && window[cb]) window[cb]();
 })();

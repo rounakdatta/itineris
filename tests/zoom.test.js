@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pictureBox, clampPan, zoomAbout, isZoomed, MAX_ZOOM } from "../src/lib/zoom.js";
+import { pictureBox, clampPan, zoomAbout, isZoomed, MAX_ZOOM, coverLoss, shouldContain, COVER_LIMIT } from "../src/lib/zoom.js";
 
 // A phone-shaped frame, and the two shapes of photo that land in it.
 const FRAME = { width: 390, height: 844 };
@@ -103,5 +103,46 @@ describe("what counts as zoomed", () => {
     expect(isZoomed(1)).toBe(false);
     expect(isZoomed(1.004)).toBe(false);   // a finger twitch is not a zoom
     expect(isZoomed(1.2)).toBe(true);
+  });
+});
+
+describe("how a picture should meet the frame", () => {
+  const PHONE = 390 / 844;          // 0.462
+  const DESKTOP_CARD = 430 / 860;   // 0.500 — the story card on a wide screen
+
+  it("measures what cover actually throws away", () => {
+    // These are the real aspects out of one gallery, and the real losses.
+    expect(coverLoss(PHONE, 9 / 16)).toBeCloseTo(0.179, 2);     // a phone photo
+    expect(coverLoss(PHONE, 3 / 4)).toBeCloseTo(0.384, 2);
+    expect(coverLoss(PHONE, 1)).toBeCloseTo(0.538, 2);          // a 2x2 collage
+    expect(coverLoss(PHONE, 2.111)).toBeCloseTo(0.781, 2);      // a true panorama
+    expect(coverLoss(PHONE, PHONE)).toBe(0);                    // an exact fit loses nothing
+  });
+  it("does not care which way round the mismatch is", () => {
+    expect(coverLoss(0.5, 2)).toBeCloseTo(coverLoss(2, 0.5), 10);
+  });
+  it("shrugs at a picture whose size is unknown", () => {
+    for (const bad of [0, undefined, NaN, -1]) expect(coverLoss(PHONE, bad)).toBe(0);
+  });
+
+  it("lets a phone photo fill the screen, which is the whole point of a story", () => {
+    expect(shouldContain(PHONE, 9 / 16)).toBe(false);
+    expect(shouldContain(DESKTOP_CARD, 9 / 16)).toBe(false);
+  });
+  it("shows a square collage whole rather than re-composing it", () => {
+    // The old rule was `width > height`: a 1:1 collage was "not landscape" and
+    // lost 54% of itself, whole faces included.
+    expect(shouldContain(PHONE, 1)).toBe(true);
+    expect(shouldContain(PHONE, 1200 / 1600)).toBe(true);
+    expect(shouldContain(PHONE, 2.111)).toBe(true);
+  });
+  it("rescues a very tall panorama too, which orientation never would", () => {
+    expect(shouldContain(PHONE, 0.3)).toBe(true);
+  });
+  it("decides from the frame in front of it, not a constant", () => {
+    // The same picture in a taller frame keeps more of itself, so the answer
+    // has to be recomputed per device and per orientation.
+    expect(shouldContain(0.462, 0.62)).toBe(true);
+    expect(shouldContain(0.600, 0.62)).toBe(false);
   });
 });

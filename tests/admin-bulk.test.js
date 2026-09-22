@@ -93,6 +93,28 @@ describe("MomentList", () => {
     // where they are also filters.
     for (const gone of [/private/, /untagged/, /no location/, /time zone/]) expect(screen.queryByTitle(gone)).toBeNull();
   });
+  it("shows how many people looked at each photo, and marks the best-watched one", () => {
+    const seen = [
+      { ...ms[0], id: "a", views: 3 },
+      { ...ms[1], id: "b", views: 11 },
+      { ...ms[1], id: "c", t: "2026-03-14T10:40:00+08:00", views: 0 },
+    ];
+    const { container } = render(MomentList, { moments: seen, onSelect: () => {} });
+    const counts = [...container.querySelectorAll(".seen")].map((e) => e.textContent.trim());
+    // Nobody has opened the third: no "0", because a zero on a photo reads as
+    // a verdict rather than a count.
+    expect(counts).toEqual(["3", "11"]);
+    expect(screen.getByTitle(/best-watched/)).toHaveTextContent("11");
+    expect(container.querySelectorAll(".seen.best")).toHaveLength(1);
+  });
+  it("...and marks nothing when every photo has been watched the same amount", () => {
+    // There is no "most viewed" then, and marking them all would be the same
+    // noise as badging every tile with what they have in common.
+    const { container } = render(MomentList, { moments: [{ ...ms[0], id: "a", views: 4 }, { ...ms[1], id: "b", views: 4 }], onSelect: () => {} });
+    expect(screen.queryByTitle(/best-watched/)).toBeNull();
+    expect(container.querySelectorAll(".seen")).toHaveLength(2);
+    expect(container.querySelectorAll(".seen.best")).toHaveLength(0);
+  });
   it("heads each day with a date somebody would say out loud", () => {
     render(MomentList, { moments: ms, onSelect: () => {} });
     expect(screen.getByRole("heading", { name: /Sat 14 Mar/ })).toBeInTheDocument();

@@ -11,6 +11,7 @@
   import { allSeen } from "../lib/seen.svelte.js";
   import { here } from "../lib/here.svelte.js";
   import { loadGoogleMaps, onAuthFailure, watchMapErrors } from "../lib/gmaps.js";
+  import { legsOf } from "../lib/route.js";
 
   let { config, onFail } = $props();
   let container;
@@ -19,6 +20,8 @@
   let Marker = null;   // AdvancedMarkerElement
   let ready = $state(false);
   const lines = new Map();     // track id -> polyline
+  const legLines = new Map();  // leg id -> the dotted thread between two stops
+  const legTags = new Map();   // leg id -> the little distance marker halfway along
   let mePin = null, meRing = null;   // the visitor's own position, while they ask for it
 
   onMount(() => {
@@ -140,8 +143,50 @@
       } else if (!l.getMap?.() && l.map !== map) l.setMap(map);
     }
     for (const [id, l] of lines) if (!wantT.has(id)) l.setMap(null);
+
+    // Opt-in per gallery, and over what is currently SHOWN: filtering to one
+    // tag should re-thread the stops that remain, not leave a thread hanging
+    // to a pin that is no longer on the map.
+    const legs = trip.route ? legsOf(trip.visibleMoments) : [];
+    const wantL = new Set(legs.map((l) => l.id));
+    for (const leg of legs) {
+      if (legLines.has(leg.id)) continue;
+      const { line, tag, el } = legThread(leg);
+      legLines.set(leg.id, line); legTags.set(leg.id, { tag, el });
+    }
+    for (const [id, line] of legLines) {
+      if (wantL.has(id)) continue;
+      line.setMap(null); legLines.delete(id);
+      const t = legTags.get(id); if (t) { t.tag.map = null; legTags.delete(id); }
+    }
+    if (container) container.dataset.legs = String(legs.length);   // test hook, like data-idle
     declutterSoon();
   });
+
+  // The walk between stops: a dotted thread and, halfway along, how far it was.
+  // Deliberately dim and thin -- it is the connective tissue of the trip, not
+  // one of its subjects, and a trip with twenty stops must not turn into a
+  // diagram. Drawn under the pins, and only when the gallery asked for it.
+  function legThread(leg) {
+    const line = new g.Polyline({
+      path: [{ lat: leg.from.lat, lng: leg.from.lng }, { lat: leg.to.lat, lng: leg.to.lng }],
+      // A dotted polyline in the Maps API is an invisible line wearing repeated
+      // symbols; there is no dash array.
+      strokeOpacity: 0,
+      icons: [{
+        icon: { path: g.SymbolPath.CIRCLE, scale: 1.7, fillColor: "#ffffff", fillOpacity: 0.72, strokeOpacity: 0 },
+        offset: "0", repeat: "9px",
+      }],
+      clickable: false,
+      zIndex: 0,
+      map,
+    });
+    const el = document.createElement("span");
+    el.className = "leg";
+    el.textContent = leg.label;
+    const tag = new Marker({ map, position: leg.mid, content: el, zIndex: 0, gmpClickable: false });
+    return { line, tag, el };
+  }
 
   // A dense trip puts several places within a few hundred metres of each
   // other, and their name chips then sit on top of one another -- three
@@ -164,7 +209,13 @@
     if (!container) return false;
     // Liveness from the DOM, not from marker.map: what matters is whether the
     // thing is on screen, and that is not an API detail.
-    const live = [...pins.values()].filter((p) => p.chip && p.chip.isConnected);
+    // The distances take part in the same pass, below the place names: a name
+    // is what somebody is looking for, a distance is a nicety, and two
+    // separate decluttering rules would let one hide behind the other.
+    const live = [
+      ...[...pins.values()].filter((p) => p.chip && p.chip.isConnected).map((p) => ({ ...p, chip: p.chip, rank: 1 })),
+      ...[...legTags.values()].filter((t) => t.el.isConnected).map((t) => ({ chip: t.el, ring: null, group: null, rank: 0 })),
+    ];
     for (const p of live) p.chip.classList.remove("crowded");
     if (live.length < 2) { container.dataset.labels = String(live.length); return live.length > 0; }
     const view = container.getBoundingClientRect();
@@ -174,13 +225,13 @@
     const mid = { x: view.left + view.width / 2, y: view.top + view.height / 2 };
     const scored = live.map((p) => {
       const r = p.chip.getBoundingClientRect();
-      return { p, r, n: p.group?.moments.length ?? 1, d: Math.hypot(r.left + r.width / 2 - mid.x, r.top + r.height / 2 - mid.y) };
+      return { p, r, rank: p.rank, n: p.group?.moments.length ?? 1, d: Math.hypot(r.left + r.width / 2 - mid.x, r.top + r.height / 2 - mid.y) };
     }).filter((x) => x.r.width > 0 && x.r.height > 0)
-      .sort((a, b) => b.n - a.n || a.d - b.d || (a.p.group?.key < b.p.group?.key ? -1 : 1));
+      .sort((a, b) => b.rank - a.rank || b.n - a.n || a.d - b.d || ((a.p.group?.key ?? "") < (b.p.group?.key ?? "") ? -1 : 1));
     // The rings are obstacles, not candidates: a pin is never hidden, so a
     // label half behind somebody else's photo is just a label you cannot
     // read. (Its own ring sits directly above it by design.)
-    const rings = new Map(live.map((p) => [p, p.ring.getBoundingClientRect()]));
+    const rings = new Map(live.filter((p) => p.ring).map((p) => [p, p.ring.getBoundingClientRect()]));
     const hits = (a, b) => a.left < b.right + CLEAR && a.right > b.left - CLEAR && a.top < b.bottom + CLEAR && a.bottom > b.top - CLEAR;
     const covered = (a, b) => {
       const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
@@ -323,6 +374,16 @@
   }
   /* Stepped aside for a neighbour, or hanging off the edge of the map. */
   :global(.gpin .chip.crowded) { visibility: hidden; opacity: 0; pointer-events: none; }
+  /* How far it was, halfway along the thread. Small, dim, and out of the way:
+     a number nobody needs to read, that rewards anybody who looks. */
+  :global(.leg) {
+    display: inline-block; padding: 1px 6px; border-radius: 999px;
+    background: rgba(12, 15, 20, 0.62); color: rgba(255, 255, 255, 0.92);
+    font: 600 10px/16px system-ui, -apple-system, sans-serif; letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none;
+    backdrop-filter: blur(3px); transition: opacity 140ms;
+  }
+  :global(.leg.crowded) { visibility: hidden; opacity: 0; }
   :global(.gpin.on .chip.crowded) { visibility: visible; opacity: 1; pointer-events: auto; }
   :global(.gpin .chip .nm) { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   :global(.gpin .chip b) { font-weight: 800; }

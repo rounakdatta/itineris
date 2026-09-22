@@ -34,7 +34,7 @@ describe("counting a view", () => {
   it("counts the first visit", () => {
     const r = countView(undefined, "k1", DAY);
     expect(r).toMatchObject({ n: 1, fresh: true });
-    expect(r.entry).toEqual({ n: 1, day: DAY, seen: ["k1"] });
+    expect(r.entry).toMatchObject({ n: 1, day: DAY, seen: ["k1"] });
   });
   it("does not count somebody reloading all afternoon", () => {
     let e = countView(undefined, "k1", DAY).entry;
@@ -49,12 +49,12 @@ describe("counting a view", () => {
     const e = countView(undefined, "k1", DAY).entry;
     const r = countView(e, "k1", "2026-09-23");
     expect(r).toMatchObject({ n: 2, fresh: true });
-    expect(r.entry).toEqual({ n: 2, day: "2026-09-23", seen: ["k1"] });   // yesterday's are gone
+    expect(r.entry).toMatchObject({ n: 2, day: "2026-09-23", seen: ["k1"] });   // yesterday's are gone
   });
   it("keeps counting past the cap rather than growing without bound", () => {
     const seen = Array.from({ length: 4 }, (_, i) => `k${i}`);
     const e = { n: 4, day: DAY, seen };
-    const r = countView(e, "new", DAY, 4);
+    const r = countView(e, "new", DAY, { cap: 4 });
     expect(r).toMatchObject({ n: 5, fresh: true });
     expect(r.entry.seen).toEqual(seen);         // not remembered, but counted
     expect(VIEW_CAP).toBeGreaterThan(1000);
@@ -62,6 +62,45 @@ describe("counting a view", () => {
   it("survives a file written by an older version", () => {
     expect(countView({ n: 7 }, "k1", DAY)).toMatchObject({ n: 8, fresh: true });
     expect(countView({}, "k1", DAY)).toMatchObject({ n: 1, fresh: true });
+  });
+});
+
+describe("counting one photo rather than the whole gallery", () => {
+  const DAY = "2026-09-22";
+  it("tallies each photo on its own", () => {
+    let e = countView(undefined, "v1/a", DAY, { moment: "a" }).entry;
+    e = countView(e, "v1/b", DAY, { moment: "b" }).entry;
+    const again = countView(e, "v2/a", DAY, { moment: "a" });
+    expect(again.n).toBe(2);
+    expect(again.entry.m).toEqual({ a: 2, b: 1 });
+  });
+  it("does not let a photo view inflate the gallery's own count, or the reverse", () => {
+    // Two different questions: how many opened this, and how many looked at
+    // THIS picture. A creator reading the second needs it not to be the first.
+    let e = countView(undefined, "v1", DAY).entry;                       // opened the gallery
+    e = countView(e, "v1/a", DAY, { moment: "a" }).entry;                // looked at one photo
+    e = countView(e, "v1/b", DAY, { moment: "b" }).entry;
+    expect(e.n).toBe(1);
+    expect(e.m).toEqual({ a: 1, b: 1 });
+  });
+  it("counts the same visitor once per photo per day", () => {
+    let e = countView(undefined, "v1/a", DAY, { moment: "a" }).entry;
+    for (let i = 0; i < 20; i++) {
+      const r = countView(e, "v1/a", DAY, { moment: "a" });
+      expect(r.fresh).toBe(false);
+      e = r.entry;
+    }
+    expect(e.m.a).toBe(1);
+  });
+  it("keeps every tally when the day rolls over, and only forgets who", () => {
+    const e = countView(undefined, "v1/a", DAY, { moment: "a" }).entry;
+    const r = countView(e, "v1/a", "2026-09-23", { moment: "a" });
+    expect(r.entry.m.a).toBe(2);
+    expect(r.entry.seen).toEqual(["v1/a"]);
+  });
+  it("survives a file written before photos were counted at all", () => {
+    const r = countView({ n: 7, day: DAY, seen: [] }, "v1/a", DAY, { moment: "a" });
+    expect(r.entry).toMatchObject({ n: 7, m: { a: 1 } });
   });
 });
 

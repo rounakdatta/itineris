@@ -22,15 +22,30 @@ export function visitorKey({ salt, ip, ua, token, day }) {
     .digest("hex").slice(0, 16);
 }
 
-// One view per visitor per gallery per day. Reloading all afternoon counts
-// once; coming back tomorrow counts again, which is what "views" means to the
-// person reading the number.
-export function countView(entry, key, day, cap = VIEW_CAP) {
-  const carried = entry?.day === day ? entry : { n: entry?.n ?? 0, day, seen: [] };
-  const seen = carried.seen ?? [];
-  if (seen.includes(key)) return { entry: carried, n: carried.n, fresh: false };
+// One view per visitor per day -- of the gallery, or of one photo in it.
+// Reloading all afternoon counts once; coming back tomorrow counts again,
+// which is what "views" means to the person reading the number.
+//
+// A gallery view and a photo view are different questions and are counted
+// separately: `n` answers "how many people opened this", `m[id]` answers "how
+// many looked at THIS picture", and the second is the one that tells a creator
+// which of their photos people actually stopped on. The caller keeps them apart
+// by mixing the photo's id into the visitor key, so each photo dedupes on its
+// own.
+export function countView(entry, key, day, { moment = null, cap = VIEW_CAP } = {}) {
+  const carried = entry?.day === day
+    ? { n: entry.n ?? 0, day, seen: entry.seen ?? [], m: entry.m ?? {} }
+    : { n: entry?.n ?? 0, day, seen: [], m: entry?.m ?? {} };   // tallies persist; the day's hashes do not
+  const seen = carried.seen;
+  const total = moment ? (carried.m[moment] ?? 0) : carried.n;
+  if (seen.includes(key)) return { entry: carried, n: total, fresh: false };
+  const next = seen.length >= cap ? seen : [...seen, key];
+  if (moment) {
+    const n = total + 1;
+    return { entry: { ...carried, seen: next, m: { ...carried.m, [moment]: n } }, n, fresh: true };
+  }
   const n = carried.n + 1;
-  return { entry: { n, day, seen: seen.length >= cap ? seen : [...seen, key] }, n, fresh: true };
+  return { entry: { ...carried, n, seen: next }, n, fresh: true };
 }
 
 // The visitor's address as the proxy in front of us reports it. Only ever used

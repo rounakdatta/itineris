@@ -16,9 +16,11 @@ with Google and the journal is yours. Live at
 - **Stories per place** — a place's photos play together, then the map travels to the next pin.
 - **Photos that belong nowhere** — no pin to put them on, so the mark carries them, wearing the ring that turns until they have been watched.
 - **Pinch to zoom** — two fingers on a photo or a video; while it is zoomed a drag pans and the story waits.
+- **Every shape of picture** — a photo is shown whole rather than cropped whenever filling the frame would throw away more than a quarter of it, so a square collage keeps its four corners.
 - **Captions on the photo** — up to five, dragged anywhere, tilted to any angle, in twelve faces.
 - **A gallery's own name in the URL** — `/singaporeeats` as well as `/g/<token>`, and the token keeps working forever.
-- **How many have seen it** — an eye in the corner, counted once per visitor per day, storing nothing that could identify anybody.
+- **The walk between places** — opt-in per gallery: a dotted thread from each stop to the next, with how far it was.
+- **How many looked at each photo** — a small eye at the foot of the story, counted once per visitor per photo per day, storing nothing that could identify anybody. The creator's library marks the best-watched picture.
 - **Videos** — transcoded to H.264 with a poster frame.
 - **Offline** — whatever you looked at reopens without a signal.
 - **Uploads that survive bad networks** — a queue in IndexedDB, with retries.
@@ -69,7 +71,8 @@ GHCR; `homelab.setup` pins the chart version.
 - One volume, many journals: `users/<uid>/` per person, `media/<uid>/` for their derivatives, and a gallery token that is global so `/g/<token>` means the same thing whoever made it. The single-tenant library from before 0.21 belongs to whoever signs in first.
 - The Maps key reaches the browser via `/config.json`, mounted by the chart. Place details are looked up server-side, once per place.
 - The viewer and the creator are one origin in production: Traefik path-routes `/creator` to the creator pod, and nginx never sees it. The viewer relies on that to record a view, so a local harness has to reproduce the routing or it is testing a layout that exists nowhere.
-- A view stores a salted hash of address, browser, gallery and date — nothing that can be walked back to a person, matched across galleries, or that means anything after midnight. Only the total is ever served.
+- A view stores a salted hash of address, browser, gallery (or photo) and date — nothing that can be walked back to a person, matched across galleries, or that means anything after midnight. Only the totals are ever served.
+- The walk between places is a CONNECTOR, not a routed path: a real pavement-following route needs a billable directions service, and what it would buy is the shape of the street rather than the shape of the day. A leg is already just a list of points, so routed geometry drops straight in if it is ever worth it.
 - Caption faces are bundled: SIL OFL 1.1, except Permanent Marker (Apache 2.0). Licences in `src/assets/fonts/`.
 
 ---
