@@ -2,7 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { trip } from "../lib/trip.svelte.js";
   import { momentsFC, tracksFC, bboxOf, hasCoords, tagColorExpression, fitPadding } from "../lib/data.js";
-  import { legsOf, legsFC } from "../lib/route.js";
+  import { legsOf, legsFC, LEG_INK, LEG_CASING, LEG_LABEL_INK } from "../../server/route.js";
   import { here } from "../lib/here.svelte.js";
 
   let container;
@@ -37,32 +37,56 @@
       }
 
       map.on("load", () => {
-        // The walk between stops, under everything else: a thread the eye can
-        // follow when it looks for it and ignore when it does not. Round caps
-        // on a zero-length dash are how you draw dots rather than ticks, and
-        // the whole thing is deliberately dim -- it is the connective tissue
-        // of the trip, not one of its subjects.
+        // The walk between stops, under everything else.
+        //
+        // AMBER, not white. White shipped once and was invisible in
+        // production: Google's basemap there is 86% brighter than luminance
+        // 200 and a white line scored a contrast ratio of 1.1 against it --
+        // mathematically nothing. Deep amber clears 3.0 against Google's
+        // tiles, its roads, its parks AND this dark style, which is the only
+        // candidate that did, so both engines can share one identity.
+        //
+        // Cased, because contrast against the AVERAGE background is not
+        // contrast against all of it: a light rim keeps the dots off dark
+        // parks and water. In maplibre a dash length is a multiple of the
+        // LINE WIDTH, so the casing needs its own dash to put its gaps in the
+        // same place -- hence the arithmetic rather than a repeated literal.
+        const LEG_W = 2.6, LEG_GAP = 2.2, CASE_W = 4.6;
         map.addSource("legs", { type: "geojson", data: EMPTY });
+        map.addLayer({
+          id: "legs-casing",
+          type: "line",
+          source: "legs",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": LEG_CASING,
+            "line-opacity": 0.55,
+            "line-width": CASE_W,
+            "line-dasharray": [0, (LEG_GAP * LEG_W) / CASE_W],
+          },
+        });
         map.addLayer({
           id: "legs-line",
           type: "line",
           source: "legs",
           layout: { "line-cap": "round", "line-join": "round" },
           paint: {
-            "line-color": "#ffffff",
-            "line-opacity": 0.5,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.8, 16, 2.6],
-            "line-dasharray": [0, 2.2],
+            "line-color": LEG_INK,
+            "line-opacity": 0.95,
+            "line-width": LEG_W,
+            "line-dasharray": [0, LEG_GAP],
           },
         });
         // The distance, halfway along. maplibre hides a label that would
         // collide with another, which is exactly the behaviour wanted: on a
         // dense trip the threads still read even when the numbers cannot all
-        // fit, and nothing overlaps.
+        // fit, and nothing overlaps. An unrouted leg has no label at all, so
+        // there is nothing here to hide.
         map.addLayer({
           id: "legs-label",
           type: "symbol",
           source: "legs",
+          filter: ["==", ["get", "routed"], true],
           layout: {
             "symbol-placement": "line-center",
             "text-field": ["get", "label"],
@@ -74,9 +98,9 @@
             "text-ignore-placement": false,
           },
           paint: {
-            "text-color": "rgba(255,255,255,0.92)",
-            "text-halo-color": "rgba(0,0,0,0.75)",
-            "text-halo-width": 1.4,
+            "text-color": LEG_LABEL_INK,
+            "text-halo-color": "rgba(0,0,0,0.8)",
+            "text-halo-width": 1.5,
           },
         });
 
@@ -176,7 +200,7 @@
     // Opt-in per gallery, and only over what is currently shown -- filtering
     // to one tag should re-thread the stops that remain, not leave a line
     // hanging to a pin that is no longer there.
-    const legs = trip.route ? legsOf(moments) : [];
+    const legs = trip.route ? legsOf(moments, trip.walks) : [];
     map.getSource("legs")?.setData(legs.length ? legsFC(legs) : EMPTY);
     // What it drew, readable from outside: a test that only looked at the
     // rendered canvas could not tell "no legs because the gallery said so"

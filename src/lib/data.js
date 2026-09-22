@@ -1,3 +1,9 @@
+// What counts as "a place" now lives in server/place.js, because the server
+// needs the same answer to look up walking routes between stops. Re-exported
+// here so nothing that already imports it from data.js has to move.
+import { LOOSE, hasCoords, isLoose, placeKey } from "../../server/place.js";
+export { LOOSE, hasCoords, isLoose, placeKey };
+
 // Facets are authored, not inferred. Adding an angle = adding a row here.
 // `tags` match moments, `modes` match tracks. A facet with no modes shows no routes.
 // Two angles, matching the two primitives: places you stopped, and ways you
@@ -46,9 +52,6 @@ export function trackMatches(track, facetIds) {
   return FACETS.some((f) => facetIds.includes(f.id) && f.modes.includes(track.mode));
 }
 
-// Uploaded photos may carry no GPS; they still belong in the timeline, wall and
-// story, just not on the map.
-export const hasCoords = (m) => Number.isFinite(m.lat) && Number.isFinite(m.lng);
 export const hasAnyCoords = (moments = [], tracks = []) => moments.some(hasCoords) || tracks.some((t) => (t.geometry?.length ?? 0) > 0);
 
 // Phones display ~400-1200 physical px across; the 1600 tier is for big screens.
@@ -141,12 +144,6 @@ export function placeGroup(moments, m) {
 // with its GPS stripped, so these are ordinary, not an edge case, and they used
 // to be one story each, reachable only by scrolling the strip. They share one
 // key so they play as a single story: the journal's own, told on the mark.
-export const LOOSE = "~loose";
-export const isLoose = (m) => !hasCoords(m) && !(m.place ?? "").trim() && !m.google?.placeId;
-// The same Google place is one pin whatever it was called; else the name; else
-// the photo alone -- a photo WITH coordinates but no name still earns its own
-// pin, so it keeps a key of its own and never joins the loose ones.
-export const placeKey = (m) => (isLoose(m) ? LOOSE : m.google?.placeId ? `g:${m.google.placeId}` : (m.place ?? "").trim().toLowerCase() || `#${m.id}`);
 // Every moment grouped by place, in the order the places were first visited.
 // Unlike groupByPlace (pins) this keeps photos without coordinates: a story
 // must be able to reach them. A photo with no place is a group of one.

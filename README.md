@@ -19,7 +19,7 @@ with Google and the journal is yours. Live at
 - **Every shape of picture** — a photo is shown whole rather than cropped whenever filling the frame would throw away more than a quarter of it, so a square collage keeps its four corners.
 - **Captions on the photo** — up to five, dragged anywhere, tilted to any angle, in twelve faces.
 - **A gallery's own name in the URL** — `/singaporeeats` as well as `/g/<token>`, and the token keeps working forever.
-- **The walk between places** — opt-in per gallery: a dotted thread from each stop to the next, with how far it was.
+- **The walk between places** — opt-in per gallery: a dotted thread from each stop to the next, following the streets, with how far the walk actually was.
 - **How many looked at each photo** — a small eye at the foot of the story, counted once per visitor per photo per day, storing nothing that could identify anybody. The creator's library marks the best-watched picture.
 - **Videos** — transcoded to H.264 with a poster frame.
 - **Offline** — whatever you looked at reopens without a signal.
@@ -72,7 +72,8 @@ GHCR; `homelab.setup` pins the chart version.
 - The Maps key reaches the browser via `/config.json`, mounted by the chart. Place details are looked up server-side, once per place.
 - The viewer and the creator are one origin in production: Traefik path-routes `/creator` to the creator pod, and nginx never sees it. The viewer relies on that to record a view, so a local harness has to reproduce the routing or it is testing a layout that exists nowhere.
 - A view stores a salted hash of address, browser, gallery (or photo) and date — nothing that can be walked back to a person, matched across galleries, or that means anything after midnight. Only the totals are ever served.
-- The walk between places is a CONNECTOR, not a routed path: a real pavement-following route needs a billable directions service, and what it would buy is the shape of the street rather than the shape of the day. A leg is already just a list of points, so routed geometry drops straight in if it is ever worth it.
+- Walking routes come from Google's **Routes API**, server-side, once per pair of points, cached on the volume and published with the gallery — a viewer opening a gallery costs nothing. The LEGACY Directions API is not enabled on this project and will not be; Google's own refusal of it says to use Routes. Until a hop has been routed its leg draws straight and carries **no** distance: the gap between two points is displacement, not distance, and on a street grid the real walk is routinely a third longer.
+- The thread is deep amber with a light casing, and the colour is measured rather than chosen: it shipped white once and scored a contrast ratio of 1.1 against Google's real tiles — not faint, absent. `tests/route.test.js` holds samples of both basemaps and fails anything below 3.0 on any of them.
 - Caption faces are bundled: SIL OFL 1.1, except Permanent Marker (Apache 2.0). Licences in `src/assets/fonts/`.
 
 ---

@@ -6,7 +6,7 @@ import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Store, token, TOKEN_RE } from "./store.js";
+import { Store, token, TOKEN_RE, hopsOf } from "./store.js";
 import { ingestMedia, backfillMedium, MEDIUM } from "./ingest.js";
 import { isLocalIso } from "./time.js";
 import { isGoogleMapsUrl, resolveMapsLink } from "./links.js";
@@ -14,6 +14,8 @@ import { lookupPlace, needsLookup, searchPlaces, fetchPlaceDetails, isStale, isP
 import { validateStyle, validateCaptions, captionsOf, normalizeStyle, styleOf, MAX_CAPTION_TEXT } from "./caption.js";
 import { slugProblem, cleanSlug } from "./slug.js";
 import { clientIp, makeLimiter } from "./views.js";
+import { walkBetween, MAX_WALK_M } from "./walk.js";
+import { metresBetween } from "./route.js";
 import {
   SESSION_COOKIE, SESSION_DAYS, uidFor, normalizeEmail, signSession, readSession, newSession,
   randomState, authorizeUrl, exchangeCode, readIdToken, allowedBy, redirectUriFor, safeNext,
@@ -52,6 +54,10 @@ const isAllowed = allowedBy(env("ITINERIS_CREATOR_EMAILS", env("ITINERIS_ADMIN_E
 // browser key is referrer-restricted; else the same key. Empty = no lookups.
 const PLACES_KEY = env("ITINERIS_GOOGLE_PLACES_KEY", "") || env("ITINERIS_GOOGLE_MAPS_KEY", "");
 const placesStatus = { configured: !!PLACES_KEY, lastError: null, lastRunAt: null, lookedUp: 0 };
+// Walking routes ride on the same key: Places API (New) and the Routes API are
+// both on the modern surface, and the LEGACY Directions API is not enabled on
+// this project on purpose -- Google's own refusal of it says to use Routes.
+const walksStatus = { configured: !!PLACES_KEY, lastError: null, lastRunAt: null, lookedUp: 0 };
 
 const store = new Store(DATA_DIR);
 const app = new Hono();
@@ -131,7 +137,7 @@ app.get(`${BASE}/api/me`, async (c) => {
   await libraryFor(who);
   return c.json({
     signedIn: true, google: GOOGLE, email: who.email, name: who.name, picture: who.picture,
-    owner: (await store.ownerUid()) === who.uid, places: placesStatus,
+    owner: (await store.ownerUid()) === who.uid, places: placesStatus, walks: walksStatus,
   });
 });
 
@@ -314,6 +320,8 @@ app.post(`${BASE}/api/upload`, bodyLimit({ maxSize: MAX_UPLOAD }), async (c) => 
   if (created.length) { const ids = new Set(created.map((m) => m.id)); enrichPlaces(lib, (m) => ids.has(m.id)); }
   if (wanted.size && touched.length) {
     await lib.updateGalleries((gs) => gs.map((g) => (wanted.has(g.id) ? { ...g, momentIds: [...new Set([...(g.momentIds ?? []), ...touched])], updatedAt: new Date().toISOString() } : g)));
+    // New stops in a gallery that draws the walk need their hops routed.
+    if ((await lib.galleries()).some((g) => wanted.has(g.id) && g.route === true)) enrichWalks(lib).catch(() => {});
   }
   return c.json({ created, duplicates, errors }, errors.length && !created.length ? 422 : 200);
 });
@@ -493,6 +501,7 @@ app.post(`${BASE}/api/galleries`, async (c) => {
     if (wantsHome) gs = gs.map((x) => ({ ...x, home: false }));
     return [...gs, { ...g, home: wantsHome }];
   });
+  if (g.route === true) enrichWalks(lib).catch(() => {});
   return c.json(galleryView({ ...g, home: wantsHome }), 201);
 });
 
@@ -530,6 +539,11 @@ app.patch(`${BASE}/api/galleries/:id`, async (c) => {
     });
   });
   if (bad) return c.json({ error: bad }, 400);
+  // Ticking the box has to do something NOW. Left to the six-hourly sweep, a
+  // creator turns the walk on and sees straight threads with no distances on
+  // them for the rest of the afternoon. Not awaited: the routing is Google's
+  // latency, not this request's.
+  if (result?.route === true) enrichWalks(lib).catch(() => {});
   return result ? c.json((await galleryViews([result]))[0]) : c.json({ error: "not found" }, 404);
 });
 
@@ -583,6 +597,46 @@ async function dropLegacyPlaceIds(lib) {
 }
 
 // Background housekeeping for every journal on the volume, one at a time.
+// The walk between one stop and the next, for galleries that asked for it.
+// Once per pair of points, ever: cached on the volume and shared by every
+// gallery on it, so a viewer opening a gallery costs nothing and a hop is
+// looked up once however many people see it.
+async function enrichWalks(lib) {
+  if (!PLACES_KEY) return 0;
+  const [moments, galleries] = await Promise.all([lib.moments(), lib.galleries()]);
+  const walking = galleries.filter((g) => g.route === true);
+  if (!walking.length) return 0;
+  const known = await store.walks();
+  // One entry per hop, deduplicated: two galleries over the same stretch ask
+  // Google once.
+  const todo = new Map();
+  for (const g of walking) for (const hop of hopsOf(g, moments)) if (!known[hop.key]) todo.set(hop.key, hop);
+  if (!todo.size) return 0;
+  const found = {};
+  let n = 0;
+  for (const hop of todo.values()) {
+    // Far enough apart that nobody walked it: remember that rather than
+    // asking Google for a walking route across a country.
+    if (metresBetween(hop.from, hop.to) > MAX_WALK_M) { found[hop.key] = { m: null, p: null, at: new Date().toISOString() }; continue; }
+    try {
+      const w = await walkBetween(hop.from, hop.to, { key: PLACES_KEY });
+      if (w) { found[hop.key] = w; if (w.m) n++; }
+      walksStatus.lastError = null;
+    } catch (e) {
+      walksStatus.lastError = e.message; console.error(`walk ${hop.key}: ${e.message}`);
+      if (e.status === 400 || e.status === 403 || e.status === 429) break;   // key/API/quota trouble: the rest would fail the same way
+      continue;
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  await store.saveWalks(found);
+  walksStatus.lookedUp += n;
+  walksStatus.lastRunAt = new Date().toISOString();
+  // The projections were written before these existed; write them again.
+  if (Object.keys(found).length) await store.materialize(lib.uid);
+  return n;
+}
+
 async function sweep() {
   for (const lib of await libraries()) {
     // Photos uploaded before the phone-sized tier existed get one now.
@@ -591,6 +645,9 @@ async function sweep() {
     // Then what Google knows about every named place: new ones now, stale ones monthly.
     const p = await enrichPlaces(lib).catch(() => 0);
     if (p) console.log(`looked up ${p} place${p === 1 ? "" : "s"} on Google`);
+    // Then, for galleries that asked to show the walk, how far each hop is.
+    const w = await enrichWalks(lib).catch((e) => { console.error("walks failed:", e); return 0; });
+    if (w) console.log(`routed ${w} walk${w === 1 ? "" : "s"} between stops`);
   }
 }
 sweep();

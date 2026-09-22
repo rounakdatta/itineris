@@ -11,6 +11,9 @@ class Trip {
   description = $state("");
   // Whether this gallery asked for the walk between its places to be drawn.
   route = $state(false);
+  // What the server managed to route, keyed by hop. A leg without one draws
+  // straight and carries no distance -- see server/route.js.
+  walks = $state({});
   // loading | ready | landing (no gallery at /) | notfound (bad token) | error
   status = $state("loading");
   error = $state(null);
@@ -81,6 +84,7 @@ class Trip {
       this.title = g.title ?? "";
       this.description = g.description ?? "";
       this.route = g.route === true;
+      this.walks = g.walks ?? {};
       this.moments = g.moments ?? [];
       this.tracks = g.tracks ?? [];
       this.status = "ready";

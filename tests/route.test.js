@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { metresBetween, prettyDistance, stopsOf, legsOf, legsFC } from "../src/lib/route.js";
+import { metresBetween, prettyDistance, stopsOf, legsOf, legsFC, LEG_INK, LEG_CASING, LEG_LABEL_INK, BASEMAPS, contrast, rgbOf } from "../server/route.js";
 
 const at = (t, place, lat, lng) => ({ id: `m${t}`, t: `2026-03-14T${t}:00+08:00`, place, lat, lng, tags: [], media: {} });
 
@@ -61,12 +61,21 @@ describe("the stops, in the order they happened", () => {
 
 describe("the legs between them", () => {
   const trip = [at("09", "Maxwell", 1.2803, 103.8447), at("12", "Lunch", 1.2836, 103.8434), at("15", "Barrage", 1.2805, 103.8712)];
-  it("is one leg per hop, each carrying how far it was", () => {
+  it("is one leg per hop, in the order they were walked", () => {
     const legs = legsOf(trip);
     expect(legs).toHaveLength(2);
-    expect(legs[0].label).toBe("0.4 km");
     expect(legs[0].from.name).toBe("Maxwell");
     expect(legs[0].to.name).toBe("Lunch");
+  });
+  it("...carrying no distance until the walk has actually been routed", () => {
+    // It used to label every leg with the distance between the two POINTS,
+    // which is displacement. On a street grid the real walk is routinely a
+    // third longer, and a number that is confidently wrong is worse than no
+    // number. See tests/walk.test.js for the routed case.
+    for (const leg of legsOf(trip)) {
+      expect(leg.label).toBe("");
+      expect(leg.routed).toBe(false);
+    }
   });
   it("puts the label halfway along, where the thread is", () => {
     const [leg] = legsOf(trip);
@@ -89,6 +98,37 @@ describe("the legs between them", () => {
     expect(fc.type).toBe("FeatureCollection");
     expect(fc.features).toHaveLength(2);
     expect(fc.features[0].geometry.coordinates).toEqual([[103.8447, 1.2803], [103.8434, 1.2836]]);
-    expect(fc.features[0].properties).toEqual({ label: "0.4 km", metres: 394 });
+    expect(fc.features[0].properties).toEqual({ label: "", metres: 394, routed: false });
+  });
+});
+
+describe("the thread has to be visible on the maps that actually exist", () => {
+  // This is the test that would have caught it. The thread shipped white,
+  // which is perfect on the dark style the local harness draws and a contrast
+  // ratio of 1.1 -- nothing at all -- on the light tiles production serves. A
+  // screenshot of the dark map proved only that the dark map was fine.
+  const FLOOR = 3.0;   // WCAG's floor for a graphical object
+
+  it("clears the floor on every basemap, not just the one the harness draws", () => {
+    for (const [name, bg] of Object.entries(BASEMAPS)) {
+      const c = contrast(rgbOf(LEG_INK), bg);
+      expect(c, `${LEG_INK} on ${name} is ${c.toFixed(2)}`).toBeGreaterThanOrEqual(FLOOR);
+    }
+  });
+  it("...and white, which is what shipped, does not", () => {
+    expect(contrast(rgbOf("#ffffff"), BASEMAPS.googleLand)).toBeLessThan(1.3);
+    expect(contrast(rgbOf("#ffffff"), BASEMAPS.googleRoad)).toBeLessThan(1.1);
+  });
+  it("...nor does the walk colour the tracks already use", () => {
+    // #8b9dc3 would have been the obvious choice from the existing palette.
+    expect(contrast(rgbOf("#8b9dc3"), BASEMAPS.googleLand)).toBeLessThan(FLOOR);
+  });
+  it("carries a casing, because an average is not every pixel", () => {
+    // The rim's job is the backgrounds nearest the ink's own luminance.
+    expect(contrast(rgbOf(LEG_CASING), BASEMAPS.maplibreDark)).toBeGreaterThan(10);
+    expect(contrast(rgbOf(LEG_CASING), rgbOf(LEG_INK))).toBeGreaterThan(3);
+  });
+  it("and the label reads on a dark halo", () => {
+    expect(contrast(rgbOf(LEG_LABEL_INK), [0, 0, 0])).toBeGreaterThan(10);
   });
 });
