@@ -84,6 +84,43 @@ export function decodePolyline(encoded) {
   return out;
 }
 
+// The places in the order they were first reached, numbered from one.
+//
+// A place visited twice keeps its FIRST number: the pin is one pin, and "this
+// was the third stop" is a thing you can say about a place, while "this was
+// the third and the seventh" is not something anybody wants on a badge. The
+// thread still shows the return trip.
+//
+// Computed over whatever is currently shown, so narrowing the selection
+// renumbers the stops to match the threads that remain.
+export function stopOrder(moments) {
+  const order = new Map();
+  const placed = moments.filter(hasCoords).slice().sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
+  for (const m of placed) {
+    const key = placeKey(m);
+    if (!order.has(key)) order.set(key, order.size + 1);
+  }
+  return order;
+}
+
+// The numbered stops as points, for the engine that draws from a source.
+export const stopsFC = (moments) => {
+  const order = stopOrder(moments);
+  const seen = new Set();
+  const features = [];
+  for (const s of stopsOf(moments)) {
+    if (seen.has(s.key)) continue;
+    seen.add(s.key);
+    features.push({
+      type: "Feature",
+      id: s.key,
+      properties: { key: s.key, n: order.get(s.key), label: String(order.get(s.key)) },
+      geometry: { type: "Point", coordinates: [s.lng, s.lat] },
+    });
+  }
+  return { type: "FeatureCollection", features };
+};
+
 // A leg per hop. Zero-length hops are dropped: two places that resolve to the
 // same spot would draw a dot on a dot and label it "0 m".
 //

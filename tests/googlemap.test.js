@@ -12,7 +12,11 @@ FakePolyline.all = [];
 class FakeBounds { constructor(sw, ne) { this.sw = sw; this.ne = ne; } }
 class FakeCircle { constructor(o) { Object.assign(this, o); FakeCircle.all.push(this); } setCenter(c) { this.center = c; } setRadius(r) { this.radius = r; } setMap(m) { this.map = m; } }
 FakeCircle.all = [];
-const G = { importLibrary: async (n) => (n === "maps" ? { Map: FakeMap } : { AdvancedMarkerElement: FakeMarker }), Polyline: FakePolyline, LatLngBounds: FakeBounds, Circle: FakeCircle, event: { addListenerOnce: (m, ev, fn) => fn() } };
+// SymbolPath is core API surface -- the dotted walk between stops is drawn
+// with repeated CIRCLE symbols -- so the fake namespace has to carry it, or
+// the component throws where the real one would not.
+const SymbolPath = { CIRCLE: 0, FORWARD_CLOSED_ARROW: 1, FORWARD_OPEN_ARROW: 2, BACKWARD_CLOSED_ARROW: 3, BACKWARD_OPEN_ARROW: 4 };
+const G = { importLibrary: async (n) => (n === "maps" ? { Map: FakeMap } : { AdvancedMarkerElement: FakeMarker }), Polyline: FakePolyline, LatLngBounds: FakeBounds, Circle: FakeCircle, SymbolPath, event: { addListenerOnce: (m, ev, fn) => fn() } };
 let loadImpl;
 let mapErrorFn = null;
 vi.mock("../src/lib/gmaps.js", () => ({ loadGoogleMaps: (...a) => loadImpl(...a), onAuthFailure: vi.fn(), watchMapErrors: (fn) => { mapErrorFn = fn; return () => { mapErrorFn = null; }; } }));
@@ -26,17 +30,57 @@ const config = { googleMapsApiKey: "k", googleMapsMapId: "" };
 beforeEach(() => {
   FakeMap.instances.length = 0; FakeMarker.all.length = 0; FakePolyline.all.length = 0; FakeCircle.all.length = 0; here.stop();
   loadImpl = async () => G;
-  trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.galleryId = "g1"; trip.facets = []; trip.focusId = null; trip.storyIndex = -1; trip.view = "map";
+  trip.moments = structuredClone(moments); trip.tracks = structuredClone(tracks); trip.status = "ready"; trip.galleryId = "g1"; trip.facets = []; trip.focusId = null; trip.storyIndex = -1; trip.view = "map"; trip.route = false; trip.walks = {};
 });
 
 import { resetSeen, markSeen } from "../src/lib/seen.svelte.js";
 const byTitle = (t) => FakeMarker.all.find((m) => m.title === t);
 const click = (el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
+describe("GoogleMapView: what a pin says about itself", () => {
+  beforeEach(() => { resetSeen(); });
+
+  it("says nothing on a gallery that does not draw the walk", async () => {
+    // A number on a pin has to MEAN something. "How many photos are here" is
+    // a count nobody asked for, in the first place the eye lands.
+    render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
+    for (const m of FakeMarker.all) {
+      expect(m.content.querySelector(".ring .n").textContent).toBe("");
+      expect(m.content.querySelector(".ring .n").classList.contains("on")).toBe(false);
+    }
+  });
+
+  it("numbers the stops in the order they were reached, once the walk is drawn", async () => {
+    trip.route = true;
+    render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
+    const numbered = FakeMarker.all.map((m) => [m.title, m.content.querySelector(".ring .n").textContent]);
+    // The fixture's places, in time order.
+    expect(numbered).toEqual([["Chinatown", "1"], ["Maxwell", "2"], ["Merlion", "3"]]);
+    expect(FakeMarker.all.every((m) => m.content.querySelector(".ring .n").classList.contains("on"))).toBe(true);
+  });
+
+  it("...and renumbers when the selection narrows, so the badges match the threads", async () => {
+    trip.route = true;
+    render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
+    trip.moments = trip.moments.filter((m) => m.place !== "Chinatown");
+    await tick(); await flush();
+    const shown = FakeMarker.all.filter((m) => m.map).map((m) => [m.title, m.content.querySelector(".ring .n").textContent]);
+    expect(shown).toEqual([["Maxwell", "1"], ["Merlion", "2"]]);
+  });
+
+  it("...and takes the numbers away again when the walk is turned off", async () => {
+    trip.route = true;
+    render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
+    trip.route = false;
+    await tick(); await flush();
+    expect(FakeMarker.all.every((m) => m.content.querySelector(".ring .n").textContent === "")).toBe(true);
+  });
+});
+
 describe("GoogleMapView", () => {
   beforeEach(() => { resetSeen(); trip.moments = [...trip.moments.map((m) => (m.id === "b" ? { ...m, google: { placeId: "ChIJmax", rating: 4.4, ratingCount: 12873, type: "Hawker centre", mapsUri: "https://maps.google.com/?cid=1" } } : m)), { ...structuredClone(moments[0]), id: "a2", t: "2026-03-14T09:10:00+08:00" }]; });
 
-  it("draws Google's map with one story-ring pin per place, a count badge, a rating chip where Google knows the place, a line per route", async () => {
+  it("draws Google's map with one story-ring pin per place, a rating chip where Google knows the place, a line per route", async () => {
     render(GoogleMapView, { config, onFail: vi.fn() }); await flush(); await tick(); await flush();
     const map = FakeMap.instances[0];
     expect(map.opts).toMatchObject({ mapId: "DEMO_MAP_ID", disableDefaultUI: true, clickableIcons: true, gestureHandling: "greedy" });
@@ -45,7 +89,12 @@ describe("GoogleMapView", () => {
     const chinatown = byTitle("Chinatown"), maxwell = byTitle("Maxwell");
     expect(chinatown.position).toEqual({ lat: 1.28, lng: 103.84 });
     expect(chinatown.content.querySelector(".ring img").getAttribute("src")).toBe("/media/a-t.webp");
-    expect(chinatown.content.querySelector(".ring .n").textContent).toBe("2");
+    // No count badge. It used to say how many photos are at this place, which
+    // reads as an unexplained "5" beside a "3" beside a "7" -- a number nobody
+    // asked for, in the first place the eye lands. See the numbering test
+    // below for what replaced it.
+    expect(chinatown.content.querySelector(".ring .n").textContent).toBe("");
+    expect(chinatown.content.querySelector(".ring .n").classList.contains("on")).toBe(false);
     expect(chinatown.content.querySelector(".chip").textContent).toBe("Chinatown");            // the name, always
     expect(maxwell.content.querySelector(".chip").textContent).toBe("Maxwell4.4★");            // plus the rating when Google knows it
     expect(maxwell.content.querySelector(".chip .nm").textContent).toBe("Maxwell");
