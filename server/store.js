@@ -2,6 +2,7 @@ import { readFile, writeFile, rename, mkdir, cp, unlink, access, readdir, rm } f
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { countView, visitorKey, dayOf, newSalt } from "./views.js";
+import { stopsOf, walkKey } from "./route.js";
 
 // ---------------------------------------------------------------------------
 // Layout under the data dir. Only data/ and media/ are ever served publicly.
@@ -80,13 +81,29 @@ export const pub = (m) => ({
   },
 });
 
-export function materializeGallery(g, moments, tracks) {
+// Which hops a gallery needs routed. Exported because the sweep asks the same
+// question before it goes to Google, and both sides must agree on the key.
+export function hopsOf(g, moments) {
+  if (g.route !== true) return [];
+  const ms = new Set(g.momentIds ?? []);
+  const stops = stopsOf(moments.filter((m) => ms.has(m.id)));
+  const hops = [];
+  for (let i = 1; i < stops.length; i++) hops.push({ key: walkKey(stops[i - 1], stops[i]), from: stops[i - 1], to: stops[i] });
+  return hops;
+}
+
+export function materializeGallery(g, moments, tracks, walks = {}) {
   const ms = new Set(g.momentIds ?? []), ts = new Set(g.trackIds ?? []);
+  const mine = {};
+  for (const hop of hopsOf(g, moments)) if (walks[hop.key]) mine[hop.key] = walks[hop.key];
   return {
     id: g.id, title: g.title, description: g.description ?? "", updatedAt: g.updatedAt ?? g.createdAt ?? null,
     // Only when it is on: a projection should say what is true, not carry a
     // false for every option that exists.
     ...(g.route === true ? { route: true } : {}),
+    // Only the hops this gallery walks, and only the ones already looked up --
+    // a leg with no walk draws straight and says nothing.
+    ...(Object.keys(mine).length ? { walks: mine } : {}),
     moments: moments.filter((m) => ms.has(m.id)).map(pub).sort(byT),
     tracks: tracks.filter((t) => ts.has(t.id)),
   };
@@ -157,6 +174,7 @@ export class Store {
       owners: path.join(dataDir, "library", "owners.json"),
       slugs: path.join(dataDir, "library", "slugs.json"),
       views: path.join(dataDir, "library", "views.json"),
+      walks: path.join(dataDir, "library", "walks.json"),
       instance: path.join(dataDir, "library", "instance.json"),
       home: path.join(dataDir, "data", "home.json"),
       pubGalleries: path.join(dataDir, "data", "galleries"),
@@ -231,6 +249,17 @@ export class Store {
     const t = (await this.slugs())[slug];
     return !!t && t !== exceptToken;
   }
+  // Walking routes between stops, keyed by the two points. Shared across every
+  // gallery on the volume: the same hop between two hawker centres is one
+  // lookup however many galleries it appears in, and however many people look.
+  walks() { return readJson(this.paths.walks, {}); }
+  async saveWalks(patch) {
+    if (!patch || !Object.keys(patch).length) return;
+    return this.serialize(async () => {
+      await atomicWrite(this.paths.walks, { ...(await this.walks()), ...patch });
+    });
+  }
+
   #instance() { return readJson(this.paths.instance, {}); }
 
   // --- how many people have seen a gallery ----------------------------------
@@ -345,12 +374,13 @@ export class Store {
       await mkdir(this.paths.pubGalleries, { recursive: true });
       const owners = await this.#owners();
       const slugs = await this.slugs();
+      const walks = await this.walks();
       // Which galleries were this person's BEFORE this pass. Both prunes need
       // it, and the owners prune below is about to forget the deleted ones.
       const wasMine = new Set(Object.entries(owners).filter(([, o]) => o === uid).map(([id]) => id));
       const keep = new Set();
       for (const g of galleries) {
-        const projection = materializeGallery(g, moments, tracks);
+        const projection = materializeGallery(g, moments, tracks, walks);
         await atomicWrite(path.join(this.paths.pubGalleries, `${g.id}.json`), projection);
         owners[g.id] = uid;
         keep.add(g.id);

@@ -11,7 +11,7 @@
   import { allSeen } from "../lib/seen.svelte.js";
   import { here } from "../lib/here.svelte.js";
   import { loadGoogleMaps, onAuthFailure, watchMapErrors } from "../lib/gmaps.js";
-  import { legsOf } from "../lib/route.js";
+  import { legsOf, LEG_INK, LEG_CASING } from "../../server/route.js";
 
   let { config, onFail } = $props();
   let container;
@@ -147,17 +147,19 @@
     // Opt-in per gallery, and over what is currently SHOWN: filtering to one
     // tag should re-thread the stops that remain, not leave a thread hanging
     // to a pin that is no longer on the map.
-    const legs = trip.route ? legsOf(trip.visibleMoments) : [];
+    const legs = trip.route ? legsOf(trip.visibleMoments, trip.walks) : [];
     const wantL = new Set(legs.map((l) => l.id));
     for (const leg of legs) {
       if (legLines.has(leg.id)) continue;
       const { line, tag, el } = legThread(leg);
-      legLines.set(leg.id, line); legTags.set(leg.id, { tag, el });
+      legLines.set(leg.id, line);
+      if (tag) legTags.set(leg.id, { tag, el });
     }
     for (const [id, line] of legLines) {
       if (wantL.has(id)) continue;
       line.setMap(null); legLines.delete(id);
       const t = legTags.get(id); if (t) { t.tag.map = null; legTags.delete(id); }
+
     }
     if (container) container.dataset.legs = String(legs.length);   // test hook, like data-idle
     declutterSoon();
@@ -169,18 +171,32 @@
   // diagram. Drawn under the pins, and only when the gallery asked for it.
   function legThread(leg) {
     const line = new g.Polyline({
-      path: [{ lat: leg.from.lat, lng: leg.from.lng }, { lat: leg.to.lat, lng: leg.to.lng }],
-      // A dotted polyline in the Maps API is an invisible line wearing repeated
-      // symbols; there is no dash array.
+      // The routed walk, following the streets -- or, for a hop nothing has
+      // routed yet, the two points and a straight thread between them.
+      path: leg.path.map(([lng, lat]) => ({ lat, lng })),
+      // A dotted polyline in the Maps API is an invisible line wearing
+      // repeated symbols; there is no dash array.
       strokeOpacity: 0,
       icons: [{
-        icon: { path: g.SymbolPath.CIRCLE, scale: 1.7, fillColor: "#ffffff", fillOpacity: 0.72, strokeOpacity: 0 },
-        offset: "0", repeat: "9px",
+        // AMBER, not white. White shipped once and was invisible here: this
+        // basemap is 86% brighter than luminance 200 and white scored a
+        // contrast ratio of 1.1 against it -- the line was not faint, it was
+        // absent. Deep amber clears 3.0 against these tiles, their roads,
+        // their parks and MapLibre's dark style; nothing else did.
+        //
+        // The white rim is the casing: contrast against the AVERAGE background
+        // is not contrast against all of it, and the rim keeps the dots off
+        // dark parks and water.
+        icon: { path: g.SymbolPath.CIRCLE, scale: 2.1, fillColor: LEG_INK, fillOpacity: 1, strokeColor: LEG_CASING, strokeOpacity: 0.85, strokeWeight: 1.1 },
+        offset: "0", repeat: "10px",
       }],
       clickable: false,
       zIndex: 0,
       map,
     });
+    // An unrouted hop carries no distance: displacement labelled as distance
+    // is exactly what this replaced, so it says nothing instead.
+    if (!leg.label) return { line, tag: null, el: null };
     const el = document.createElement("span");
     el.className = "leg";
     el.textContent = leg.label;
@@ -214,7 +230,7 @@
     // separate decluttering rules would let one hide behind the other.
     const live = [
       ...[...pins.values()].filter((p) => p.chip && p.chip.isConnected).map((p) => ({ ...p, chip: p.chip, rank: 1 })),
-      ...[...legTags.values()].filter((t) => t.el.isConnected).map((t) => ({ chip: t.el, ring: null, group: null, rank: 0 })),
+      ...[...legTags.values()].filter((t) => t.el?.isConnected).map((t) => ({ chip: t.el, ring: null, group: null, rank: 0 })),
     ];
     for (const p of live) p.chip.classList.remove("crowded");
     if (live.length < 2) { container.dataset.labels = String(live.length); return live.length > 0; }
@@ -378,7 +394,7 @@
      a number nobody needs to read, that rewards anybody who looks. */
   :global(.leg) {
     display: inline-block; padding: 1px 6px; border-radius: 999px;
-    background: rgba(12, 15, 20, 0.62); color: rgba(255, 255, 255, 0.92);
+    background: rgba(12, 15, 20, 0.78); color: #fff;
     font: 600 10px/16px system-ui, -apple-system, sans-serif; letter-spacing: 0.01em;
     font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none;
     backdrop-filter: blur(3px); transition: opacity 140ms;

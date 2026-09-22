@@ -76,6 +76,25 @@ const fakePlaces = createServer((req, res) => {
 });
 await new Promise((r) => fakePlaces.listen(4329, "127.0.0.1", r));
 
+// A stand-in for Google's Routes API. Answers a walk that is a third longer
+// than the straight line, which is what a street grid does and the whole
+// reason the app asks rather than measuring the gap itself.
+const routesLog = [];
+const fakeRoutes = createServer((req, res) => {
+  let body = ""; req.on("data", (d) => (body += d)); req.on("end", () => {
+    const q = JSON.parse(body || "{}");
+    routesLog.push({ mask: req.headers["x-goog-fieldmask"], key: req.headers["x-goog-api-key"], q });
+    const a = q.origin?.location?.latLng ?? {}, b = q.destination?.location?.latLng ?? {};
+    if (a.latitude === 0) { res.writeHead(403, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: { message: "legacy API not enabled" } })); }
+    const R = 6371008.8, rad = (d) => (d * Math.PI) / 180;
+    const s2 = Math.sin(rad(b.latitude - a.latitude) / 2) ** 2 + Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(rad(b.longitude - a.longitude) / 2) ** 2;
+    const met = 2 * R * Math.asin(Math.min(1, Math.sqrt(s2)));
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ routes: [{ distanceMeters: Math.round(met * 1.35), polyline: { encodedPolyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@" } }] }));
+  });
+});
+await new Promise((r) => fakeRoutes.listen(4335, "127.0.0.1", r));
+
 // A stand-in for Google's token endpoint: hands back an id_token for Ada.
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const fakeGoogle = createServer((req, res) => {
@@ -88,7 +107,7 @@ const fakeGoogle = createServer((req, res) => {
   });
 });
 await new Promise((r) => fakeGoogle.listen(4330, "127.0.0.1", r));
-const PLACES_ENV = { ITINERIS_GOOGLE_PLACES_KEY: "test-places", ITINERIS_PLACES_ENDPOINT: "http://127.0.0.1:4329/searchText", ITINERIS_PLACES_DETAILS_ENDPOINT: "http://127.0.0.1:4329/places" };
+const PLACES_ENV = { ITINERIS_GOOGLE_PLACES_KEY: "test-places", ITINERIS_PLACES_ENDPOINT: "http://127.0.0.1:4329/searchText", ITINERIS_PLACES_DETAILS_ENDPOINT: "http://127.0.0.1:4329/places", ITINERIS_ROUTES_ENDPOINT: "http://127.0.0.1:4335/computeRoutes" };
 let askedBefore = 0;   // how many times Google was asked while the keyed server ran
 const until = async (fn, ms = 15000) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, 100)); } return v; };
 
@@ -484,10 +503,57 @@ try {
     ok("...and so does an unrelated edit after it is on", (await readJson(path.join(d7, "data", "galleries", `${walked.id}.json`))).route === true);
 
     const doomed = (await ada7("POST", "/creator/api/galleries", { title: "Doomed", slug: "doomedtrip" })).body;
+
     await ada7("DELETE", `/creator/api/galleries/${doomed.id}`);
     ok("deleting a gallery takes its name with it", (await fetch(`${s7.BASE}/data/galleries/doomedtrip.json`)).status === 404 && (await fetch(`${s7.BASE}/data/galleries/${doomed.id}.json`)).status === 404);
     ok("...without touching anyone else's", (await fetch(`${s7.BASE}/data/galleries/singaporeeats.json`)).status === 200);
   } finally { s7.server.kill(); }
+
+  // =========================================================================
+  console.log("--- how far the walk between two stops actually was ---");
+  // The first version of this drew a straight line and labelled it with the
+  // distance between the two POINTS. On a street grid the real walk is
+  // routinely a third longer, so the number was confidently wrong -- worse
+  // than no number. It asks Google now, once per pair of points, ever.
+  const d9 = path.join(root, "walks");
+  const s9 = await startServer({ port: 4336, dataDir: d9, seedDir: "seed", env: PLACES_ENV });
+  const ada9 = async (method, p, body) => j(await fetch(`${s9.BASE}${p}`, { method, headers: { "remote-email": "ada@example.com", "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }));
+  try {
+    const before = routesLog.length;
+    const gs = (await ada9("GET", "/creator/api/galleries")).body;
+    const home = gs.find((g) => g.home) ?? gs[0];
+    ok("a gallery that has not asked for the walk is never routed", routesLog.length === before, `${routesLog.length - before} requests`);
+
+    await ada9("PATCH", `/creator/api/galleries/${home.id}`, { route: true });
+    const walked = await until(async () => {
+      const f = await readJson(path.join(d9, "library", "walks.json")).catch(() => null);
+      return f && Object.keys(f).length ? f : null;
+    }, 25000);
+    ok("asking for the walk routes every hop, in the background", !!walked && Object.keys(walked).length > 1, `${Object.keys(walked ?? {}).length} hops`);
+    const asked = routesLog.slice(before);
+    ok("...asking the ROUTES API for a walk, not the legacy Directions API",
+      asked.length > 0 && asked.every((r) => r.q.travelMode === "WALK" && r.key === "test-places"), JSON.stringify(asked[0]?.q?.travelMode));
+    ok("...for only the two fields it publishes", asked.every((r) => r.mask === "routes.distanceMeters,routes.polyline.encodedPolyline"), asked[0]?.mask);
+
+    const pub9 = await readJson(path.join(d9, "data", "galleries", `${home.id}.json`));
+    ok("the routed walks reach the published gallery", Object.keys(pub9.walks ?? {}).length === Object.keys(walked).length, `${Object.keys(pub9.walks ?? {}).length} published`);
+    const one = Object.values(pub9.walks)[0];
+    ok("...each carrying the real distance and the shape of the walk", Number.isFinite(one.m) && typeof one.p === "string" && one.p.length > 0, JSON.stringify(one).slice(0, 90));
+
+    // The whole point of the cache: a hop is one lookup however many times it
+    // is published, and a second gallery over the same ground asks nothing.
+    const afterFirst = routesLog.length;
+    await ada9("PATCH", `/creator/api/galleries/${home.id}`, { description: "again" });
+    await new Promise((r) => setTimeout(r, 1200));
+    ok("re-publishing asks Google nothing", routesLog.length === afterFirst, `${routesLog.length - afterFirst} more requests`);
+
+    // A gallery that stops asking keeps the cache but loses the publication.
+    await ada9("PATCH", `/creator/api/galleries/${home.id}`, { route: false });
+    const off = await readJson(path.join(d9, "data", "galleries", `${home.id}.json`));
+    ok("turning it off takes the walks out of the published copy", !("walks" in off) && !("route" in off));
+    ok("...but keeps them cached, so turning it back on is free",
+      Object.keys(await readJson(path.join(d9, "library", "walks.json"))).length === Object.keys(walked).length);
+  } finally { s9.server.kill(); }
 
   // =========================================================================
   console.log("--- how many people have seen a gallery ---");
@@ -629,7 +695,7 @@ try {
   } finally { s6.server.kill(); }
 } finally {
   await rm(root, { recursive: true, force: true });
-  fakePlaces.close();
+  fakePlaces.close(); fakeRoutes.close();
   fakeGoogle.close();
 }
 console.log(fail ? `\n${fail} FAILED` : "\nall passed");

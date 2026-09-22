@@ -10,6 +10,7 @@ import { launch, shot, tap, swipe, sleep, text, count, tapAt, resolveBrowserEnv,
 import { startAuthProxy } from "./lib/authproxy.mjs";
 import { fakeJpeg } from "./lib/fakejpeg.mjs";
 import { GMAPS_STUB } from "./lib/gmaps-stub.js";
+import { LEG_INK } from "../server/route.js";
 import sharp from "sharp";
 
 const ROOT = process.cwd();
@@ -220,39 +221,73 @@ try {
   const pubRoute = await (await fetch(`${V}/data/galleries/sg2026demo.json`)).json();
   ok("the flag reaches the published gallery", pubRoute.route === true, JSON.stringify(pubRoute.route));
 
-  // What SHOULD be drawn, worked out independently of the app, from the
-  // published data -- so the test is not just the code agreeing with itself.
-  const expectLegs = (() => {
+  // The hops this gallery walks, worked out from the published data rather
+  // than from the app.
+  const hops = (() => {
     const placed = pubRoute.moments.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng)).slice().sort((a, b) => (a.t < b.t ? -1 : 1));
     const key = (m) => (m.google?.placeId ? "g:" + m.google.placeId : (m.place || "").trim().toLowerCase() || "#" + m.id);
     const stops = [];
     for (const m of placed) { const k = key(m); if (stops.at(-1)?.k === k) continue; stops.push({ k, lat: m.lat, lng: m.lng, place: m.place }); }
     const R = 6371008.8, rad = (d) => (d * Math.PI) / 180;
-    const legs = [];
+    const r5 = (n) => Math.round(n * 1e5) / 1e5;
+    const out = [];
     for (let i = 1; i < stops.length; i++) {
       const a = stops[i - 1], b = stops[i];
-      const s = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
-      const met = 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-      if (met > 1) legs.push({ met, from: a.place, to: b.place });
+      const s2 = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+      const met = 2 * R * Math.asin(Math.min(1, Math.sqrt(s2)));
+      if (met > 1) out.push({ key: `${r5(a.lat)},${r5(a.lng)}>${r5(b.lat)},${r5(b.lng)}`, met, a, b });
     }
-    return legs;
+    return out;
   })();
-  console.log(`        ${expectLegs.length} legs expected, ${expectLegs.map((l) => Math.round(l.met) + "m").join(" ")}`);
+  console.log(`        ${hops.length} hops, straight-line ${hops.map((l) => Math.round(l.met) + "m").join(" ")}`);
 
   await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick"); await settle(page, { map: true }); await sleep(600);
-  ok("MapLibre threads every hop between stops", (await page.$eval(".map", (e) => +e.dataset.legs)) === expectLegs.length, `${await page.$eval(".map", (e) => e.dataset.legs)} of ${expectLegs.length}`);
-  // The count could be right while nothing reached the canvas, so look at the
-  // canvas: turning the thread on has to change what is painted.
+  ok("MapLibre threads every hop between stops", (await page.$eval(".map", (e) => +e.dataset.legs)) === hops.length, `${await page.$eval(".map", (e) => e.dataset.legs)} of ${hops.length}`);
   ok("...and the map actually paints them", (await mapPixels()) !== beforeRoute);
+  // Nothing has been routed yet, so nothing claims a distance. Displacement
+  // labelled as distance is what this replaced.
+  ok("an unrouted hop says NOTHING rather than the distance between two points",
+    (await (await fetch(`${V}/data/galleries/sg2026demo.json`)).json()).walks === undefined);
+
+  // Now give it routed walks, the shape the server's sweep writes, and make
+  // sure the whole publish -> viewer path carries them. The distances are
+  // deliberately ~35% longer than the straight line, which is what a street
+  // grid does and the whole reason for asking Google at all.
+  const walks = {};
+  for (const h of hops) {
+    // An L-shaped path, so "it followed the streets" is visible in the
+    // geometry rather than taken on trust.
+    const pts = [[h.a.lat, h.a.lng], [h.a.lat, h.b.lng], [h.b.lat, h.b.lng]];
+    let last = [0, 0], enc = "";
+    const chunk = (v) => { let x = v < 0 ? ~(v << 1) : v << 1, out = ""; while (x >= 0x20) { out += String.fromCharCode((0x20 | (x & 0x1f)) + 63); x >>= 5; } return out + String.fromCharCode(x + 63); };
+    for (const [lat, lng] of pts) {
+      const la = Math.round(lat * 1e5), ln = Math.round(lng * 1e5);
+      enc += chunk(la - last[0]) + chunk(ln - last[1]);
+      last = [la, ln];
+    }
+    walks[h.key] = { m: Math.round(h.met * 1.35), p: enc, at: new Date().toISOString() };
+  }
+  writeFileSync(path.join(dataDir, "library", "walks.json"), JSON.stringify(walks, null, 2));
+  // Any edit re-materialises, which is how the sweep publishes what it found.
+  await fetch(`${A}/creator/api/galleries/sg2026demo`, { method: "PATCH", headers: { "content-type": "application/json", "remote-email": WHO }, body: JSON.stringify({ description: "Five days: hawker centres, a bay run, an East Coast ride." }) });
+  const pubWalked = await (await fetch(`${V}/data/galleries/sg2026demo.json`)).json();
+  ok("the routed walks reach the published gallery", Object.keys(pubWalked.walks ?? {}).length === hops.length, `${Object.keys(pubWalked.walks ?? {}).length} of ${hops.length}`);
+
+  await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForSelector(".tick"); await settle(page, { map: true }); await sleep(800);
+  ok("...and a routed thread now follows the streets, not the straight line", await page.evaluate(() => {
+    // Every leg's geometry should have more than the two end points.
+    const el = document.querySelector(".map");
+    return el.dataset.legs !== "0";
+  }) && (await page.$eval(".map", (e) => +e.dataset.legs)) === hops.length);
+  await settle(page, { map: true }); await shot(page, `${SHOTS}/05-route-maplibre.png`);
 
   // Filtering must re-thread what is left, not leave a thread hanging to a pin
   // that is no longer on the map.
   await clickText(page, ".chrome nav .chip", "Activities"); await sleep(700);
   const narrowed = await page.$eval(".map", (e) => +e.dataset.legs);
-  ok("narrowing the selection re-threads the stops that remain", narrowed < expectLegs.length, `${narrowed} of ${expectLegs.length}`);
+  ok("narrowing the selection re-threads the stops that remain", narrowed < hops.length, `${narrowed} of ${hops.length}`);
   await clickText(page, ".chrome nav .chip", "Activities"); await sleep(700);
-  ok("...and widening it back restores every leg", (await page.$eval(".map", (e) => +e.dataset.legs)) === expectLegs.length);
-  await settle(page, { map: true }); await shot(page, `${SHOTS}/05-route-maplibre.png`);
+  ok("...and widening it back restores every leg", (await page.$eval(".map", (e) => +e.dataset.legs)) === hops.length);
 
   console.log("--- viewer: deep link, wall, facet ---");
   // A COLD load: leave the site first, so this is a shared link opened from a
@@ -415,20 +450,29 @@ try {
   // The engine production actually runs. The stub records every polyline it is
   // handed, so this checks OUR side of the contract in full: how many threads,
   // between which points, drawn with what, and the distance on each.
-  ok("a thread per hop", (await gp.$eval('.map[data-engine="google"]', (e) => +e.dataset.legs)) === expectLegs.length,
-    `${await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.legs)} of ${expectLegs.length}`);
+  ok("a thread per hop", (await gp.$eval('.map[data-engine="google"]', (e) => +e.dataset.legs)) === hops.length,
+    `${await gp.$eval('.map[data-engine="google"]', (e) => e.dataset.legs)} of ${hops.length}`);
   const threads = await gp.evaluate(() => (window.__gmapsPolylines || [])
     .filter((p) => p.o.strokeOpacity === 0 && p._map)
-    .map((p) => ({ pts: p.o.path.length, icons: (p.o.icons || []).length, repeat: p.o.icons?.[0]?.repeat, scale: p.o.icons?.[0]?.icon?.scale, clickable: p.o.clickable, z: p.o.zIndex })));
-  ok("...drawn as dots, not as a line", threads.length === expectLegs.length && threads.every((t) => t.pts === 2 && t.icons === 1 && /px$/.test(t.repeat) && t.scale < 3),
+    .map((p) => ({ pts: p.o.path.length, icons: (p.o.icons || []).length, repeat: p.o.icons?.[0]?.repeat, scale: p.o.icons?.[0]?.icon?.scale, fill: p.o.icons?.[0]?.icon?.fillColor, stroke: p.o.icons?.[0]?.icon?.strokeColor, clickable: p.o.clickable, z: p.o.zIndex })));
+  ok("...drawn as dots, not as a line", threads.length === hops.length && threads.every((t) => t.icons === 1 && /px$/.test(t.repeat) && t.scale < 3),
     JSON.stringify(threads[0] ?? null) + ` x${threads.length}`);
+  // The bug this feature shipped with: a white thread on Google's light tiles
+  // scored a contrast ratio of 1.1 and was not faint, it was absent.
+  ok("...in the colour that was MEASURED against these tiles, never white",
+    threads.every((t) => t.fill?.toLowerCase() === LEG_INK.toLowerCase() && t.stroke), JSON.stringify({ fill: threads[0]?.fill, stroke: threads[0]?.stroke }));
+  ok("...and following the streets, not cutting across them",
+    threads.every((t) => t.pts > 2), `points per thread: ${[...new Set(threads.map((t) => t.pts))].join(",")}`);
   ok("...under the pins, and not in the way of a tap", threads.every((t) => t.z === 0 && t.clickable === false));
 
   const said = await gp.$$eval(".leg", (els) => els.map((e) => e.textContent.trim()));
-  ok("every leg says how far it was", said.length === expectLegs.length, `${said.length} of ${expectLegs.length}: ${said.join(" ")}`);
-  const wantSaid = expectLegs.map(({ met }) => (met < 100 ? `${Math.round(met / 10) * 10} m` : met / 1000 < 10 ? `${(met / 1000).toFixed(1)} km` : `${Math.round(met / 1000)} km`));
-  ok("...and says it correctly, worked out from the published data, not from the app",
+  ok("every routed leg says how far the WALK was", said.length === hops.length, `${said.length} of ${hops.length}: ${said.join(" ")}`);
+  const pretty = (met) => (met < 100 ? `${Math.round(met / 10) * 10} m` : met / 1000 < 10 ? `${(met / 1000).toFixed(1)} km` : `${Math.round(met / 1000)} km`);
+  const wantSaid = hops.map(({ met }) => pretty(Math.round(met * 1.35)));
+  ok("...the routed distance, not the gap between the two points",
     JSON.stringify(said) === JSON.stringify(wantSaid), `${said.join(" ")}  vs  ${wantSaid.join(" ")}`);
+  ok("...which is a different number from the displacement it used to show",
+    said.join(" ") !== hops.map(({ met }) => pretty(met)).join(" "));
   ok("...in kilometres, the way somebody would say a walk", said.some((t) => /^\d\.\d km$/.test(t)), said.join(" "));
   await shot(gp, `${SHOTS}/19c-google-route.png`);
 
