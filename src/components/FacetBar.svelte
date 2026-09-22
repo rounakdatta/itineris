@@ -12,11 +12,19 @@
       ])
     )
   );
+
+  // A filter earns its place by being able to NARROW something. One that
+  // matches everything in the gallery cannot: tapping "Spots 36" on a gallery
+  // of 36 photos leaves the same 36 photos on the screen, so it is a control
+  // that does nothing, taking a row of a phone screen to do it. A whole trip
+  // of food stops is exactly that case, and it is a common one.
+  const total = $derived(trip.moments.length + trip.tracks.length);
+  const useful = $derived(FACETS.filter((f) => counts[f.id] > 0 && counts[f.id] < total));
 </script>
 
+{#if useful.length}
 <nav class="bar" aria-label="Filter">
-  {#each FACETS as f (f.id)}
-    {#if counts[f.id] > 0}
+  {#each useful as f (f.id)}
       <button
         class="chip"
         class:on={trip.facets.includes(f.id)}
@@ -26,9 +34,9 @@
       >
         <i class="dot" aria-hidden="true"></i>{f.label}<span class="n">{counts[f.id]}</span>
       </button>
-    {/if}
   {/each}
 </nav>
+{/if}
 
 <style>
   .bar {
